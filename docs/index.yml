@@ -42,6 +42,8 @@ navigation:
         path: providers/infiniband.md
       - page: NetQ
         path: providers/netq.md
+      - page: Minerva
+        path: providers/minerva.md
       - page: DRA
         path: providers/dra.md
       - page: Test

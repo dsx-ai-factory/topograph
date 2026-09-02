@@ -53,7 +53,7 @@ engine, or emitting scheduler-specific output from a provider, stop and reconsid
 cmd/                  # Entry points: topograph, node-observer, node-data-broker, kwok-nodes
 pkg/
   accelerator/        # Pluggable accelerator-domain discovery composed by providers
-  providers/          # One directory per provider: aws, crusoe, dra, dsx, gcp, infiniband, lambdai, nebius, netq, nscale, oci, test
+  providers/          # One directory per provider: aws, crusoe, dra, dsx, gcp, infiniband, lambdai, minerva, nebius, netq, nscale, oci, test
   engines/            # One directory per engine: graph, k8s, nfd, slinky, slurm
   topology/           # Canonical Graph, Vertex tree, and topology constants (DO NOT CHANGE CASUALLY)
   registry/           # Central NamedLoader wiring for providers + engines
