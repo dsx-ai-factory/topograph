@@ -46,6 +46,7 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 | [Nscale](./providers/nscale.md) | `nscale` | `nscale-sim` |
 | [Lambda](./providers/lambdai.md) | `lambdai` | `lambdai-sim` |
 | [NVIDIA NetQ](./providers/netq.md) | `netq` | — |
+| [Minerva](./providers/minerva.md) | `minerva` | — |
 | [Nautobot](./providers/nautobot.md) | `nautobot` | — |
 | [Kubernetes fabric topology from existing Node labels](./providers/k8s-node-labels.md) | `k8s-node-labels` | — |
 | [NVIDIA NVLink partitions from Kubernetes Node labels](./providers/dra.md) | `dra` | — |
