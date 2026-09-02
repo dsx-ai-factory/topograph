@@ -48,6 +48,7 @@ Currently supported providers:
 - [Nscale](./providers/nscale.md)
 - [Lambda](./providers/lambdai.md)
 - [NetQ](./providers/netq.md)
+- [Minerva](./providers/minerva.md)
 - [DRA](./providers/dra.md) — provides Slinky block topology from a configured pre-existing Node label (default `nvidia.com/gpu.clique`); it does not discover the backend switch fabric
 - [InfiniBand (bare-metal)](./providers/infiniband.md#infiniband-bm-bare-metal)
 - [InfiniBand (Kubernetes)](./providers/infiniband.md#infiniband-k8s-kubernetes)
@@ -71,6 +72,7 @@ Currently supported engines:
 | Multi-Node NVLink (MNNVL), including cross-partition fabric locality | [NetQ](./providers/netq.md) or [InfiniBand (Kubernetes)](./providers/infiniband.md#infiniband-k8s-kubernetes) |
 | MNNVL with Slinky, workloads contained within one NVLink partition, and `nvidia.com/gpu.clique` present | [DRA](./providers/dra.md) |
 | InfiniBand fabric, NetQ deployed | [NetQ](./providers/netq.md) |
+| Minerva deployed and managing the fabric | [Minerva](./providers/minerva.md) |
 | InfiniBand fabric, no NetQ, bare-metal / Slurm | [InfiniBand (bare-metal)](./providers/infiniband.md) |
 | InfiniBand fabric, no NetQ, Kubernetes | [InfiniBand (Kubernetes)](./providers/infiniband.md) |
 | Replay a captured InfiniBand fabric without node access | [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation) |

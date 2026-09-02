@@ -1,0 +1,83 @@
+{
+  "success": true,
+  "topology": {
+    "layer2": {
+      "spine-01": {
+        "deviceName": "spine-01",
+        "host_name": "spine-01",
+        "role": "spine",
+        "mgmt_ipv4": "10.0.0.1",
+        "device_id": "d-0001",
+        "localInterface": {
+          "swp49": { "remoteInterface": "swp1", "remoteDevice": "leaf-01" },
+          "swp50": { "remoteInterface": "swp1", "remoteDevice": "leaf-02" }
+        }
+      },
+      "leaf-01": {
+        "deviceName": "leaf-01",
+        "host_name": "leaf-01",
+        "role": "leaf",
+        "mgmt_ipv4": "10.0.0.11",
+        "device_id": "d-1001",
+        "localInterface": {
+          "swp1": { "remoteInterface": "swp49", "remoteDevice": "spine-01" },
+          "swp2": { "remoteInterface": "eth0", "remoteDevice": "node-01" },
+          "swp3": { "remoteInterface": "eth0", "remoteDevice": "node-02" }
+        }
+      },
+      "leaf-02": {
+        "deviceName": "leaf-02",
+        "host_name": "leaf-02",
+        "role": "leaf",
+        "mgmt_ipv4": "10.0.0.12",
+        "device_id": "d-1002",
+        "localInterface": {
+          "swp1": { "remoteInterface": "swp50", "remoteDevice": "spine-01" },
+          "swp2": { "remoteInterface": "eth0", "remoteDevice": "node-03" }
+        }
+      },
+      "node-01": {
+        "deviceName": "node-01",
+        "host_name": "node-01",
+        "role": "server",
+        "mgmt_ipv4": "10.0.2.1",
+        "device_id": "d-2001",
+        "localInterface": {
+          "eth0": { "remoteInterface": "swp2", "remoteDevice": "leaf-01" }
+        },
+        "GPUs": [
+          { "name": "GPU-0", "componentId": "c-0001" }
+        ]
+      },
+      "node-02": {
+        "deviceName": "node-02",
+        "host_name": "node-02",
+        "role": "server",
+        "mgmt_ipv4": "10.0.2.2",
+        "device_id": "d-2002",
+        "localInterface": {
+          "eth0": { "remoteInterface": "swp3", "remoteDevice": "leaf-01" }
+        },
+        "GPUs": [
+          { "name": "GPU-0", "componentId": "c-0002" }
+        ]
+      },
+      "node-03": {
+        "deviceName": "node-03",
+        "host_name": "node-03",
+        "role": "server",
+        "mgmt_ipv4": "10.0.2.3",
+        "device_id": "d-2003",
+        "localInterface": {
+          "eth0": { "remoteInterface": "swp2", "remoteDevice": "leaf-02" }
+        },
+        "GPUs": [
+          { "name": "GPU-0", "componentId": "c-0003" }
+        ]
+      }
+    }
+  },
+  "device_summary": { "leaf": 2, "spine": 1, "server": 3 },
+  "message": "Topology exported successfully for all devices",
+  "pagination_limit": 100
+}
