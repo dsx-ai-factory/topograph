@@ -55,7 +55,7 @@ Most providers assemble a `topology.ClusterTopology` and let it produce the grap
 
 `ClusterTopology.ToGraph` then builds the vertex forest and the domain map. Requested instances for which the provider returned no topology are collected under a single `no-topology` vertex, and each one raises the `topograph_missing_topology` gauge described under [Metrics](#metrics).
 
-Network-fabric discovery and accelerator-domain discovery are composed independently through `pkg/accelerator`. The provider stays responsible for combining both dimensions into one graph; the engine never sees the two sources separately.
+Network-fabric discovery and accelerator-domain discovery may be composed independently through `pkg/accelerator`. Providers that use this facility stay responsible for combining both dimensions into one graph; the engine never sees the two sources separately. Other providers may obtain both dimensions directly from their native topology source.
 
 The return type is `*httperr.Error`, not `error`. The status code it carries becomes the status the API server reports for the whole request, so a provider chooses it deliberately. A plain `error` at this boundary throws that information away and is not accepted.
 
@@ -93,9 +93,9 @@ The Engine translates this internal representation into the format expected by t
 
 ## API reference
 
-Topograph is a Go module, `github.com/NVIDIA/topograph`. Its exported API is documented as godoc and browsable on pkg.go.dev:
+Topograph is a Go module, `github.com/dsx-ai-factory/topograph`. Its exported API is documented as godoc and browsable on pkg.go.dev:
 
-- <https://pkg.go.dev/github.com/NVIDIA/topograph>
+- <https://pkg.go.dev/github.com/dsx-ai-factory/topograph>
 
 The packages an external caller is most likely to import are `pkg/topology` (the canonical `Graph`, `Vertex`, `DomainMap`, and the topology constants), `pkg/providers` (the `Provider` interface and the registry types), and `pkg/engines` (the `Engine` interface). Packages under `internal/` are not importable from outside the module by design.
 
@@ -171,7 +171,7 @@ When updates seem slow, this is usually why:
 | `slurm` | Writes the Slurm topology config to the path in the `topologyConfigPath` engine parameter and returns `OK`. With no path set it returns the generated text as the response body, so `GET /v1/topology` hands you the file. With `reconfigure: true` it then runs `scontrol reconfigure`. |
 | `k8s` | Writes node labels directly through the Kubernetes API: `fabric.topograph.run/tier-N` closest-first, `accelerator.topograph.run/domain`, and `accelerator.topograph.run/sub-domain`. The `fabricLabels` parameter overrides the fabric tier keys and `acceleratorLabel` overrides the accelerator domain key; the sub-domain key is always `accelerator.topograph.run/sub-domain`. Returns `OK`. A failed label write surfaces as `502`. |
 | `nfd` | Creates or updates NFD `NodeFeature` and `NodeFeatureGroup` objects in the namespace named by the `NFD_NAMESPACE` environment variable, which is required; the Helm chart sets it from `nfdNamespace` and rejects an `env.NFD_NAMESPACE` override. Returns `OK nodeFeatures=<n> nodeFeatureGroups=<m>`. With `cleanup` enabled it refuses to apply an empty result rather than deleting the existing topology. |
-| `slinky` | Writes the Slurm topology into the ConfigMap named by `topologyConfigmapName` in `namespace`, under the key given by `topologyConfigPath`. `configUpdateMode: none` skips the write. |
+| `slinky` | Writes the Slurm topology into the ConfigMap named by `topologyConfigmapName` in `namespace`, under the key given by `topologyConfigPath`. `configUpdateMode: none` skips the ConfigMap write. With `useDynamicNodes: true`, it also reconciles the `topology.slinky.slurm.net/spec` annotation on Kubernetes nodes, including when the ConfigMap write is skipped. |
 | `graph` | Returns instance-oriented JSON as the response body, or writes it to `topologyConfigPath` and returns `OK`. |
 
 An engine that returns `OK` has already applied its side effect. The body is a completion marker, not the topology.
@@ -196,7 +196,9 @@ In a Kubernetes deployment, work through these in order. Each step names the log
 
 The provider interface returns `*httperr.Error` rather than `error` so that the status the provider chose propagates intact. That code becomes three things: the HTTP status stored with the queued request and returned by `GET /v1/topology?uid=<id>`, the `status` label on `topograph_request_duration_seconds`, and the input to the retry decision.
 
-The API Server retries a generation attempt up to 5 times in total, and only for the statuses `internal/httpreq` treats as transient: `408`, `429`, `500`, `502`, `503`, and `504`. Backoff starts at 2 seconds and doubles (2s, 4s, 8s, 16s), and each attempt logs `Attempt <n> failed with error: <err>. Retrying in <wait>`. Any other status fails on the first attempt.
+The API Server makes up to five generation attempts: one initial attempt and four retries. It retries only status codes `408`, `429`, `500`, `502`, `503`, and `504`, waiting 2s, 4s, 8s, and 16s between attempts. Other status codes fail immediately. Before each retry, it logs `Attempt <n> failed with error: <err>. Retrying in <wait>`.
+
+These generation retries do not honor `Retry-After` because the API Server does not receive the upstream response headers. Provider HTTP calls made through `internal/httpreq.DoRequestWithRetries` do honor `Retry-After`, given as seconds or an HTTP date, up to a maximum of 5 minutes. Without a valid header, provider HTTP retries wait 500ms, 1s, 2s, and 4s. If the provider still fails, the API Server may retry the whole generation, so the two retry loops can compound.
 
 What the statuses mean in practice:
 
@@ -206,6 +208,6 @@ What the statuses mean in practice:
 | `401` | Provider authentication failed. In-tree examples: the NetQ login, OCI API authentication, and Nebius SDK construction. Not retried; fix the credentials. |
 | `500` | A local failure, such as writing the output file or generating the config. Retried. |
 | `502` | An upstream call failed. A transport-level failure in `internal/httpreq` maps to `502`, as does a failed Kubernetes write in the `k8s` and `nfd` engines. Retried. |
-| `404` | From `/v1/topology` only: the request ID is unknown or has been evicted from the 100-entry result LRU. |
+| `404` | From `/v1/topology` when the request ID is unknown or has been evicted from the 100-entry result LRU, and from `/v1/lookup` when the request body's hash is unknown or evicted. |
 
 Because a request that exhausts its retries stores the final error against its hash, `GET /v1/topology?uid=<id>` (or a `/v1/lookup` with the same body) returns the provider's own message. That message, not the status alone, is what identifies the failing call.
