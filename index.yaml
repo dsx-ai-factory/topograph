@@ -5,24 +5,24 @@ entries:
       artifacthub.io/license: Apache-2.0
       artifacthub.io/links: |
         - name: Documentation
-          url: https://github.com/NVIDIA/topograph/blob/main/docs/overview.md
+          url: https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md
         - name: Chart Source
-          url: https://github.com/NVIDIA/topograph/tree/main/charts/topograph
+          url: https://github.com/dsx-ai-factory/topograph/tree/main/charts/topograph
       org.opencontainers.image.description: Discovers the physical network topology
         of a cluster and exposes it to schedulers.
-      org.opencontainers.image.documentation: https://github.com/NVIDIA/topograph/blob/main/docs/overview.md
+      org.opencontainers.image.documentation: https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md
       org.opencontainers.image.licenses: Apache-2.0
-      org.opencontainers.image.source: https://github.com/NVIDIA/topograph
+      org.opencontainers.image.source: https://github.com/dsx-ai-factory/topograph
       org.opencontainers.image.title: Topograph
       org.opencontainers.image.vendor: NVIDIA
     apiVersion: v2
     appVersion: v1.0.0
-    created: "2026-08-18T13:46:27.799607165-04:00"
+    created: "2026-09-16T18:15:25.923248554-04:00"
     description: Discovers the physical network topology of a cluster and exposes
       it to schedulers.
-    digest: 67c750928bc26adaad8287803d304ac91ecbd33939aac94f9254fa992eacb372
-    home: https://github.com/NVIDIA/topograph
-    icon: https://raw.githubusercontent.com/NVIDIA/topograph/main/docs/assets/topograph-logo.png
+    digest: 8ed4bd19fc3cf2263a9c6e2d3d295373e82182c3aaaa9488bfe25dbc04f5d6f5
+    home: https://github.com/dsx-ai-factory/topograph
+    icon: https://raw.githubusercontent.com/dsx-ai-factory/topograph/main/docs/assets/topograph-logo.png
     keywords:
     - topograph
     - topology
@@ -40,10 +40,10 @@ entries:
       url: https://topograph.run
     name: topograph
     sources:
-    - https://github.com/NVIDIA/topograph
+    - https://github.com/dsx-ai-factory/topograph
     type: application
     urls:
-    - https://NVIDIA.github.io/topograph/topograph-1.0.0.tgz
+    - https://dsx-ai-factory.github.io/topograph/topograph-1.0.0.tgz
     version: 1.0.0
   - annotations:
       artifacthub.io/license: Apache-2.0
@@ -174,4 +174,4 @@ entries:
     urls:
     - https://NVIDIA.github.io/topograph/topograph-0.1.0.tgz
     version: 0.1.0
-generated: "2026-08-18T13:46:27.798058135-04:00"
+generated: "2026-09-16T18:15:25.921895193-04:00"
