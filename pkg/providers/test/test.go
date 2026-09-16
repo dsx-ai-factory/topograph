@@ -13,12 +13,12 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/internal/config"
-	"github.com/NVIDIA/topograph/internal/httperr"
-	"github.com/NVIDIA/topograph/pkg/models"
-	"github.com/NVIDIA/topograph/pkg/providers"
-	"github.com/NVIDIA/topograph/pkg/topology"
-	"github.com/NVIDIA/topograph/pkg/translate"
+	"github.com/dsx-ai-factory/topograph/internal/config"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/models"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/translate"
 )
 
 const NAME = "test"

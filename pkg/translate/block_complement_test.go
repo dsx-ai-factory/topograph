@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NVIDIA/topograph/pkg/models"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/models"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 	"github.com/stretchr/testify/require"
 )
 

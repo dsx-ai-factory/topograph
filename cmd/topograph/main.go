@@ -26,9 +26,9 @@ import (
 	"github.com/oklog/run"
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/internal/version"
-	"github.com/NVIDIA/topograph/pkg/config"
-	"github.com/NVIDIA/topograph/pkg/server"
+	"github.com/dsx-ai-factory/topograph/internal/version"
+	"github.com/dsx-ai-factory/topograph/pkg/config"
+	"github.com/dsx-ai-factory/topograph/pkg/server"
 )
 
 func main() {

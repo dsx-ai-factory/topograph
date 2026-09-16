@@ -21,7 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 type recordingEC2Client struct {

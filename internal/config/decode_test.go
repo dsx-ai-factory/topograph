@@ -28,7 +28,7 @@ import (
 	"github.com/agrea/ptr"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NVIDIA/topograph/internal/config"
+	"github.com/dsx-ai-factory/topograph/internal/config"
 )
 
 type testConfig struct { // nolint: maligned

@@ -15,8 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
-	"github.com/NVIDIA/topograph/pkg/translate"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/translate"
 )
 
 func node(name string, labels map[string]string) *corev1.Node {

@@ -6,7 +6,7 @@
 package translate
 
 import (
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 	"k8s.io/klog/v2"
 )
 

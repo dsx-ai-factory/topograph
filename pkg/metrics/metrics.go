@@ -22,7 +22,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/NVIDIA/topograph/internal/version"
+	"github.com/dsx-ai-factory/topograph/internal/version"
 )
 
 var (

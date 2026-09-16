@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/internal/files"
+	"github.com/dsx-ai-factory/topograph/internal/files"
 )
 
 func TestValidateFile(t *testing.T) {

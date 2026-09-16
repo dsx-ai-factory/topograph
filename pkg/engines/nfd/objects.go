@@ -28,8 +28,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	nfdv1alpha1 "sigs.k8s.io/node-feature-discovery/api/nfd/v1alpha1"
 
-	k8sengine "github.com/NVIDIA/topograph/pkg/engines/k8s"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	k8sengine "github.com/dsx-ai-factory/topograph/pkg/engines/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const (

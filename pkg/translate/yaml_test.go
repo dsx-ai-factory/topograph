@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 	"github.com/stretchr/testify/require"
 )
 

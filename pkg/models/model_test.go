@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
-	"github.com/NVIDIA/topograph/pkg/translate"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/translate"
 )
 
 func acceleratorDomainAnnotations(domain string) map[string]string {

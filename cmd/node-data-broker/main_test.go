@@ -19,9 +19,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/topograph/pkg/providers/infiniband"
-	"github.com/NVIDIA/topograph/pkg/providers/nscale"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 func TestGetAnnotations(t *testing.T) {

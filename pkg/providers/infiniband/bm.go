@@ -11,8 +11,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/NVIDIA/topograph/internal/exec"
-	"github.com/NVIDIA/topograph/pkg/accelerator"
+	"github.com/dsx-ai-factory/topograph/internal/exec"
+	"github.com/dsx-ai-factory/topograph/pkg/accelerator"
 )
 
 type IBNetDiscoverBM struct{}

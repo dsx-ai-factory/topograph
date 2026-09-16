@@ -22,7 +22,7 @@ The Slinky engine bridges the gap between Kubernetes infrastructure and SLURM wo
 </p>
 
 ## Configuration
-Topograph is deployed as a standard Kubernetes application using a [Helm chart](https://github.com/NVIDIA/topograph/tree/main/charts/topograph).
+Topograph is deployed as a standard Kubernetes application using a [Helm chart](https://github.com/dsx-ai-factory/topograph/tree/main/charts/topograph).
 Topograph is configured using a configuration file stored in a ConfigMap and mounted to the Topograph container at `/etc/topograph/topograph-config.yaml`.
 In addition, when sending a topology request, the request payload includes additional parameters.
 The provider and engine are defined as top-level Helm values, as shown below:

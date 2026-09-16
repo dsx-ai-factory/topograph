@@ -1,6 +1,6 @@
 # topograph
 
-A Helm chart for deploying [topograph](https://github.com/NVIDIA/topograph) on Kubernetes.
+A Helm chart for deploying [topograph](https://github.com/dsx-ai-factory/topograph) on Kubernetes.
 
 Topograph discovers the physical network topology of a cluster (NVLink domains, InfiniBand / Ethernet switch fabric, cloud rack topology) and exposes it to workload schedulers — Slurm, Kubernetes, and Slurm-on-Kubernetes (Slinky) — by applying node labels and/or writing scheduler-specific topology configuration.
 
@@ -8,14 +8,14 @@ Topograph discovers the physical network topology of a cluster (NVLink domains, 
 
 - **Helm**: 3.10+ or 4.x. The chart has been verified against Helm 3.20.0 and Helm 4.1.4, with byte-identical `helm template` output under both.
 - **Kubernetes**: 1.27 or later
-- **Provider-specific prerequisites**: see the [provider documentation](https://github.com/NVIDIA/topograph/tree/main/docs/providers) in the main repository for each provider's setup.
+- **Provider-specific prerequisites**: see the [provider documentation](https://github.com/dsx-ai-factory/topograph/tree/main/docs/providers) in the main repository for each provider's setup.
 
 ## Installation
 
 From the Helm chart repository:
 
 ```bash
-helm repo add topograph https://NVIDIA.github.io/topograph
+helm repo add topograph https://dsx-ai-factory.github.io/topograph
 helm repo update
 helm install topograph \
   topograph/topograph \
@@ -125,12 +125,12 @@ The API server, node-observer, and node-data-broker containers all support `env`
 ## References
 
 - **Project documentation site**: <https://topograph.docs.buildwithfern.com/topograph>
-- **Main repository**: <https://github.com/NVIDIA/topograph>
+- **Main repository**: <https://github.com/dsx-ai-factory/topograph>
 - **Provider-specific setup**: `docs/providers/` in the main repository
 - **Engine documentation**: `docs/engines/k8s.md`, `docs/engines/nfd.md`, `docs/engines/slinky.md`, `docs/engines/slurm.md`, `docs/engines/graph.md`
 - **Node-labels reference**: `docs/reference/node-labels.md`
-- **Contributing**: see [`CONTRIBUTING.md`](https://github.com/NVIDIA/topograph/blob/main/CONTRIBUTING.md) in the main repository
+- **Contributing**: see [`CONTRIBUTING.md`](https://github.com/dsx-ai-factory/topograph/blob/main/CONTRIBUTING.md) in the main repository
 
 ## License
 
-Apache License 2.0. See [`LICENSE`](https://github.com/NVIDIA/topograph/blob/main/LICENSE) in the main repository.
+Apache License 2.0. See [`LICENSE`](https://github.com/dsx-ai-factory/topograph/blob/main/LICENSE) in the main repository.

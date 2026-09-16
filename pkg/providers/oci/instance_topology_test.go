@@ -26,7 +26,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/identity"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 var errListComputeHostsCallLimit = errors.New("ListComputeHosts call limit exceeded")

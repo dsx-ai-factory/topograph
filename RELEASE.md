@@ -103,7 +103,7 @@ Prepare every release candidate on the release branch.
    workflow publishes the chart package to the Topograph Helm repository. For
    example, version `1.2.0-rc.1` is published as:
 
-   `https://nvidia.github.io/topograph/topograph-1.2.0-rc.1.tgz`
+   `https://dsx-ai-factory.github.io/topograph/topograph-1.2.0-rc.1.tgz`
 
    The workflow also publishes
    `topograph-1.2.0-rc.1.tgz.sha256` beside the chart package and generates
@@ -225,9 +225,9 @@ Charts** against `release-X.Y` for release candidates. Pushing an official
 An official release publishes:
 
 - A multi-architecture Topograph container image at
-  `ghcr.io/nvidia/topograph:vX.Y.Z`
+  `ghcr.io/dsx-ai-factory/topograph:vX.Y.Z`
 - A Helm chart in the Topograph chart repository at
-  `https://nvidia.github.io/topograph`
+  `https://dsx-ai-factory.github.io/topograph`
 - A SHA-256 checksum published beside the Helm chart package
 - A GitHub release and source tag named `vX.Y.Z`, with the Helm chart and its
   checksum attached
@@ -250,13 +250,13 @@ All releases must pass:
 Verify the published container image:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/nvidia/topograph:v1.2.0
+docker buildx imagetools inspect ghcr.io/dsx-ai-factory/topograph:v1.2.0
 ```
 
 Verify the published Helm chart:
 
 ```bash
-helm repo add topograph https://nvidia.github.io/topograph
+helm repo add topograph https://dsx-ai-factory.github.io/topograph
 helm repo update
 helm show chart topograph/topograph --version 1.2.0
 ```
@@ -264,27 +264,27 @@ helm show chart topograph/topograph --version 1.2.0
 Verify the container image's SLSA provenance:
 
 ```bash
-gh attestation verify oci://ghcr.io/nvidia/topograph:v1.2.0 \
-  --repo NVIDIA/topograph \
-  --signer-workflow NVIDIA/topograph/.github/workflows/docker.yml \
+gh attestation verify oci://ghcr.io/dsx-ai-factory/topograph:v1.2.0 \
+  --repo dsx-ai-factory/topograph \
+  --signer-workflow dsx-ai-factory/topograph/.github/workflows/docker.yml \
   --source-ref refs/tags/v1.2.0
 ```
 
 Download the Helm chart and verify its SLSA provenance:
 
 ```bash
-curl -fsSLO https://nvidia.github.io/topograph/topograph-1.2.0.tgz
-curl -fsSLO https://nvidia.github.io/topograph/topograph-1.2.0.tgz.sha256
+curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-1.2.0.tgz
+curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-1.2.0.tgz.sha256
 sha256sum --check topograph-1.2.0.tgz.sha256
 gh attestation verify topograph-1.2.0.tgz \
-  --repo NVIDIA/topograph \
-  --signer-workflow NVIDIA/topograph/.github/workflows/release.yml \
+  --repo dsx-ai-factory/topograph \
+  --signer-workflow dsx-ai-factory/topograph/.github/workflows/release.yml \
   --source-ref refs/tags/v1.2.0
 ```
 
 Also confirm that:
 
-- The [GitHub release](https://github.com/NVIDIA/topograph/releases) has the
+- The [GitHub release](https://github.com/dsx-ai-factory/topograph/releases) has the
   correct tag, release notes, Helm chart, and checksum.
 - The **Docker**, **Release**, and **Publish Fern Docs** workflow
   runs completed successfully.

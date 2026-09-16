@@ -24,8 +24,8 @@ import (
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/internal/files"
-	"github.com/NVIDIA/topograph/pkg/registry"
+	"github.com/dsx-ai-factory/topograph/internal/files"
+	"github.com/dsx-ai-factory/topograph/pkg/registry"
 )
 
 type Config struct {

@@ -15,8 +15,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
-	internalK8s "github.com/NVIDIA/topograph/internal/k8s"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	internalK8s "github.com/dsx-ai-factory/topograph/internal/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 // BaseKubernetesNodeAnnotations returns the identity annotations shared by

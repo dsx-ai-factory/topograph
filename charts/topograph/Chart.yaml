@@ -6,10 +6,10 @@ type: application
 version: "1.0.0"
 appVersion: "v1.0.0"
 
-home: https://github.com/NVIDIA/topograph
-icon: https://raw.githubusercontent.com/NVIDIA/topograph/main/docs/assets/topograph-logo.png
+home: https://github.com/dsx-ai-factory/topograph
+icon: https://raw.githubusercontent.com/dsx-ai-factory/topograph/main/docs/assets/topograph-logo.png
 sources:
-  - https://github.com/NVIDIA/topograph
+  - https://github.com/dsx-ai-factory/topograph
 maintainers:
   - name: NVIDIA CORPORATION
     url: https://topograph.run
@@ -29,11 +29,11 @@ annotations:
   org.opencontainers.image.description: Discovers the physical network topology of a cluster and exposes it to schedulers.
   org.opencontainers.image.vendor: NVIDIA
   org.opencontainers.image.licenses: Apache-2.0
-  org.opencontainers.image.source: https://github.com/NVIDIA/topograph
-  org.opencontainers.image.documentation: https://github.com/NVIDIA/topograph/blob/main/docs/overview.md
+  org.opencontainers.image.source: https://github.com/dsx-ai-factory/topograph
+  org.opencontainers.image.documentation: https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md
   artifacthub.io/license: Apache-2.0
   artifacthub.io/links: |
     - name: Documentation
-      url: https://github.com/NVIDIA/topograph/blob/main/docs/overview.md
+      url: https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md
     - name: Chart Source
-      url: https://github.com/NVIDIA/topograph/tree/main/charts/topograph
+      url: https://github.com/dsx-ai-factory/topograph/tree/main/charts/topograph

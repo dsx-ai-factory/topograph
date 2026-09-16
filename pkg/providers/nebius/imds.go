@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NVIDIA/topograph/internal/exec"
-	"github.com/NVIDIA/topograph/pkg/providers"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/exec"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const (

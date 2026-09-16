@@ -16,14 +16,14 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/internal/cluset"
-	"github.com/NVIDIA/topograph/internal/config"
-	"github.com/NVIDIA/topograph/internal/exec"
-	"github.com/NVIDIA/topograph/internal/files"
-	"github.com/NVIDIA/topograph/internal/httperr"
-	"github.com/NVIDIA/topograph/pkg/engines"
-	"github.com/NVIDIA/topograph/pkg/topology"
-	"github.com/NVIDIA/topograph/pkg/translate"
+	"github.com/dsx-ai-factory/topograph/internal/cluset"
+	"github.com/dsx-ai-factory/topograph/internal/config"
+	"github.com/dsx-ai-factory/topograph/internal/exec"
+	"github.com/dsx-ai-factory/topograph/internal/files"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/engines"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/translate"
 )
 
 const TopologyHeader = `

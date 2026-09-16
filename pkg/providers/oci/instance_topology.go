@@ -26,7 +26,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/core"
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 func getComputeHostSummary(ctx context.Context, client Client, availabilityDomain *string, topo *topology.ClusterTopology, instMap map[string]string) error {

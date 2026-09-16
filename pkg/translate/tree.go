@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NVIDIA/topograph/internal/cluset"
-	"github.com/NVIDIA/topograph/internal/httperr"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/cluset"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 // toTreeTopology generates SLURM cluster topology config in "topology/tree" format

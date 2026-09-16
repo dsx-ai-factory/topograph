@@ -11,8 +11,8 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/internal/httperr"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 // nodeMetadata is the subset of a Kubernetes Node the provider reads. The

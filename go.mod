@@ -1,4 +1,4 @@
-module github.com/NVIDIA/topograph
+module github.com/dsx-ai-factory/topograph
 
 go 1.27.1
 

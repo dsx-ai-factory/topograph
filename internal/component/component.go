@@ -19,7 +19,7 @@ package component
 import (
 	"context"
 
-	"github.com/NVIDIA/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
 )
 
 type (

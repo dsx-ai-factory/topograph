@@ -32,8 +32,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/pkg/config"
-	"github.com/NVIDIA/topograph/pkg/test"
+	"github.com/dsx-ai-factory/topograph/pkg/config"
+	"github.com/dsx-ai-factory/topograph/pkg/test"
 )
 
 const (

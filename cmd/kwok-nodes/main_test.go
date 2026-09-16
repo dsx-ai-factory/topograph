@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/internal/kwok"
+	"github.com/dsx-ai-factory/topograph/internal/kwok"
 )
 
 func TestMainInternalWritesManifest(t *testing.T) {

@@ -65,4 +65,4 @@ navigation:
       - page: Node Labels and Annotations
         path: reference/node-labels.md
       - link: Changelog
-        href: https://github.com/NVIDIA/topograph/blob/main/CHANGELOG.md
+        href: https://github.com/dsx-ai-factory/topograph/blob/main/CHANGELOG.md

@@ -13,7 +13,7 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/pkg/metrics"
+	"github.com/dsx-ai-factory/topograph/pkg/metrics"
 )
 
 type ClusterTopology struct {

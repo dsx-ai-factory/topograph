@@ -11,11 +11,11 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/NVIDIA/topograph/internal/config"
-	"github.com/NVIDIA/topograph/internal/files"
-	"github.com/NVIDIA/topograph/internal/httperr"
-	"github.com/NVIDIA/topograph/pkg/engines"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/config"
+	"github.com/dsx-ai-factory/topograph/internal/files"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/engines"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const NAME = "graph"

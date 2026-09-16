@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NVIDIA/topograph/internal/cluset"
-	"github.com/NVIDIA/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/internal/cluset"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
 )
 
 func findMinDomainSize(blocks []*blockInfo) (int, error) {

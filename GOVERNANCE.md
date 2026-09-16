@@ -2,7 +2,7 @@
 
 ## Scope
 
-This document covers how decisions are made, who holds which roles, and how contributors advance in Topograph. It applies to the upstream repository at https://github.com/NVIDIA/topograph.
+This document covers how decisions are made, who holds which roles, and how contributors advance in Topograph. It applies to the upstream repository at https://github.com/dsx-ai-factory/topograph.
 
 ---
 

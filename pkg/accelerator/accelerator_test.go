@@ -16,7 +16,7 @@ import (
 	kubernetesfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const testKubernetesLabel = "example.com/accelerator-domain"

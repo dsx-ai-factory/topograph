@@ -5,7 +5,7 @@ Install Topograph on a Slurm head node so it can generate topology configuration
 ## Prerequisites
 
 - **Slurm** cluster with a head node you can install system packages on
-- **Go** and **`make`** to build the package from source (see [`go.mod`](https://github.com/NVIDIA/topograph/blob/main/go.mod) for the exact Go version), or a pre-built Debian/RPM package if your organization distributes one
+- **Go** and **`make`** to build the package from source (see [`go.mod`](https://github.com/dsx-ai-factory/topograph/blob/main/go.mod) for the exact Go version), or a pre-built Debian/RPM package if your organization distributes one
 - **A supported provider** for your environment — see the [provider documentation](../providers/) for per-provider setup
 
 ## Install
@@ -13,7 +13,7 @@ Install Topograph on a Slurm head node so it can generate topology configuration
 Clone the repo and build a native package for your distribution:
 
 ```bash
-git clone https://github.com/NVIDIA/topograph.git
+git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 
 make deb        # Debian / Ubuntu — produces .deb under bin/
@@ -60,5 +60,5 @@ HTTP 200 means the API server is up.
 - **[Slurm engine reference](../engines/slurm.md)** — full configuration, tree vs block vs per-partition topology formats, `strigger` integration
 - **[Provider documentation](../providers/)** — per-provider prerequisites and configuration
 - **[Config and API reference](../api.md)** — `topograph-config.yaml` schema, `/v1/generate` and `/v1/topology` contract
-- **[`scripts/create-topology-update-script.sh`](https://github.com/NVIDIA/topograph/blob/main/scripts/create-topology-update-script.sh)** — generates the Slurm trigger that calls `/v1/generate` automatically when the cluster's node inventory changes
+- **[`scripts/create-topology-update-script.sh`](https://github.com/dsx-ai-factory/topograph/blob/main/scripts/create-topology-update-script.sh)** — generates the Slurm trigger that calls `/v1/generate` automatically when the cluster's node inventory changes
 - **[Architecture](../architecture.md)** — how the API server, Provider, and Engine fit together

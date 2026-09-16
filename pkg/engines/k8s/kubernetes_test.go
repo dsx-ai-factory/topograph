@@ -17,8 +17,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
-	internalk8s "github.com/NVIDIA/topograph/internal/k8s"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	internalk8s "github.com/dsx-ai-factory/topograph/internal/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 func TestGetComputeInstances(t *testing.T) {

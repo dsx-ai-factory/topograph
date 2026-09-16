@@ -26,7 +26,7 @@ produced.
 Base install command (pick the engine-specific flags from the two sections below):
 
 ```bash
-helm repo add topograph https://NVIDIA.github.io/topograph
+helm repo add topograph https://dsx-ai-factory.github.io/topograph
 helm repo update
 helm install topograph topograph/topograph \
   --version <chart-version> \
@@ -43,7 +43,7 @@ participating node already has a valid `nvidia.com/gpu.clique` label; see the
 [DRA provider documentation](../providers/dra.md). To see available chart
 versions, run `helm search repo topograph/topograph --versions`.
 
-Provider-specific credentials and parameters are passed via Helm values. See the [chart README](https://github.com/NVIDIA/topograph/blob/main/charts/topograph/README.md) and [`values.yaml`](https://github.com/NVIDIA/topograph/blob/main/charts/topograph/values.yaml) for the full values shape, plus the example values files shipped in the chart directory.
+Provider-specific credentials and parameters are passed via Helm values. See the [chart README](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/README.md) and [`values.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.yaml) for the full values shape, plus the example values files shipped in the chart directory.
 
 ## Verify
 
@@ -110,11 +110,11 @@ Engine-specific install flags point the `slinky` engine at the Slinky deployment
   --set engine.params.topologyConfigPath=topology.conf
 ```
 
-The full engine-parameter shape (`podSelector`, `plugin`, `blockSizes`, per-partition topologies, …) is documented in the [chart README](https://github.com/NVIDIA/topograph/blob/main/charts/topograph/README.md). Example values files for common Slinky scenarios ship in the chart directory:
+The full engine-parameter shape (`podSelector`, `plugin`, `blockSizes`, per-partition topologies, …) is documented in the [chart README](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/README.md). Example values files for common Slinky scenarios ship in the chart directory:
 
-- [`values.slinky.tree-example.yaml`](https://github.com/NVIDIA/topograph/blob/main/charts/topograph/values.slinky.tree-example.yaml) — tree topology
-- [`values.slinky.block-example.yaml`](https://github.com/NVIDIA/topograph/blob/main/charts/topograph/values.slinky.block-example.yaml) — block topology
-- [`values.slinky.partition-example.yaml`](https://github.com/NVIDIA/topograph/blob/main/charts/topograph/values.slinky.partition-example.yaml) — per-partition topologies (Slurm 25.05+)
+- [`values.slinky.tree-example.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.slinky.tree-example.yaml) — tree topology
+- [`values.slinky.block-example.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.slinky.block-example.yaml) — block topology
+- [`values.slinky.partition-example.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.slinky.partition-example.yaml) — per-partition topologies (Slurm 25.05+)
 
 To confirm the topology was written to the target `ConfigMap`:
 
@@ -129,7 +129,7 @@ The key configured via `topologyConfigPath` (by default `topology.conf`) should 
 - **[Kubernetes engine reference](../engines/k8s.md)** — configuration, access patterns (`Ingress`, `HTTPRoute`, `NetworkPolicy`, `ServiceMonitor`), mixed workload considerations
 - **[NFD engine reference](../engines/nfd.md)** — `NodeFeature` / `NodeFeatureGroup` output, requirements, and caveats
 - **[Slinky engine reference](../engines/slinky.md)** — `slinky` engine parameters, `ConfigMap` annotations, tree / block / per-partition usage examples (the chart-level deployment surface is shared with the `k8s` engine and is documented under the Kubernetes engine reference above)
-- **[Chart README](https://github.com/NVIDIA/topograph/blob/main/charts/topograph/README.md)** — full values reference, `helm test` details, air-gapped environments, and component layout
+- **[Chart README](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/README.md)** — full values reference, `helm test` details, air-gapped environments, and component layout
 - **[Node labels reference](../reference/node-labels.md)** — label key semantics, value behavior (FNV hashing for long values), integration with the NVIDIA GPU Operator, downstream consumer notes (relevant primarily to the `k8s` engine)
 - **[Provider documentation](../providers/)** — per-provider prerequisites and configuration
 - **[Config and API reference](../api.md)** — `topograph-config.yaml` schema, API endpoints, request/response shape

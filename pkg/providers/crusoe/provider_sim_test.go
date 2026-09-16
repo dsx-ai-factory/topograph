@@ -12,10 +12,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/pkg/engines/slurm"
-	"github.com/NVIDIA/topograph/pkg/models"
-	"github.com/NVIDIA/topograph/pkg/providers"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/engines/slurm"
+	"github.com/dsx-ai-factory/topograph/pkg/models"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 func TestLoaderSimBadModel(t *testing.T) {

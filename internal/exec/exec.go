@@ -24,7 +24,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/NVIDIA/topograph/internal/cluset"
+	"github.com/dsx-ai-factory/topograph/internal/cluset"
 	"k8s.io/klog/v2"
 )
 

@@ -17,11 +17,11 @@ cover.
 Before opening a pull request, open an issue — this applies to bug fixes,
 features, and any other change:
 
-- **Bugs**: file a [bug report](https://github.com/NVIDIA/topograph/issues/new?template=bug_report.yml)
+- **Bugs**: file a [bug report](https://github.com/dsx-ai-factory/topograph/issues/new?template=bug_report.yml)
   describing what happened and what you expected instead.
-- **Features or enhancements**: file a [feature request](https://github.com/NVIDIA/topograph/issues/new?template=feature_request.yml)
+- **Features or enhancements**: file a [feature request](https://github.com/dsx-ai-factory/topograph/issues/new?template=feature_request.yml)
   describing the problem and your proposed solution.
-- Search [existing issues](https://github.com/NVIDIA/topograph/issues) first to
+- Search [existing issues](https://github.com/dsx-ai-factory/topograph/issues) first to
   avoid duplicates, and comment on the issue to claim it before starting work.
 
 Opening the issue first gives maintainers a chance to weigh in on approach
@@ -43,7 +43,7 @@ issue first — a pull request is fine.
 Topograph doesn't run a formal `P0`/`P1`/`P2` label system or an automated
 triage bot. Priority is set informally, from a few concrete inputs:
 
-- **Your own stated priority.** The [feature request template](https://github.com/NVIDIA/topograph/issues/new?template=feature_request.yml)
+- **Your own stated priority.** The [feature request template](https://github.com/dsx-ai-factory/topograph/issues/new?template=feature_request.yml)
   asks you to pick "Nice to have", "Important (would improve my
   workflow)", or "Critical (blocking adoption or major use case)" — this
   is read during triage, so pick the one that actually reflects your
@@ -54,7 +54,7 @@ triage bot. Priority is set informally, from a few concrete inputs:
   something is worth working on next. There's no separate "triage
   meeting" — it happens asynchronously on the issue itself.
 - **The Roadmap issue.** The pinned **Roadmap & Focus Areas** issue on the
-  [issue tracker](https://github.com/NVIDIA/topograph/issues) is the
+  [issue tracker](https://github.com/dsx-ai-factory/topograph/issues) is the
   closest thing to a prioritized backlog — it lists the areas maintainers
   are actively steering the project toward. An issue that maps onto one of
   those areas is more likely to get picked up sooner than one that
@@ -198,14 +198,14 @@ your commit automatically with `git commit -s`.
 This repo runs the [`probot/dco`](https://probot.github.io/apps/dco/) GitHub
 App on every pull request — it checks every commit in the PR for a
 `Signed-off-by:` trailer and reports a `DCO` check in the PR's status
-checks. There is no `.github/dco.yml` exemption configured: NVIDIA org
+checks. There is no `.github/dco.yml` exemption configured: `dsx-ai-factory` org
 membership does not bypass it, and neither does any other affiliation.
 
 **If the `DCO` check fails**, rebase the branch to add sign-off to every
 commit rather than opening a new PR. The [Development Guide](DEVELOPMENT.md#clone-and-build)'s
 clone flow names the remote `origin`; if you're working from a fork with
 `origin` pointing at your fork, substitute whatever remote tracks
-`NVIDIA/topograph`'s `main` (commonly added as `upstream`) instead:
+`dsx-ai-factory/topograph`'s `main` (commonly added as `upstream`) instead:
 
 ```bash
 # add sign-off to every commit on the branch since it diverged from main
@@ -334,7 +334,7 @@ If you haven't heard anything after 5 business days:
    or [#gpu-nvidia](https://kubernetes.slack.com/archives/C09N46EFJR0) — if
    the PR thread goes quiet.
 3. For a stalled issue rather than a PR, check the pinned **Roadmap & Focus
-   Areas** issue on the [issue tracker](https://github.com/NVIDIA/topograph/issues)
+   Areas** issue on the [issue tracker](https://github.com/dsx-ai-factory/topograph/issues)
    to see if it's already being tracked there.
 
 Keep the PR in draft while you're still reshaping it — draft PRs don't page
@@ -349,7 +349,7 @@ Community discussion happens on the [Kubernetes Slack](https://slack.k8s.io/):
 - [#topology-aware-scheduling](https://kubernetes.slack.com/archives/C012XSGFZQE) — topology-aware scheduling across the ecosystem
 - [#gpu-nvidia](https://kubernetes.slack.com/archives/C09N46EFJR0) — NVIDIA GPU support on Kubernetes
 
-For the project's current direction and a list of areas where contributions are especially welcome, see the pinned **Roadmap & Focus Areas** issue on the [issue tracker](https://github.com/NVIDIA/topograph/issues).
+For the project's current direction and a list of areas where contributions are especially welcome, see the pinned **Roadmap & Focus Areas** issue on the [issue tracker](https://github.com/dsx-ai-factory/topograph/issues).
 
 ## Community standards
 
@@ -419,7 +419,7 @@ before anyone can act on them:
   rather than appeal. A decision going against you is not a conduct violation.
   How someone argues for that decision can be, and that part is in scope.
 - **Bug reports, feature requests, and support questions.** These belong on
-  the [issue tracker](https://github.com/NVIDIA/topograph/issues) or in the
+  the [issue tracker](https://github.com/dsx-ai-factory/topograph/issues) or in the
   [community Slack channels](#community). A stalled issue or an unreviewed
   pull request is a [follow-up](#following-up) matter, not a conduct one.
 - **Conduct with no connection to a project space.** The Code of Conduct

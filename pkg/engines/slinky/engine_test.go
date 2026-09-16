@@ -33,10 +33,10 @@ import (
 	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
 
-	"github.com/NVIDIA/topograph/pkg/engines/slurm"
-	"github.com/NVIDIA/topograph/pkg/models"
-	"github.com/NVIDIA/topograph/pkg/topology"
-	"github.com/NVIDIA/topograph/pkg/translate"
+	"github.com/dsx-ai-factory/topograph/pkg/engines/slurm"
+	"github.com/dsx-ai-factory/topograph/pkg/models"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/translate"
 )
 
 const testAcceleratorDomainSourceLabel = "example.com/accelerator-domain"

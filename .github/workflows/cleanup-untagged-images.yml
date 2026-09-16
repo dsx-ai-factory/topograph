@@ -43,7 +43,7 @@ permissions:
 jobs:
   cleanup-untagged-images:
     name: Cleanup Untagged Images
-    if: github.repository == 'NVIDIA/topograph'
+    if: github.repository == 'dsx-ai-factory/topograph'
     runs-on: linux-amd64-cpu32
     timeout-minutes: 30
     permissions:
@@ -57,7 +57,7 @@ jobs:
       - name: Delete stale untagged images
         uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
         with:
-          account: NVIDIA
+          account: dsx-ai-factory
           token: ${{ secrets.GITHUB_TOKEN }}
           image-names: topograph
           cut-off: ${{ github.event.inputs.cut_off || '30d' }}

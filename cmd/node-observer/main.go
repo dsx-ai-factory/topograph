@@ -28,8 +28,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/internal/version"
-	"github.com/NVIDIA/topograph/pkg/node_observer"
+	"github.com/dsx-ai-factory/topograph/internal/version"
+	"github.com/dsx-ai-factory/topograph/pkg/node_observer"
 )
 
 func main() {

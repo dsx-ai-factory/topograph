@@ -23,8 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/internal/component"
-	"github.com/NVIDIA/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/internal/component"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
 )
 
 type Loader = component.Loader[string, struct{}]

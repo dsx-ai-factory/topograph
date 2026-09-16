@@ -21,8 +21,8 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/klog/v2"
 
-	internalconfig "github.com/NVIDIA/topograph/internal/config"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	internalconfig "github.com/dsx-ai-factory/topograph/internal/config"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 type nodeSelectorConfig struct {
