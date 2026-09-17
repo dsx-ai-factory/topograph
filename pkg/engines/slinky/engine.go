@@ -94,7 +94,8 @@ type Params struct {
 	// AcceleratorDomainSourceLabel optionally selects an existing Kubernetes
 	// Node label as the authoritative block-domain source.
 	AcceleratorDomainSourceLabel string `mapstructure:"acceleratorDomainSourceLabel"`
-	// ConfigUpdateMode specifies the mode for updating the slurm config: valid values {"none", "skeleton-only"}
+	// ConfigUpdateMode specifies the mode for updating the slurm config: valid values {"", "none", "skeleton-only"}.
+	// An empty value (the default) writes the full topology, including node membership.
 	ConfigUpdateMode string `mapstructure:"configUpdateMode,omitempty"`
 	// Topologies specifies per-partition topology configuration
 	Topologies map[string]*Topology `mapstructure:"topologies,omitempty"`
@@ -157,7 +158,7 @@ func getParameters(params engines.Config) (*Params, error) {
 	}
 	// Validate config update mode
 	if len(p.ConfigUpdateMode) != 0 && p.ConfigUpdateMode != ConfigUpdateModeNone && p.ConfigUpdateMode != ConfigUpdateModeSkeletonOnly {
-		return nil, fmt.Errorf("invalid configUpdateMode: %s, must be either %s, or %s", p.ConfigUpdateMode, ConfigUpdateModeNone, ConfigUpdateModeSkeletonOnly)
+		return nil, fmt.Errorf("invalid configUpdateMode: %s, must be unset (full update), %q, or %q", p.ConfigUpdateMode, ConfigUpdateModeNone, ConfigUpdateModeSkeletonOnly)
 	}
 	sel, err := metav1.LabelSelectorAsSelector(&p.PodSelector)
 	if err != nil {

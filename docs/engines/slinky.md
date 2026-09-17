@@ -102,7 +102,8 @@ topology requests, which in turn controls how often SLURM reconfigures:
 
 | Value | Behavior |
 |---|---|
-| `none` (default) | Discovered topology data is not written to the ConfigMap at all. |
+| `` (empty, default) | The full topology, including node membership, is written to the ConfigMap. |
+| `none` | Discovered topology data is not written to the ConfigMap at all. |
 | `skeleton-only` | The ConfigMap is updated with a reduced "skeleton" of the topology, omitting node membership so unrelated node churn does not force a reconfigure. |
 
 ```yaml
