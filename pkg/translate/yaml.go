@@ -31,6 +31,9 @@ type TopologyUnit struct {
 type TreeTopo struct {
 	Switches []*Switch           `yaml:"switches"`
 	parents  map[string][]string `yaml:"-"`
+	// topLevel holds the switch IDs directly under the tree root, i.e. the
+	// top-level tier after trim-tiers has already been applied upstream.
+	topLevel map[string]bool `yaml:"-"`
 }
 
 type Switch struct {
@@ -58,9 +61,13 @@ func copySkeleton(topologies []*TopologyUnit) []*TopologyUnit {
 		if tu.Tree != nil {
 			replica.Tree = &TreeTopo{}
 			for _, sw := range tu.Tree.Switches {
+				// Skeleton-only output keeps only the top-level switches,
+				// declared by name alone.
+				if !tu.Tree.topLevel[sw.Name] {
+					continue
+				}
 				replica.Tree.Switches = append(replica.Tree.Switches, &Switch{
-					Name:     sw.Name,
-					Children: sw.Children,
+					Name: sw.Name,
 				})
 			}
 		}
@@ -254,7 +261,7 @@ func (nt *NetworkTopology) getTreeTopologyUnit(topoName string, topoSpec *Topolo
 	if len(tree) == 0 {
 		tu.Flat = true
 	} else {
-		tu.Tree = &TreeTopo{Switches: []*Switch{}, parents: make(map[string][]string)}
+		tu.Tree = &TreeTopo{Switches: []*Switch{}, parents: make(map[string][]string), topLevel: make(map[string]bool)}
 
 		visited := make(map[string]bool)
 		queue := []string{""}
@@ -269,6 +276,13 @@ func (nt *NetworkTopology) getTreeTopologyUnit(topoName string, topoSpec *Topolo
 			if !ok {
 				// ignore the leaves (nodes)
 				continue
+			}
+			if len(switchID) == 0 {
+				// connects are the switch IDs directly under the root, i.e. the
+				// top-level tier.
+				for _, id := range connects {
+					tu.Tree.topLevel[id] = true
+				}
 			}
 			if len(switchID) != 0 {
 				v := nt.vertices[switchID]
