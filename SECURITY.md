@@ -33,8 +33,6 @@ To report a potential security vulnerability in any NVIDIA product:
    	 - Proof-of-concept or exploit code
    	 - Potential impact of the vulnerability, including how an attacker could exploit the vulnerability
 
-While NVIDIA currently does not have a bug bounty program, we do offer acknowledgement when an externally reported security issue is addressed under our coordinated vulnerability disclosure policy. Please visit our [Product Security Incident Response Team (PSIRT)](https://www.nvidia.com/en-us/security/psirt-policies/) policies page for more information.
-
 ## Embargo and Coordinated Disclosure
 
 Reports about Topograph are handled under NVIDIA's coordinated vulnerability disclosure policy,
@@ -62,10 +60,6 @@ which NVIDIA PSIRT operates. What to expect between your report and public discl
    `### Security` heading in [CHANGELOG.md](./CHANGELOG.md). PSIRT determines whether a separate
    NVIDIA security bulletin is published, and when.
 
-Acknowledgement for an externally reported issue is offered under that same policy, as stated
-above. Reporting privately and observing the embargo is what keeps that acknowledgement, and the
-coordinated fix, possible.
-
 ## Verifying Release Artifacts
 
 This section applies to releases published after `v1.0.0`, the first ones cut by the release
@@ -75,8 +69,8 @@ attestation for either, no checksum file, and no assets on their GitHub release 
 expected for those releases, not a supply chain problem.
 
 An official release publishes a multi-architecture container image at
-`ghcr.io/nvidia/topograph:vX.Y.Z`, a Helm chart package in the chart repository at
-`https://nvidia.github.io/topograph`, and a SHA-256 checksum file beside the chart package. The
+`ghcr.io/dsx-ai-factory/topograph:vX.Y.Z`, a Helm chart package in the chart repository at
+`https://dsx-ai-factory.github.io/topograph`, and a SHA-256 checksum file beside the chart package. The
 chart package and its checksum are also attached to the GitHub release.
 
 The image and the chart package each carry SLSA build provenance produced by GitHub artifact
@@ -86,21 +80,21 @@ substituting the release you are checking for `vX.Y.Z` and `X.Y.Z`.
 Container image:
 
 ```bash
-gh attestation verify oci://ghcr.io/nvidia/topograph:vX.Y.Z \
-  --repo NVIDIA/topograph \
-  --signer-workflow NVIDIA/topograph/.github/workflows/docker.yml \
+gh attestation verify oci://ghcr.io/dsx-ai-factory/topograph:vX.Y.Z \
+  --repo dsx-ai-factory/topograph \
+  --signer-workflow dsx-ai-factory/topograph/.github/workflows/docker.yml \
   --source-ref refs/tags/vX.Y.Z
 ```
 
 Helm chart package and its checksum:
 
 ```bash
-curl -fsSLO https://nvidia.github.io/topograph/topograph-X.Y.Z.tgz
-curl -fsSLO https://nvidia.github.io/topograph/topograph-X.Y.Z.tgz.sha256
+curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-X.Y.Z.tgz
+curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-X.Y.Z.tgz.sha256
 sha256sum --check topograph-X.Y.Z.tgz.sha256
 gh attestation verify topograph-X.Y.Z.tgz \
-  --repo NVIDIA/topograph \
-  --signer-workflow NVIDIA/topograph/.github/workflows/release.yml \
+  --repo dsx-ai-factory/topograph \
+  --signer-workflow dsx-ai-factory/topograph/.github/workflows/release.yml \
   --source-ref refs/tags/vX.Y.Z
 ```
 
