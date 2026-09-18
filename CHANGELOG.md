@@ -46,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - GCP and OCI simulation providers now handle partial final pagination pages without indexing past the available instances.
 - Non-positive `pageSize` configuration values now emit a warning and use the provider default instead of reaching provider APIs and simulation pagination loops.
 - The node observer now regenerates topology for every deletion its informers report. Deletions that happen while a watch is disconnected arrive as `cache.DeletedFinalStateUnknown` tombstones, which carry a nil object when the resource has already left the informer store. The node, pod, API server, and node-data-broker delete handlers all required the tombstone to unwrap to the watched type, so those deletions were dropped and the topology stayed stale until an unrelated event arrived.
+- Slinky engine's `configUpdateMode: skeleton-only` now omits intermediate and leaf switches entirely for `topology/tree` output, keeping only the top-level (root) switches declared by name alone — their child-switch list is dropped too, since it would otherwise change whenever a switch below them is added or removed. Composes with a provider's `trimTiers`: "top-level" is the highest surviving tier after trim-tiers has already clipped the fabric path.
 
 ### Security
 

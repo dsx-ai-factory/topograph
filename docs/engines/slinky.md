@@ -95,6 +95,45 @@ engine:
 
 `blockName.nodeNameRegexp` uses Go regular-expression syntax and may match anywhere in the node name; use anchors when needed. `blockName.format` uses Go regexp expansion syntax, including numeric captures such as `${1}` and named captures such as `${domain}`. Every node in a non-empty block must match and produce the same non-empty name, and names must be unique across blocks. Invalid expressions, unmatched nodes, inconsistent names within a block, and duplicate names are rejected. Empty complemented blocks retain their generated names.
 
+### Config update mode
+
+`configUpdateMode` controls how much the generated ConfigMap changes between
+topology requests, which in turn controls how often SLURM reconfigures:
+
+| Value | Behavior |
+|---|---|
+| `` (empty, default) | The full topology, including node membership, is written to the ConfigMap. |
+| `none` | Discovered topology data is not written to the ConfigMap at all. |
+| `skeleton-only` | The ConfigMap is updated with a reduced "skeleton" of the topology, omitting node membership so unrelated node churn does not force a reconfigure. |
+
+```yaml
+engine:
+  name: slinky
+  params:
+    namespace: ns-slinky
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/component: compute
+    plugin: topology/tree
+    topologyConfigmapName: slurm-config
+    topologyConfigPath: topology.conf
+    configUpdateMode: skeleton-only
+```
+
+For `topology/block`, skeleton-only output keeps every `BlockName` entry but
+drops the `Nodes=` list, since block topology has no hierarchy below a block.
+
+For `topology/tree`, skeleton-only output keeps only the top-level (root)
+switches, each declared by name alone — omitting intermediate and leaf
+switches entirely, not just their node lists, and omitting the top-level
+switch's own child-switch list too. This relies on Slurm's dynamic topology
+support to populate everything below the root without a reconfigure, so a
+change anywhere below the top level (for example dynamic leaf/spine
+reassignment, or adding/removing an intermediate switch) no longer touches the
+ConfigMap. When the provider also configures `trimTiers`, "top-level" means
+the highest surviving tier after trim-tiers has already clipped the fabric
+path — not necessarily the physical root of the discovered fabric.
+
 ### Using an existing Node label for block topology
 
 Set `acceleratorDomainSourceLabel` when another component already publishes the

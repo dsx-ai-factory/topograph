@@ -976,19 +976,16 @@ func TestConfigMapAnnotationsAndMetadata(t *testing.T) {
 }
 
 const (
-	//medium.yaml - tree topology skeleton
+	//medium.yaml - tree topology skeleton: only the top-level switch survives,
+	//declared by name alone, since intermediate/leaf switches are trimmed
+	//entirely under skeleton-only and the top-level switch's own children
+	//list is dropped too (it would otherwise change, and trigger a
+	//reconfigure, whenever a switch below it is added or removed).
 	mediumTreeTopologyYamlSkeleton = `- topology: topo-0
   cluster_default: false
   tree:
     switches:
         - switch: sw3
-          children: sw[21-22]
-        - switch: sw21
-          children: sw11
-        - switch: sw22
-          children: sw14
-        - switch: sw11
-        - switch: sw14
 `
 	//medium.yaml - full tree topology
 	mediumTreeTopologyYamlFull = `- topology: topo-0
@@ -1030,19 +1027,15 @@ const (
         - block: block2
           nodes: "1301"
 `
-	//medium.yaml - combined topology skeleton
+	//medium.yaml - combined topology skeleton: only the top-level tree switch
+	//survives, declared by name alone with its children list dropped, since
+	//intermediate/leaf switches are trimmed entirely under skeleton-only;
+	//block topology is unaffected since it has no hierarchy.
 	mediumCombinedTopologyYamlSkeleton = `- topology: topo-0
   cluster_default: false
   tree:
     switches:
         - switch: sw3
-          children: sw[21-22]
-        - switch: sw21
-          children: sw11
-        - switch: sw22
-          children: sw13
-        - switch: sw11
-        - switch: sw13
 - topology: topo-1
   cluster_default: false
   block:
@@ -1550,6 +1543,78 @@ func TestGenerateDynamicNodesOutput(t *testing.T) {
 			require.Equal(t, 0, countClientActions(client.Actions(), "patch", "nodes"))
 		})
 	}
+}
+
+// TestGenerateDynamicNodesOutputSkeletonOnlyComposesWithTrimTiers verifies
+// that skeleton-only tree output composes correctly with a provider's
+// trimTiers setting: "top-level" means the highest surviving tier after
+// trim-tiers has already clipped the fabric path upstream, not necessarily
+// the physical root of the discovered fabric. trimTiers is applied by the
+// provider before the graph ever reaches the engine, so this builds the
+// already-trimmed graph directly, the way GenerateOutput always receives it.
+func TestGenerateDynamicNodesOutputSkeletonOnlyComposesWithTrimTiers(t *testing.T) {
+	topo := topology.NewClusterTopology()
+	topo.Append(&topology.InstanceTopology{
+		InstanceID:  "i-node0",
+		FabricTiers: topology.ClosestFirstFabricTiers("fabric-0", "fabric-1", "fabric-2"),
+	})
+	// trimTiers=1 clips the physical root (fabric-2); fabric-1 becomes the
+	// only tier the engine ever sees as "top-level".
+	graph := topo.ToGraph("test", []topology.ComputeInstances{{
+		Instances: map[string]string{"i-node0": "node0"},
+	}}, 1, false)
+
+	client := fake.NewSimpleClientset(
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "k8s-node-0"}},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "k8s-pod-0",
+				Namespace: "test-ns",
+				Labels: map[string]string{
+					"app":                     "slinky",
+					topology.KeySlurmNodeName: "node0",
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName:   "k8s-node-0",
+				Containers: []corev1.Container{{Name: "test", Image: "test"}},
+			},
+			Status: corev1.PodStatus{
+				Phase:      corev1.PodRunning,
+				Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+			},
+		},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "slurm-config", Namespace: "test-ns"}},
+	)
+
+	slinkyPodSel := metav1.LabelSelector{MatchLabels: map[string]string{"app": "slinky"}}
+	podListSel, err := metav1.LabelSelectorAsSelector(&slinkyPodSel)
+	require.NoError(t, err)
+
+	params := &Params{
+		Namespace:        "test-ns",
+		ConfigMapName:    "slurm-config",
+		ConfigPath:       "topology.yaml",
+		PodSelector:      slinkyPodSel,
+		UseDynamicNodes:  true,
+		podListOpt:       &metav1.ListOptions{LabelSelector: podListSel.String()},
+		nodeListOpt:      &metav1.ListOptions{},
+		ConfigUpdateMode: ConfigUpdateModeSkeletonOnly,
+		Topologies:       slurmTopologiesForDynamicTest([]string{topology.TopologyTree}),
+	}
+	engine := &SlinkyEngine{client: client, params: params}
+
+	_, httpErr := engine.GenerateOutput(context.Background(), graph, nil)
+	require.Nil(t, httpErr)
+
+	cm, err := client.CoreV1().ConfigMaps("test-ns").Get(context.Background(), "slurm-config", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, `- topology: topo-0
+  cluster_default: false
+  tree:
+    switches:
+        - switch: fabric-1
+`, cm.Data["topology.yaml"])
 }
 
 func countClientActions(actions []k8stesting.Action, verb, resource string) int {

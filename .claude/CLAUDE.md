@@ -144,7 +144,14 @@ covers only what the tooling cannot tell you.
 
 - `go fmt ./...` is authoritative; do not hand-format
 - `golangci-lint` runs in CI with `--new-from-rev` so only new issues block; fix warnings in code you touch
-- Copyright header on every new Go file: `Copyright (c) <year>, NVIDIA CORPORATION.  All rights reserved.` followed by the Apache 2.0 boilerplate matching existing files
+- Copyright header on every new Go file:
+  ```go
+  /*
+   * Copyright <year> NVIDIA CORPORATION
+   * SPDX-License-Identifier: Apache-2.0
+   */
+  ```
+  A few files predating this convention still carry the long Apache 2.0 boilerplate; match the short SPDX form above for new files rather than copying those.
 
 ### Provider interface
 
