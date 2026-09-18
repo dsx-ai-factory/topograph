@@ -24,6 +24,7 @@ import (
 	"syscall"
 
 	"github.com/oklog/run"
+	"github.com/spf13/pflag"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -35,11 +36,12 @@ import (
 func main() {
 	var c string
 	var ver bool
-	flag.StringVar(&c, "c", "/etc/topograph/node-observer-config.yaml", "config file")
-	flag.BoolVar(&ver, "version", false, "show the version")
+	pflag.StringVarP(&c, "config", "c", "/etc/topograph/node-observer-config.yaml", "config file")
+	pflag.BoolVar(&ver, "version", false, "show the version")
 
 	klog.InitFlags(nil)
-	flag.Parse()
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	pflag.Parse()
 	defer klog.Flush()
 
 	if ver {

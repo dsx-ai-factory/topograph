@@ -24,6 +24,7 @@ import (
 	"syscall"
 
 	"github.com/oklog/run"
+	"github.com/spf13/pflag"
 	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/internal/version"
@@ -34,11 +35,12 @@ import (
 func main() {
 	var cfg string
 	var ver bool
-	flag.StringVar(&cfg, "c", "/etc/topograph/topograph-config.yaml", "config file")
-	flag.BoolVar(&ver, "version", false, "show the version")
+	pflag.StringVarP(&cfg, "config", "c", "/etc/topograph/topograph-config.yaml", "config file")
+	pflag.BoolVar(&ver, "version", false, "show the version")
 
 	klog.InitFlags(nil)
-	flag.Parse()
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	pflag.Parse()
 	defer klog.Flush()
 
 	if ver {
