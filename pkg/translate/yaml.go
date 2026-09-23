@@ -203,16 +203,19 @@ func (nt *NetworkTopology) getBlockTopologyUnit(topoName string, topoSpec *Topol
 		}
 
 		// populate block topology units ordered by block indices
-		bInfos, blockNames, _, err := formatBlockNames(bInfos, compileBlockNameFormatter(topoSpec.BlockName))
+		kept, blockNames, _, err := formatBlockNames(bInfos, compileBlockNameFormatter(topoSpec.BlockName))
 		if err != nil {
 			return nil, err
 		}
 
-		if len(bInfos) == 0 {
-			// All blocks were dropped by formatBlockNames; fall back to Flat instead of erroring out of getBlockSizes below.
+		if anyBlockHasNodes(bInfos) && !anyBlockHasNodes(kept) {
+			// All real blocks were dropped by formatBlockNames (node-less placeholders, if any, survived);
+			// fall back to Flat instead of erroring out of getBlockSizes below.
+			klog.Warningf("topology %q: falling back to flat topology because all blocks were dropped due to blockName formatting failures", topoName)
 			tu.Flat = true
 			return tu, nil
 		}
+		bInfos = kept
 
 		blocks := make([]*Block, 0, len(bInfos))
 		parents := make(map[string]string)

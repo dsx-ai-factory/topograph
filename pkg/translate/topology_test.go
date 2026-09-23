@@ -392,7 +392,7 @@ BlockSizes=2
 	// BlockName= lines.
 	spec, httpErr = nt.GetNodeTopologySpec("gpu-b008-srv1", nil)
 	require.Nil(t, httpErr)
-	require.Equal(t, "default:", spec)
+	require.Equal(t, "", spec)
 }
 
 func TestToBlockTopologySkipsUnmatchedHostname(t *testing.T) {
@@ -419,7 +419,7 @@ BlockSizes=3
 
 	spec, httpErr := nt.GetNodeTopologySpec("Node201", nil)
 	require.Nil(t, httpErr)
-	require.Equal(t, "default:", spec)
+	require.Equal(t, "", spec)
 }
 
 func TestToBlockTopologySkipsEmptyName(t *testing.T) {
@@ -447,7 +447,7 @@ BlockSizes=1
 
 	spec, httpErr := nt.GetNodeTopologySpec("host-", nil)
 	require.Nil(t, httpErr)
-	require.Equal(t, "default:", spec)
+	require.Equal(t, "", spec)
 }
 
 func TestToBlockTopologyDuplicateNamesStillFail(t *testing.T) {
@@ -477,6 +477,35 @@ func TestToBlockTopologyAllBlocksDroppedFails(t *testing.T) {
 			// dropped: nothing is left to write a topology/block config from.
 			NodeNameRegexp: `^gpu-b([0-9]{3})$`,
 			Format:         `block${1}`,
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	httpErr := nt.Generate(buf)
+	require.NotNil(t, httpErr)
+	require.Contains(t, httpErr.Error(), "all blocks were dropped")
+}
+
+func TestToBlockTopologyAllBlocksDroppedFailsWithPaddedBlockSizes(t *testing.T) {
+	// complementBlocks pads the block list with node-less placeholder slots to
+	// fill out the requested BlockSizes shape. formatBlockName always keeps a
+	// node-less block regardless of blockName errors, so a plain "kept is empty"
+	// check would miss this: every real, node-carrying block gets dropped, but a
+	// placeholder survives and len(kept) != 0.
+	domains := testDomainMap(map[string]map[string]string{
+		"d1": {"h1": "I1", "h2": "I2"},
+		"d2": {"h3": "I3", "h4": "I4"},
+		"d3": {"h5": "I5", "h6": "I6"},
+	})
+	v := &topology.Graph{Domains: domains}
+	cfg := &Config{
+		Plugin:     topology.TopologyBlock,
+		BlockSizes: []int{4, 8, 16},
+		BlockName: &BlockNameConfig{
+			NodeNameRegexp: `^nomatch$`,
+			Format:         `x`,
 		},
 	}
 	nt, err := NewNetworkTopology(v, cfg)
@@ -1108,6 +1137,39 @@ func TestBlockTopologyYamlBlockNameAllDroppedFallsBackToFlat(t *testing.T) {
 
 	require.Equal(t, "good", topologies[1].Name)
 	require.True(t, topologies[1].Flat)
+}
+
+func TestBlockTopologyYamlBlockNameAllDroppedFallsBackToFlatWithPaddedBlockSizes(t *testing.T) {
+	// Mirrors TestToBlockTopologyAllBlocksDroppedFailsWithPaddedBlockSizes for the
+	// per-partition path: complementBlocks pads with node-less placeholders when
+	// BlockSizes is configured, so the Flat fallback must also check for real
+	// (node-carrying) content rather than just an empty kept slice.
+	domains := testDomainMap(map[string]map[string]string{
+		"d1": {"h1": "I1", "h2": "I2"},
+		"d2": {"h3": "I3", "h4": "I4"},
+	})
+	v := &topology.Graph{Domains: domains}
+	cfg := &Config{
+		Topologies: map[string]*TopologySpec{
+			"topo": {
+				Plugin:     topology.TopologyBlock,
+				BlockSizes: []int{4, 8},
+				BlockName: &BlockNameConfig{
+					NodeNameRegexp: `^nomatch$`,
+					Format:         `x`,
+				},
+				Nodes: []string{"h1", "h2", "h3", "h4"},
+			},
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	topologies, httpErr := nt.GetTopologies()
+	require.Nil(t, httpErr)
+	require.Len(t, topologies, 1)
+	require.True(t, topologies[0].Flat)
+	require.Nil(t, topologies[0].Block)
 }
 
 func TestGetNodeTopologySpecInTreeTopologyConf(t *testing.T) {

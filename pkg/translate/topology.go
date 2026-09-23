@@ -454,6 +454,10 @@ func (nt *NetworkTopology) GetNodeTopologySpec(node string, topologies []*Topolo
 		}
 		switch nt.config.Plugin {
 		case topology.TopologyBlock:
+			if nodeInfo.blockID == "" {
+				// Node's block was dropped; avoid emitting malformed "default:".
+				return "", nil
+			}
 			return fmt.Sprintf("default:%s", nodeInfo.blockID), nil
 		case topology.TopologyTree:
 			return fmt.Sprintf("default:%s", strings.Join(nodeInfo.switches, ":")), nil

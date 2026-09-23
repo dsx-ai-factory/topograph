@@ -16,6 +16,19 @@ import (
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 )
 
+// anyBlockHasNodes reports whether any block in the list carries at least one node.
+// complementBlocks can pad a block list with node-less placeholder slots, which
+// formatBlockName always keeps regardless of blockName errors, so a plain len()
+// check on the kept list cannot detect "every real block was dropped".
+func anyBlockHasNodes(blocks []*blockInfo) bool {
+	for _, b := range blocks {
+		if len(b.nodes) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func findMinDomainSize(blocks []*blockInfo) (int, error) {
 	if len(blocks) == 0 {
 		return 0, fmt.Errorf("cannot determine blockSizes: topology contains no blocks")
@@ -72,7 +85,7 @@ func (nt *NetworkTopology) toBlockTopology(wr io.Writer, skeletonOnly bool) *htt
 			}
 		}
 	}
-	if len(blocks) > 0 && len(kept) == 0 {
+	if anyBlockHasNodes(blocks) && !anyBlockHasNodes(kept) {
 		// Cluster-wide topology/block has no Flat fallback,
 		// so fail explicitly here rather than via getBlockSizes's generic "no blocks" error.
 		return httperr.NewError(http.StatusBadRequest,
