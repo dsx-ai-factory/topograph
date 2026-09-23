@@ -95,21 +95,32 @@ func (f *blockNameFormatter) formatBlockName(defaultName, domainName string, nod
 	return blockName, nil
 }
 
-func formatBlockNames(blocks []*blockInfo, formatter *blockNameFormatter) ([]string, error) {
-	names := make([]string, len(blocks))
+// formatBlockNames formats a name for every block. A block whose nodes disagree on
+// the derived name, whose hostname doesn't match nodeNameRegexp, or whose format
+// produces an empty name is skipped: it is logged as a warning and returned in
+// dropped, but does not abort naming for the remaining blocks. Two different blocks
+// producing the same formatted name is still a hard error, since it's ambiguous
+// which one is misconfigured.
+func formatBlockNames(blocks []*blockInfo, formatter *blockNameFormatter) (kept []*blockInfo, names []string, dropped []*blockInfo, err error) {
+	kept = make([]*blockInfo, 0, len(blocks))
+	names = make([]string, 0, len(blocks))
+	dropped = make([]*blockInfo, 0)
 	seen := make(map[string]string, len(blocks))
-	for i, block := range blocks {
-		name, err := formatter.formatBlockName(block.id, block.name, block.nodes)
-		if err != nil {
-			return nil, err
+	for _, block := range blocks {
+		name, formatErr := formatter.formatBlockName(block.id, block.name, block.nodes)
+		if formatErr != nil {
+			klog.Warningf("skipping %s: %v", blockDescription(block.id, block.name), formatErr)
+			dropped = append(dropped, block)
+			continue
 		}
 		if previousBlock, ok := seen[name]; ok {
-			return nil, fmt.Errorf("blocks %q and %q produce duplicate block name %q", previousBlock, block.id, name)
+			return nil, nil, nil, fmt.Errorf("blocks %q and %q produce duplicate block name %q", previousBlock, block.id, name)
 		}
 		seen[name] = block.id
-		names[i] = name
+		kept = append(kept, block)
+		names = append(names, name)
 	}
-	return names, nil
+	return kept, names, dropped, nil
 }
 
 type NetworkTopology struct {

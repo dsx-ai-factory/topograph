@@ -351,6 +351,143 @@ BlockSizes=3,6
 	require.Equal(t, "default:domain1", spec)
 }
 
+// getBlockTestSetWithMismatchedHostnames mirrors the production report: one
+// accelerator domain ("domainA") has hosts whose names encode two different
+// network blocks ("b008" and "b031"), while another domain ("domainB") is
+// internally consistent.
+func getBlockTestSetWithMismatchedHostnames() *topology.Graph {
+	domains := testDomainMap(map[string]map[string]string{
+		"domainA": {"gpu-b008-srv1": "I1", "gpu-b031-srv2": "I2"},
+		"domainB": {"gpu-b010-srv1": "I3", "gpu-b010-srv2": "I4"},
+	})
+	return &topology.Graph{Domains: domains}
+}
+
+func TestToBlockTopologySkipsInconsistentDomain(t *testing.T) {
+	v := getBlockTestSetWithMismatchedHostnames()
+	cfg := &Config{
+		Plugin: topology.TopologyBlock,
+		BlockName: &BlockNameConfig{
+			NodeNameRegexp: `^gpu-b([0-9]{3})-srv[0-9]+$`,
+			Format:         `block${1}`,
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	require.Nil(t, nt.Generate(buf))
+	require.Equal(t, `# block010=domainB
+BlockName=block010 Nodes=gpu-b010-srv[1-2]
+BlockSizes=2
+`, buf.String())
+
+	spec, httpErr := nt.GetNodeTopologySpec("gpu-b010-srv1", nil)
+	require.Nil(t, httpErr)
+	require.Equal(t, "default:block010", spec)
+
+	// gpu-b008-srv1 belonged to the dropped domainA (its hosts disagree on
+	// the derived name); its stale blockID from initBlocks must be cleared,
+	// not left pointing at a block that no longer appears in the emitted
+	// BlockName= lines.
+	spec, httpErr = nt.GetNodeTopologySpec("gpu-b008-srv1", nil)
+	require.Nil(t, httpErr)
+	require.Equal(t, "default:", spec)
+}
+
+func TestToBlockTopologySkipsUnmatchedHostname(t *testing.T) {
+	v, _ := getBlockTestSet()
+	cfg := &Config{
+		Plugin: topology.TopologyBlock,
+		BlockName: &BlockNameConfig{
+			// Matches only domain B1's nodes (Node104-106); B2's nodes
+			// (Node201, Node202, Node205) don't match and must be dropped
+			// without aborting generation of B1's block.
+			NodeNameRegexp: `^Node1[0-9]{2}$`,
+			Format:         `domain1`,
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	require.Nil(t, nt.Generate(buf))
+	require.Equal(t, `# domain1=B1
+BlockName=domain1 Nodes=Node[104-106]
+BlockSizes=3
+`, buf.String())
+
+	spec, httpErr := nt.GetNodeTopologySpec("Node201", nil)
+	require.Nil(t, httpErr)
+	require.Equal(t, "default:", spec)
+}
+
+func TestToBlockTopologySkipsEmptyName(t *testing.T) {
+	domains := testDomainMap(map[string]map[string]string{
+		"domainGood":  {"host-42": "I1"},
+		"domainEmpty": {"host-": "I2"}, // capture group matches no digits, so format expands to ""
+	})
+	v := &topology.Graph{Domains: domains}
+	cfg := &Config{
+		Plugin: topology.TopologyBlock,
+		BlockName: &BlockNameConfig{
+			NodeNameRegexp: `^host-([0-9]*)$`,
+			Format:         `${1}`,
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	require.Nil(t, nt.Generate(buf))
+	require.Equal(t, `# 42=domainGood
+BlockName=42 Nodes=host-42
+BlockSizes=1
+`, buf.String())
+
+	spec, httpErr := nt.GetNodeTopologySpec("host-", nil)
+	require.Nil(t, httpErr)
+	require.Equal(t, "default:", spec)
+}
+
+func TestToBlockTopologyDuplicateNamesStillFail(t *testing.T) {
+	v, _ := getBlockTestSet()
+	cfg := &Config{
+		Plugin: topology.TopologyBlock,
+		BlockName: &BlockNameConfig{
+			NodeNameRegexp: `^Node[0-9]+$`,
+			Format:         `shared`,
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	httpErr := nt.Generate(buf)
+	require.NotNil(t, httpErr)
+	require.Contains(t, httpErr.Error(), `produce duplicate block name "shared"`)
+}
+
+func TestToBlockTopologyAllBlocksDroppedFails(t *testing.T) {
+	v, _ := getBlockTestSet()
+	cfg := &Config{
+		Plugin: topology.TopologyBlock,
+		BlockName: &BlockNameConfig{
+			// Matches none of the nodes in either domain, so both blocks are
+			// dropped: nothing is left to write a topology/block config from.
+			NodeNameRegexp: `^gpu-b([0-9]{3})$`,
+			Format:         `block${1}`,
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	httpErr := nt.Generate(buf)
+	require.NotNil(t, httpErr)
+	require.Contains(t, httpErr.Error(), "all blocks were dropped")
+}
+
 func TestBlockNameFormatter(t *testing.T) {
 	t.Run("unanchored match", func(t *testing.T) {
 		config := &BlockNameConfig{
@@ -425,7 +562,7 @@ func TestBlockNameFormatter(t *testing.T) {
 		require.NoError(t, ValidateBlockNameConfig(config))
 		formatter := compileBlockNameFormatter(config)
 
-		_, err := formatBlockNames([]*blockInfo{
+		_, _, _, err := formatBlockNames([]*blockInfo{
 			{id: "block001", nodes: []string{"domain001"}},
 			{id: "block002", nodes: []string{"domain002"}},
 		}, formatter)
@@ -883,29 +1020,94 @@ func TestBlockTopologyYamlWithFormattedBlockNames(t *testing.T) {
 	require.Equal(t, "topo:domain2", spec)
 }
 
-func TestBlockTopologyYamlBlockNameErrorIncludesDomain(t *testing.T) {
-	v, _ := getBlockTestSet()
+func TestBlockTopologyYamlBlockNameSkipsInconsistentDomain(t *testing.T) {
+	v := getBlockTestSetWithMismatchedHostnames()
 	cfg := &Config{
 		Topologies: map[string]*TopologySpec{
 			"topo": {
 				Plugin: topology.TopologyBlock,
 				BlockName: &BlockNameConfig{
-					NodeNameRegexp: `^gpu([0-9]+)$`,
-					Format:         `domain${1}`,
+					NodeNameRegexp: `^gpu-b([0-9]{3})-srv[0-9]+$`,
+					Format:         `block${1}`,
 				},
-				Nodes: []string{"Node[104-106]"},
+				Nodes: []string{"gpu-b008-srv1", "gpu-b031-srv2", "gpu-b010-srv1", "gpu-b010-srv2"},
 			},
 		},
 	}
 	nt, err := NewNetworkTopology(v, cfg)
 	require.NoError(t, err)
 
-	_, httpErr := nt.GetTopologies()
-	require.EqualError(
-		t,
-		httpErr,
-		`topology "topo": node "Node104" in block "block1" (domain "B1") does not match nodeNameRegexp "^gpu([0-9]+)$"`,
-	)
+	topologies, httpErr := nt.GetTopologies()
+	require.Nil(t, httpErr)
+	require.Len(t, topologies, 1)
+	require.Len(t, topologies[0].Block.Blocks, 1)
+	require.Equal(t, "block010", topologies[0].Block.Blocks[0].Name)
+	require.Equal(t, "gpu-b010-srv[1-2]", topologies[0].Block.Blocks[0].Nodes)
+}
+
+func TestBlockTopologyYamlBlockNameSkipsUnmatchedHostname(t *testing.T) {
+	v, _ := getBlockTestSet()
+	cfg := &Config{
+		Topologies: map[string]*TopologySpec{
+			"topo": {
+				Plugin: topology.TopologyBlock,
+				BlockName: &BlockNameConfig{
+					// Matches only domain B1's nodes (Node104-106); B2's nodes
+					// (Node201, Node202, Node205) don't match and must be
+					// dropped without aborting the whole partition topology.
+					NodeNameRegexp: `^Node1[0-9]{2}$`,
+					Format:         `domain1`,
+				},
+				Nodes: []string{"Node[104-106]", "Node[201-202]", "Node205"},
+			},
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	topologies, httpErr := nt.GetTopologies()
+	require.Nil(t, httpErr)
+	require.Len(t, topologies, 1)
+	require.Len(t, topologies[0].Block.Blocks, 1)
+	require.Equal(t, "domain1", topologies[0].Block.Blocks[0].Name)
+	require.Equal(t, "Node[104-106]", topologies[0].Block.Blocks[0].Nodes)
+}
+
+func TestBlockTopologyYamlBlockNameAllDroppedFallsBackToFlat(t *testing.T) {
+	v, _ := getBlockTestSet()
+	cfg := &Config{
+		Topologies: map[string]*TopologySpec{
+			// Sorts before "good" so GetTopologies processes it first; if it
+			// still aborted the whole loop, "good" would never be reached.
+			"bad": {
+				Plugin: topology.TopologyBlock,
+				BlockName: &BlockNameConfig{
+					// Matches none of "bad"'s nodes, so every block in this
+					// partition is dropped.
+					NodeNameRegexp: `^gpu-b([0-9]{3})$`,
+					Format:         `block${1}`,
+				},
+				Nodes: []string{"Node[104-106]", "Node[201-202]", "Node205"},
+			},
+			"good": {
+				Plugin: topology.TopologyFlat,
+				Nodes:  []string{"Node104"},
+			},
+		},
+	}
+	nt, err := NewNetworkTopology(v, cfg)
+	require.NoError(t, err)
+
+	topologies, httpErr := nt.GetTopologies()
+	require.Nil(t, httpErr)
+	require.Len(t, topologies, 2)
+
+	require.Equal(t, "bad", topologies[0].Name)
+	require.True(t, topologies[0].Flat)
+	require.Nil(t, topologies[0].Block)
+
+	require.Equal(t, "good", topologies[1].Name)
+	require.True(t, topologies[1].Flat)
 }
 
 func TestGetNodeTopologySpecInTreeTopologyConf(t *testing.T) {

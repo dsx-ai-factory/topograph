@@ -203,12 +203,19 @@ func (nt *NetworkTopology) getBlockTopologyUnit(topoName string, topoSpec *Topol
 		}
 
 		// populate block topology units ordered by block indices
-		blocks := make([]*Block, 0, len(bInfos))
-		parents := make(map[string]string)
-		blockNames, err := formatBlockNames(bInfos, compileBlockNameFormatter(topoSpec.BlockName))
+		bInfos, blockNames, _, err := formatBlockNames(bInfos, compileBlockNameFormatter(topoSpec.BlockName))
 		if err != nil {
 			return nil, err
 		}
+
+		if len(bInfos) == 0 {
+			// All blocks were dropped by formatBlockNames; fall back to Flat instead of erroring out of getBlockSizes below.
+			tu.Flat = true
+			return tu, nil
+		}
+
+		blocks := make([]*Block, 0, len(bInfos))
+		parents := make(map[string]string)
 		for indx, bInfo := range bInfos {
 			blockName := blockNames[indx]
 			block := &Block{Name: blockName}

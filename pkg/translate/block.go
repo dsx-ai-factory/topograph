@@ -61,12 +61,25 @@ func (nt *NetworkTopology) toBlockTopology(wr io.Writer, skeletonOnly bool) *htt
 	// Refresh nodeInfo.blockID so GetNodeTopologySpec returns IDs that match the
 	// emitted topology file. complementBlocks may renumber blocks when it splits
 	// a domain across multiple base blocks, invalidating the IDs set by initBlocks.
-	blockNames, err := formatBlockNames(blocks, compileBlockNameFormatter(nt.config.BlockName))
+	kept, blockNames, dropped, err := formatBlockNames(blocks, compileBlockNameFormatter(nt.config.BlockName))
 	if err != nil {
 		return httperr.NewError(http.StatusBadRequest, err.Error())
 	}
-	namedBlocks := make([]*blockInfo, len(blocks))
-	for i, b := range blocks {
+	for _, b := range dropped {
+		for _, node := range b.nodes {
+			if info, ok := nt.nodeInfo[node]; ok {
+				info.blockID = ""
+			}
+		}
+	}
+	if len(blocks) > 0 && len(kept) == 0 {
+		// Cluster-wide topology/block has no Flat fallback,
+		// so fail explicitly here rather than via getBlockSizes's generic "no blocks" error.
+		return httperr.NewError(http.StatusBadRequest,
+			"topology/block: all blocks were dropped due to blockName formatting failures (unmatched hostname, inconsistent derived name, or empty formatted name); check blockName.nodeNameRegexp and blockName.format against the node names")
+	}
+	namedBlocks := make([]*blockInfo, len(kept))
+	for i, b := range kept {
 		namedBlock := *b
 		namedBlock.id = blockNames[i]
 		namedBlocks[i] = &namedBlock
