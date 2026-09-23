@@ -93,7 +93,7 @@ engine:
         clusterDefault: true                         # no podSelector, no nodes → scontrol fallback
 ```
 
-`blockName.nodeNameRegexp` uses Go regular-expression syntax and may match anywhere in the node name; use anchors when needed. `blockName.format` uses Go regexp expansion syntax, including numeric captures such as `${1}` and named captures such as `${domain}`. Every node in a non-empty block must match and produce the same non-empty name, and names must be unique across blocks. Invalid expressions, unmatched nodes, inconsistent names within a block, and duplicate names are rejected. Empty complemented blocks retain their generated names.
+`blockName.nodeNameRegexp` uses Go regular-expression syntax and may match anywhere in the node name; use anchors when needed. `blockName.format` uses Go regexp expansion syntax, including numeric captures such as `${1}` and named captures such as `${domain}`. Every node in a non-empty block must match and produce the same non-empty name, and names must be unique across blocks. Invalid expressions are rejected at config-parse time. At generation time, unmatched nodes and inconsistent names within a block are not fatal: that block is skipped and logged as a warning, and the rest of the topology is generated normally. Duplicate names across different blocks are still rejected, since it's ambiguous which block is misconfigured. Empty complemented blocks retain their generated names.
 
 ### Config update mode
 

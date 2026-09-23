@@ -83,7 +83,7 @@ engine:
 
 For a block containing nodes such as `gpu-d05-r04-srv4`, this produces the name `domain05_rack04`. The expression uses Go regular-expression syntax and may match anywhere in the node name; use `^` or `$` when the site naming convention requires anchoring. The format uses Go regexp expansion syntax, including numeric captures such as `${1}` and named captures such as `${domain}`.
 
-Every node in a non-empty block must match the expression and produce the same non-empty block name. Different blocks must produce unique names. Topograph rejects topology generation when any of these conditions is not met. Empty complemented blocks have no node name to evaluate and retain their generated default name.
+Every node in a non-empty block must match the expression and produce the same non-empty block name. A block where a node doesn't match, whose nodes disagree on the derived name, or whose formatted name comes out empty is dropped from the output with a warning naming the domain, and the rest of the topology is still generated. If every block ends up dropped this way, a per-partition topology falls back to a flat topology, while a cluster-wide `topology/block` request returns an error, since there is no flat output for it to fall back to. Different blocks must produce unique names — that case is still rejected outright, since it's ambiguous which block is misconfigured. Empty complemented blocks have no node name to evaluate and retain their generated default name.
 
 The option can also be set on each `topologies` entry for per-partition output.
 
