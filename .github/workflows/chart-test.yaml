@@ -8,6 +8,9 @@ on:
     branches:
       - "pull-request/[0-9]+"
 
+permissions:
+  contents: read
+
 jobs:
   chart-test:
     runs-on: linux-amd64-cpu8

@@ -16,7 +16,7 @@
 
 package translate
 
-import "github.com/NVIDIA/topograph/pkg/topology"
+import "github.com/dsx-ai-factory/topograph/pkg/topology"
 
 func GetTreeTestSet(testForLongLabelName bool) (*topology.Graph, map[string]string) {
 	//

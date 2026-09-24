@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/NVIDIA/topograph/internal/cluset"
-	"github.com/NVIDIA/topograph/internal/httperr"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/cluset"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 // toTreeTopology generates SLURM cluster topology config in "topology/tree" format
+// When skeletonOnly is true, only the top-level (root) switches are emitted,
+// each declared by name alone with neither its Switches= nor Nodes= list.
 func (nt *NetworkTopology) toTreeTopology(wr io.Writer, skeletonOnly bool) *httperr.Error {
 	visited := make(map[string]bool)
 	queue := []string{""}
@@ -34,6 +36,11 @@ func (nt *NetworkTopology) toTreeTopology(wr io.Writer, skeletonOnly bool) *http
 		if err := writeVertex(wr, v, skeletonOnly); err != nil {
 			return httperr.NewError(http.StatusInternalServerError, err.Error())
 		}
+		if skeletonOnly && id != "" {
+			// id is a top-level switch; stop descending so intermediate and
+			// leaf switches below it are never visited or written.
+			continue
+		}
 		queue = append(queue, nt.tree[id]...)
 	}
 	return nil
@@ -42,6 +49,28 @@ func (nt *NetworkTopology) toTreeTopology(wr io.Writer, skeletonOnly bool) *http
 func writeVertex(wr io.Writer, v *topology.Vertex, skeletonOnly bool) error {
 	if len(v.ID) == 0 {
 		return nil
+	}
+
+	var comment, name string
+	if len(v.Name) == 0 {
+		name = v.ID
+	} else {
+		comment = fmt.Sprintf("# %s=%s\n", v.Name, v.ID)
+		name = v.Name
+	}
+
+	if skeletonOnly {
+		if len(v.Vertices) == 0 {
+			// v is a compute node, not a switch (e.g. trimTiers removed every
+			// fabric tier, so the instance itself sits directly under the
+			// root); there is no switch to declare.
+			return nil
+		}
+		// Declare the switch by name alone: a Switches= list would change
+		// whenever an intermediate switch below it is added or removed,
+		// which would defeat skeleton-only's purpose of avoiding a reconfigure.
+		_, err := fmt.Fprintf(wr, "%sSwitchName=%s\n", comment, name)
+		return err
 	}
 
 	switches := make([]string, 0, len(v.Vertices))
@@ -58,14 +87,6 @@ func writeVertex(wr io.Writer, v *topology.Vertex, skeletonOnly bool) error {
 		}
 	}
 
-	var comment, name string
-	if len(v.Name) == 0 {
-		name = v.ID
-	} else {
-		comment = fmt.Sprintf("# %s=%s\n", v.Name, v.ID)
-		name = v.Name
-	}
-
 	if len(switches) != 0 {
 		_, err := fmt.Fprintf(wr, "%sSwitchName=%s Switches=%s\n", comment, name, strings.Join(cluset.Compact(switches), ","))
 		if err != nil {
@@ -73,7 +94,7 @@ func writeVertex(wr io.Writer, v *topology.Vertex, skeletonOnly bool) error {
 		}
 	}
 
-	if !skeletonOnly && len(nodes) != 0 {
+	if len(nodes) != 0 {
 		_, err := fmt.Fprintf(wr, "%sSwitchName=%s Nodes=%s\n", comment, name, strings.Join(cluset.Compact(nodes), ","))
 		if err != nil {
 			return err

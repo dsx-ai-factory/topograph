@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/NVIDIA/topograph/pkg/accelerator"
-	"github.com/NVIDIA/topograph/pkg/providers"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/accelerator"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

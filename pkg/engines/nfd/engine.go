@@ -19,12 +19,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/topograph/internal/config"
-	"github.com/NVIDIA/topograph/internal/httperr"
-	internalk8s "github.com/NVIDIA/topograph/internal/k8s"
-	"github.com/NVIDIA/topograph/pkg/engines"
-	k8sengine "github.com/NVIDIA/topograph/pkg/engines/k8s"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/config"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	internalk8s "github.com/dsx-ai-factory/topograph/internal/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/engines"
+	k8sengine "github.com/dsx-ai-factory/topograph/pkg/engines/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const (

@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/NVIDIA/topograph/internal/kwok"
-	"github.com/NVIDIA/topograph/internal/version"
-	"github.com/NVIDIA/topograph/pkg/models"
+	"github.com/dsx-ai-factory/topograph/internal/kwok"
+	"github.com/dsx-ai-factory/topograph/internal/version"
+	"github.com/dsx-ai-factory/topograph/pkg/models"
 )
 
 type options struct {

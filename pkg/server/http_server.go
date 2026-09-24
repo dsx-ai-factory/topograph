@@ -28,11 +28,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/pkg/config"
-	"github.com/NVIDIA/topograph/pkg/metrics"
-	"github.com/NVIDIA/topograph/pkg/providers/test"
-	"github.com/NVIDIA/topograph/pkg/registry"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/config"
+	"github.com/dsx-ai-factory/topograph/pkg/metrics"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/test"
+	"github.com/dsx-ai-factory/topograph/pkg/registry"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 type HttpServer struct {

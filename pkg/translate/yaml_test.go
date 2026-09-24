@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,15 +36,11 @@ func TestTreeYamlTopology(t *testing.T) {
   tree:
     switches:
         - switch: S1
-          children: S2
-        - switch: S2
 - topology: topo2
   cluster_default: true
   tree:
     switches:
         - switch: S1
-          children: S3
-        - switch: S3
 `
 	v, _ := GetTreeTestSet(false)
 	cfg := &Config{
@@ -291,10 +287,6 @@ func TestEmptyPartitionTopology(t *testing.T) {
   tree:
     switches:
         - switch: IB2
-          children: S1
-        - switch: S1
-          children: S3
-        - switch: S3
 - topology: topo2
   cluster_default: false
   flat: true

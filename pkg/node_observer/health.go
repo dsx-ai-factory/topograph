@@ -14,7 +14,7 @@ import (
 
 	"k8s.io/klog/v2"
 
-	"github.com/NVIDIA/topograph/internal/httpreq"
+	"github.com/dsx-ai-factory/topograph/internal/httpreq"
 )
 
 // healthCheckInterval is how long to wait between topograph health probes

@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/topograph/pkg/config"
-	"github.com/NVIDIA/topograph/pkg/test"
+	"github.com/dsx-ai-factory/topograph/pkg/config"
+	"github.com/dsx-ai-factory/topograph/pkg/test"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +37,7 @@ func TestServerIntegration(t *testing.T) {
 	// testIntegration and topologyRequestWithRetries use http.DefaultClient / http.Get,
 	// which pool keep-alive connections in http.DefaultTransport. Close idle connections
 	// after the test so goroutine-leak detectors do not flag the transport's readLoop /
-	// writeLoop goroutines. See https://github.com/NVIDIA/topograph/issues/493.
+	// writeLoop goroutines. See https://github.com/dsx-ai-factory/topograph/issues/493.
 	t.Cleanup(func() { http.DefaultClient.CloseIdleConnections() })
 
 	port, err := test.GetAvailablePort()

@@ -14,7 +14,7 @@ import (
 	compute "github.com/nebius/gosdk/proto/nebius/compute/v1"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 type instanceTopologyClient struct {

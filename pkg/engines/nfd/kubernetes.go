@@ -9,9 +9,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/NVIDIA/topograph/internal/httperr"
-	internalk8s "github.com/NVIDIA/topograph/internal/k8s"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	internalk8s "github.com/dsx-ai-factory/topograph/internal/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 func (eng *NfdEngine) ResolveComputeInstances(ctx context.Context, instances []topology.ComputeInstances, _ any) ([]topology.ComputeInstances, *httperr.Error) {

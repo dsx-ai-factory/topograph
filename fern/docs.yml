@@ -36,4 +36,4 @@ logo:
   right-text: Topograph
 navbar-links:
   - type: github
-    value: https://github.com/NVIDIA/topograph
+    value: https://github.com/dsx-ai-factory/topograph

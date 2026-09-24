@@ -21,7 +21,7 @@ TARGETS := topograph node-observer node-data-broker kwok-nodes
 CMD_DIR := ./cmd
 OUTPUT_DIR := ./bin
 
-IMAGE_REPO ?=ghcr.io/nvidia/topograph
+IMAGE_REPO ?=ghcr.io/dsx-ai-factory/topograph
 GIT_REF ?=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_TAG ?=$(GIT_REF)
 
@@ -30,7 +30,7 @@ build:
 	@for target in $(TARGETS); do \
 	  echo "Building $${target} for $(GOOS)/$(GOARCH)"; \
 	  CGO_ENABLED=0 go build -a -o $(OUTPUT_DIR)/$${target} \
-	    -ldflags '-extldflags "-static" -X github.com/NVIDIA/topograph/internal/version.Version=$(GIT_REF)' \
+	    -ldflags '-extldflags "-static" -X github.com/dsx-ai-factory/topograph/internal/version.Version=$(GIT_REF)' \
 	    $(CMD_DIR)/$${target}; \
 	done
 

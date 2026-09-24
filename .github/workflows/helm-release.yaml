@@ -6,6 +6,8 @@ concurrency:
   group: helm-repository-publication
   cancel-in-progress: false
 
+permissions: {}
+
 jobs:
   release:
     runs-on: linux-amd64-cpu8

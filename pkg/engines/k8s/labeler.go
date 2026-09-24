@@ -11,8 +11,8 @@ import (
 	"hash/fnv"
 	"slices"
 
-	internalk8s "github.com/NVIDIA/topograph/internal/k8s"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	internalk8s "github.com/dsx-ai-factory/topograph/internal/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 type TopologyLabelKeys struct {

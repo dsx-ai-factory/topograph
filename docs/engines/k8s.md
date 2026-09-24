@@ -22,7 +22,7 @@ accelerator domains are used and no Kubernetes label receives special
 treatment.
 
 The fabric and accelerator-domain label names are configurable via the
-[Helm chart](https://github.com/NVIDIA/topograph/tree/main/charts/topograph).
+[Helm chart](https://github.com/dsx-ai-factory/topograph/tree/main/charts/topograph).
 The accelerator sub-domain key is fixed.
 
 For example, if a node belongs to NVLink domain `nvl1`, sub-domain
@@ -151,7 +151,7 @@ communication efficiency within the limitations of the scheduler.
 Topology labels are most valuable when nodes in a topology domain are available for topology-sensitive workloads together. Mixed clusters running both distributed training and topology-insensitive workloads (single-GPU inference, CPU services) present a scheduling challenge: topology-insensitive Pods will consume nodes that could otherwise form complete leaf-switch groups or NVLink domains, forcing training jobs to communicate across additional hops. Schedulers that honor topology labels — such as [KAI Scheduler](https://github.com/NVIDIA/KAI-Scheduler) and Kueue with Topology-Aware Scheduling — can minimize this fragmentation, but only when topology information is available. Topograph's labels are a prerequisite for making these decisions.
 
 ## Configuration
-Topograph is deployed as a standard Kubernetes application using a [Helm chart](https://github.com/NVIDIA/topograph/tree/main/charts/topograph).
+Topograph is deployed as a standard Kubernetes application using a [Helm chart](https://github.com/dsx-ai-factory/topograph/tree/main/charts/topograph).
 The main chart directly renders the API server, node-observer, and node-data-broker; the component-specific settings remain under `nodeObserver.*` and `nodeDataBroker.*`. When the broker is enabled, the chart passes its name and namespace to the node-observer through `NODE_DATA_BROKER_NAME` and `NODE_DATA_BROKER_NAMESPACE`. The observer waits until the broker DaemonSet's ready replica count matches its desired count before requesting topology generation. When `nodeDataBroker.enabled=false`, those variables are omitted and there is no broker readiness gate.
 Topograph is configured using a configuration file stored in a ConfigMap and mounted to the Topograph container at `/etc/topograph/topograph-config.yaml`.
 In addition, when sending a topology request, the request payload includes additional parameters.
@@ -478,7 +478,7 @@ The chart ships two `helm test` hook pods (`charts/topograph/templates/tests/`) 
 Run the suite after installation:
 
 ```bash
-helm repo add topograph https://NVIDIA.github.io/topograph
+helm repo add topograph https://dsx-ai-factory.github.io/topograph
 helm repo update
 helm install topograph topograph/topograph \
   --namespace topograph --create-namespace
@@ -496,7 +496,7 @@ Phase:          Succeeded
 
 Both pods clean themselves up on success (`helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`). On failure the pods persist so operators can inspect logs via `kubectl logs -n <ns> <pod-name>`; the next `helm test` invocation replaces the prior pods.
 
-**Air-gapped environments.** The test pods reuse the main topograph image by default — they invoke `busybox wget` from the Alpine-based `ghcr.io/nvidia/topograph` image already pulled by the Deployment. No additional image pull is required by `helm test`, so the suite works in environments where only mirrored images are reachable. If your mirrored image lacks `busybox wget`, override the test image:
+**Air-gapped environments.** The test pods reuse the main topograph image by default — they invoke `busybox wget` from the Alpine-based `ghcr.io/dsx-ai-factory/topograph` image already pulled by the Deployment. No additional image pull is required by `helm test`, so the suite works in environments where only mirrored images are reachable. If your mirrored image lacks `busybox wget`, override the test image:
 
 ```yaml
 tests:

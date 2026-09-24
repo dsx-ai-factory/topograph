@@ -48,8 +48,7 @@ on:
         type: string
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: fern-publish
@@ -62,6 +61,14 @@ env:
 jobs:
   publish:
     runs-on: linux-amd64-cpu8
+    permissions:
+      # contents:write and pull-requests:write are both required by the final
+      # "Open PR for version registry changes" step: peter-evans/create-pull-request
+      # documents this exact pair for GITHUB_TOKEN, and sign-commits creates the
+      # commit through the contents API. Every other step in this job reads only
+      # (checkout, gh release view) or authenticates to Fern with DOCS_FERN_TOKEN.
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,0 +1,72 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# OpenSSF Scorecard analysis. Results are uploaded to the repository code
+# scanning dashboard and published to https://api.scorecard.dev, which backs
+# the public Scorecard badge and viewer.
+#
+# When publish_results is true the OpenSSF API rejects results from a workflow
+# that declares top-level env vars or defaults, grants any workflow-level write
+# permission, grants id-token: write to more than one job, or runs the analysis
+# job anywhere other than a GitHub-hosted Ubuntu runner. Keep this file within
+# those limits when editing it.
+
+name: OpenSSF Scorecard
+
+on:
+  schedule:
+    # Mondays at 06:00 UTC.
+    - cron: '0 6 * * 1'
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    # Required by the publishing rules above; the rest of this repository runs
+    # on the self-hosted linux-amd64-* pool, which is not accepted here.
+    runs-on: ubuntu-latest
+    permissions:
+      # Clone the repository, and let the SARIF upload read this workflow run.
+      # GitHub documents both as needed only for private repositories, so
+      # declare them rather than depend on this one staying public.
+      contents: read
+      actions: read
+      # Upload the SARIF result to the code scanning dashboard.
+      security-events: write
+      # Mint the OIDC token that authenticates the result to the OpenSSF API.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          sarif_file: results.sarif

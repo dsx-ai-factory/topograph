@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
 )
 
 func TestLoaderModelFileNamePathTraversal(t *testing.T) {

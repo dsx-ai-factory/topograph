@@ -20,8 +20,8 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 
-	k8sengine "github.com/NVIDIA/topograph/pkg/engines/k8s"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	k8sengine "github.com/dsx-ai-factory/topograph/pkg/engines/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const testNFDNamespace = "node-feature-discovery"

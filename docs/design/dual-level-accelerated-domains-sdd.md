@@ -14,7 +14,7 @@ a rack) a host belongs to within its accelerator domain, and a flat two-level
 tree-building algorithm that converts this membership into contiguous,
 consistently-padded block groups for Slurm and Kubernetes schedulers.
 
-This addresses [NVIDIA/topograph#415](https://github.com/NVIDIA/topograph/issues/415).
+This addresses [dsx-ai-factory/topograph#415](https://github.com/dsx-ai-factory/topograph/issues/415).
 
 ## Background
 

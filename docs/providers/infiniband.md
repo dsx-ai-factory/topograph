@@ -92,7 +92,7 @@ For the Slurm engine, verify the generated `topology.conf` reflects the expected
 ### Prerequisites
 
 - Topograph deployed via Helm — when `accelerator.source` is `nvidia-smi`, the node-data-broker DaemonSet collects NVLink partition IDs from each node and stores them as Kubernetes node annotations (`topograph.run/cluster-id`). With `kubernetes-label` or `none`, the broker skips that collection.
-- The default **`ghcr.io/nvidia/topograph`** image includes **`ibnetdiscover`** (Alpine `rdma-core`). No separate InfiniBand image is required. IB deployments typically run the broker **privileged** and mount host **`/sys/class`** so `ibnetdiscover` can reach IB devices — see [`values.k8s.ib-example.yaml`](../../charts/topograph/values.k8s.ib-example.yaml).
+- The default **`ghcr.io/dsx-ai-factory/topograph`** image includes **`ibnetdiscover`** (Alpine `rdma-core`). No separate InfiniBand image is required. IB deployments typically run the broker **privileged** and mount host **`/sys/class`** so `ibnetdiscover` can reach IB devices — see [`values.k8s.ib-example.yaml`](../../charts/topograph/values.k8s.ib-example.yaml).
 - NVIDIA GPU Operator — standard on NVIDIA GPU Kubernetes clusters; manages the device plugin DaemonSet used to read NVLink clique IDs. Required only for NVLink domain discovery; on clusters without NVLink-connected GPUs this does not apply and the provider will still discover the IB switch tree.
 
 ### How It Works

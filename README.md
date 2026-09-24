@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://github.com/NVIDIA/topograph" target="_blank">
+  <a href="https://github.com/dsx-ai-factory/topograph" target="_blank">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/assets/topograph-logo-color-dark.png" />
       <img src="docs/assets/topograph-logo-color.png" width="200" alt="Topograph logo" />
@@ -9,12 +9,12 @@
 
 # Topograph
 
-[![Go CI](https://img.shields.io/github/actions/workflow/status/NVIDIA/topograph/go.yml?branch=main&label=go%20ci&style=flat-square&labelColor=172033&logo=github&logoColor=white)](https://github.com/NVIDIA/topograph/actions/workflows/go.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/NVIDIA/topograph/main?label=coverage&style=flat-square&labelColor=172033&logo=codecov&logoColor=white)](https://codecov.io/gh/NVIDIA/topograph)
-[![Chart Tests](https://img.shields.io/github/actions/workflow/status/NVIDIA/topograph/chart-test.yaml?label=chart%20tests&style=flat-square&labelColor=172033&logo=helm&logoColor=white)](https://github.com/NVIDIA/topograph/actions/workflows/chart-test.yaml)
-[![K8s Tests](https://img.shields.io/github/actions/workflow/status/NVIDIA/topograph/k8s-test.yaml?label=k8s%20tests&style=flat-square&labelColor=172033&logo=kubernetes&logoColor=white)](https://github.com/NVIDIA/topograph/actions/workflows/k8s-test.yaml)
-[![Release](https://img.shields.io/github/v/release/NVIDIA/topograph?label=release&style=flat-square&labelColor=172033&color=2563EB)](https://github.com/NVIDIA/topograph/releases)
-[![License](https://img.shields.io/github/license/NVIDIA/topograph?label=license&style=flat-square&labelColor=172033&color=0891B2)](https://github.com/NVIDIA/topograph/blob/main/LICENSE)
+[![Go CI](https://img.shields.io/github/actions/workflow/status/dsx-ai-factory/topograph/go.yml?branch=main&label=go%20ci&style=flat-square&labelColor=172033&logo=github&logoColor=white)](https://github.com/dsx-ai-factory/topograph/actions/workflows/go.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/dsx-ai-factory/topograph/main?label=coverage&style=flat-square&labelColor=172033&logo=codecov&logoColor=white)](https://codecov.io/gh/dsx-ai-factory/topograph)
+[![Chart Tests](https://img.shields.io/github/actions/workflow/status/dsx-ai-factory/topograph/chart-test.yaml?label=chart%20tests&style=flat-square&labelColor=172033&logo=helm&logoColor=white)](https://github.com/dsx-ai-factory/topograph/actions/workflows/chart-test.yaml)
+[![K8s Tests](https://img.shields.io/github/actions/workflow/status/dsx-ai-factory/topograph/k8s-test.yaml?label=k8s%20tests&style=flat-square&labelColor=172033&logo=kubernetes&logoColor=white)](https://github.com/dsx-ai-factory/topograph/actions/workflows/k8s-test.yaml)
+[![Release](https://img.shields.io/github/v/release/dsx-ai-factory/topograph?label=release&style=flat-square&labelColor=172033&color=2563EB)](https://github.com/dsx-ai-factory/topograph/releases)
+[![License](https://img.shields.io/github/license/dsx-ai-factory/topograph?label=license&style=flat-square&labelColor=172033&color=0891B2)](https://github.com/dsx-ai-factory/topograph/blob/main/LICENSE)
 [![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat-square&labelColor=172033&logo=nvidia&logoColor=white)](https://docs.nvidia.com/topograph)
 
 Topograph is a component that discovers the physical network topology of a cluster and exposes it to schedulers, enabling topology-aware scheduling decisions. It abstracts multiple topology sources and translates them into the format required by each scheduler.
@@ -37,7 +37,7 @@ Topograph is a component that discovers the physical network topology of a clust
 Requires Kubernetes 1.27 or later, Helm 3.10+ or 4.x, `kubectl` with permission to install a chart and create a namespace, and credentials for whichever provider matches your environment.
 
 ```bash
-helm repo add topograph https://NVIDIA.github.io/topograph
+helm repo add topograph https://dsx-ai-factory.github.io/topograph
 helm repo update
 
 helm install topograph topograph/topograph \
@@ -68,7 +68,7 @@ Full walkthrough, including the `nfd` and `slinky` engines: [Install on Kubernet
 Build and install a native package on the Slurm head node. Requires Go and `make` (see [`go.mod`](go.mod) for the Go version), plus the packaging tool for the format you build: `make deb` needs `dpkg-deb` (in the `dpkg` package), and `make rpm` needs `rpmbuild` (in `rpm-build`, which a minimal RHEL, Rocky, or SUSE install does not include). The packaging scripts use GNU `sed` and `readlink` and do not check for their tools up front, so run them on Linux and expect a missing tool to surface as `command not found` after the Go build has already succeeded.
 
 ```bash
-git clone https://github.com/NVIDIA/topograph.git
+git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 
 make deb                             # Debian / Ubuntu, writes bin/topograph-*.deb
@@ -101,7 +101,7 @@ HTTP 200 means the API server is up. Full walkthrough, including the Slurm trigg
 `demos/test-k8s/demo.sh` runs the whole pipeline against simulated nodes in a local kind cluster. It renders KWOK nodes from a model in `tests/models/`, installs the chart with the `test` provider, and prints one node's labels before and after so you can watch the topology land. It prompts before each step. Requires Go, `make`, `docker`, `kind`, `kubectl`, `helm` and `yq`.
 
 ```bash
-git clone https://github.com/NVIDIA/topograph.git
+git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 ./demos/test-k8s/demo.sh
 ```
@@ -148,12 +148,12 @@ Topograph sits between topology sources and schedulers, and replaces neither.
 
 | Artifact | Where it comes from |
 |---|---|
-| Container image | `ghcr.io/nvidia/topograph` |
-| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://NVIDIA.github.io/topograph` |
+| Container image | `ghcr.io/dsx-ai-factory/topograph` |
+| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://dsx-ai-factory.github.io/topograph` |
 | `.deb` package | `make deb`, written to `bin/` |
 | `.rpm` package | `make rpm`, written to `bin/` |
 
-Packaged chart releases and their SHA-256 checksums are also attached to [GitHub Releases](https://github.com/NVIDIA/topograph/releases). To list the chart versions available in the repository, run `helm search repo topograph/topograph --versions`.
+Packaged chart releases and their SHA-256 checksums are also attached to [GitHub Releases](https://github.com/dsx-ai-factory/topograph/releases). To list the chart versions available in the repository, run `helm search repo topograph/topograph --versions`.
 
 ## Learn more
 

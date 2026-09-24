@@ -12,8 +12,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/topograph/pkg/models"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/models"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 func TestNodesFromModel(t *testing.T) {

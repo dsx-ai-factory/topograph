@@ -107,7 +107,7 @@ serviceAccount:
 ### 3. Install with Helm (no credentials Secret)
 
 ```bash
-helm install topograph oci://ghcr.io/nvidia/topograph/topograph \
+helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
   --version <chart-version> -n topograph --create-namespace \
   -f values.k8s.lambdai-workload-identity-example.yaml
 ```
@@ -260,7 +260,7 @@ Install with Helm (see the [Kubernetes quickstart](../get-started/quickstart-k8s
 kubectl create secret generic lambdai-creds \
   --from-file=credentials.yaml=creds.yaml -n topograph
 
-helm install topograph oci://ghcr.io/nvidia/topograph/topograph \
+helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
   --version <chart-version> -n topograph --create-namespace \
   --set provider.name=lambdai \
   --set provider.params.url=https://cloud.example.com \

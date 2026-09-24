@@ -19,7 +19,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/NVIDIA/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
 )
 
 // resetCredentialCache clears the process-level credential cache between tests.

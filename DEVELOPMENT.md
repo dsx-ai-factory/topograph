@@ -8,7 +8,7 @@ contributors. For architecture and the provider/engine boundary, see
 ## Quick Start
 
 ```bash
-git clone https://github.com/NVIDIA/topograph.git
+git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 make build                    # produces bin/topograph, bin/node-observer, bin/node-data-broker, bin/kwok-nodes
 git fetch origin main:master  # make lint needs a local `master` ref — see "Local Test Loop" below
@@ -31,7 +31,7 @@ the tools above with your system package manager and you're ready to build.
 ## Clone and Build
 
 ```bash
-git clone https://github.com/NVIDIA/topograph.git
+git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 make build                  # host OS/arch: bin/topograph, bin/node-observer, bin/node-data-broker, bin/kwok-nodes
 make build-linux-amd64      # cross-compile; also build-darwin-arm64, build-linux-arm64, build-darwin-amd64
@@ -150,7 +150,7 @@ require maintainer coordination first — see
 ## Building Container Images
 
 ```bash
-make image-build     # builds ghcr.io/nvidia/topograph:<current-branch> for host OS/arch
+make image-build     # builds ghcr.io/dsx-ai-factory/topograph:<current-branch> for host OS/arch
 make image-push       # image-build, then docker push
 make docker-buildx    # multi-platform build (linux/arm64,linux/amd64) and push via buildx
 ```

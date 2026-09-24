@@ -14,10 +14,10 @@ import (
 	common "github.com/nebius/gosdk/proto/nebius/common/v1"
 	compute "github.com/nebius/gosdk/proto/nebius/compute/v1"
 
-	"github.com/NVIDIA/topograph/internal/httperr"
-	"github.com/NVIDIA/topograph/pkg/models"
-	"github.com/NVIDIA/topograph/pkg/providers"
-	"github.com/NVIDIA/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/models"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const (

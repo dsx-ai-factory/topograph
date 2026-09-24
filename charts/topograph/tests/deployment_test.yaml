@@ -78,7 +78,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/nvidia/topograph:v1.2.3
+          value: ghcr.io/dsx-ai-factory/topograph:v1.2.3
         template: templates/deployment.yaml
 
   - it: a custom repository still derives its tag from the appVersion

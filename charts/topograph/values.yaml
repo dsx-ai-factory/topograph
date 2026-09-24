@@ -56,7 +56,7 @@ service:
 replicaCount: 1
 
 image:
-  repository: ghcr.io/nvidia/topograph
+  repository: ghcr.io/dsx-ai-factory/topograph
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
   pullPolicy: IfNotPresent
