@@ -56,6 +56,8 @@ An em dash (—) indicates that no corresponding provider variant is registered.
 
 Use [Nautobot](./providers/nautobot.md) when fabric cabling is inventoried in Nautobot; switch roles, locations, and platforms select the initial fabric switches, and compute roles identify their attached endpoints. Connected switches are followed beyond the location and platform filters. Switch names must be unique throughout the discovered fabric.
 
+Use an [InfiniBand switch selector](./providers/infiniband.md#selecting-a-compute-fabric) to select the compute fabric when nodes have separate compute and storage InfiniBand subnets. The [simulation variant](./providers/infiniband.md#infiniband-sim-offline-simulation) can replay a captured fabric and test switch selection without node access.
+
 Currently supported engines:
 
 - [SLURM](./engines/slurm.md)
