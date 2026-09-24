@@ -267,7 +267,7 @@ func TestGenerateTopologyConfigValid(t *testing.T) {
 		},
 	}
 
-	forest, _, err := GenerateTopologyConfig(data, instances)
+	forest, _, err := GenerateTopologyConfig(data, instances, nil)
 	require.NoError(t, err)
 
 	root := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
@@ -302,7 +302,7 @@ func TestGenerateTopologyConfigInvalid(t *testing.T) {
 		},
 	}
 
-	forest, _, err := GenerateTopologyConfig(data, instances)
+	forest, _, err := GenerateTopologyConfig(data, instances, nil)
 	require.NoError(t, err)
 
 	root := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
@@ -375,7 +375,7 @@ func TestGenerateTopologyConfigFQDNNodes(t *testing.T) {
 		expected[name] = &topology.Vertex{ID: name, Name: name}
 	}
 
-	forest, hca, err := GenerateTopologyConfig(data, []topology.ComputeInstances{{Region: "local", Instances: instances}})
+	forest, hca, err := GenerateTopologyConfig(data, []topology.ComputeInstances{{Region: "local", Instances: instances}}, nil)
 	require.NoError(t, err)
 	require.Contains(t, slices.Collect(maps.Values(hca)), "b05-p1-dgx-05-c01.example.com")
 
@@ -457,7 +457,7 @@ func generateTwoLeaf(t *testing.T, nameA, nameB string, nodes ...string) map[str
 	for _, n := range nodes {
 		instances[n] = n
 	}
-	forest, _, err := GenerateTopologyConfig([]byte(data), []topology.ComputeInstances{{Region: "local", Instances: instances}})
+	forest, _, err := GenerateTopologyConfig([]byte(data), []topology.ComputeInstances{{Region: "local", Instances: instances}}, nil)
 	require.NoError(t, err)
 	return leavesOf(forest)
 }
