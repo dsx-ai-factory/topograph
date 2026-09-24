@@ -33,6 +33,22 @@ func NewIBNetDiscoverK8S(config *rest.Config, client *kubernetes.Clientset) *IBN
 }
 
 func (h *IBNetDiscoverK8S) Run(ctx context.Context, node string) (*bytes.Buffer, error) {
+	return h.run(ctx, node, []string{"ibnetdiscover"})
+}
+
+func (h *IBNetDiscoverK8S) Ports(ctx context.Context, node string) ([]IBPort, error) {
+	output, err := h.run(ctx, node, []string{"sh", "-c", listActiveIBPorts})
+	if err != nil {
+		return nil, err
+	}
+	return parseIBPorts(output)
+}
+
+func (h *IBNetDiscoverK8S) RunPort(ctx context.Context, node string, port IBPort) (*bytes.Buffer, error) {
+	return h.run(ctx, node, []string{"ibnetdiscover", "-C", port.CA, "-P", port.Port})
+}
+
+func (h *IBNetDiscoverK8S) run(ctx context.Context, node string, command []string) (*bytes.Buffer, error) {
 	dataBrokerName := os.Getenv("NODE_DATA_BROKER_NAME")
 	dataBrokerNamespace := os.Getenv("NODE_DATA_BROKER_NAMESPACE")
 	pods, err := k8s.GetDaemonSetPods(ctx, h.client, dataBrokerName, dataBrokerNamespace, node)
@@ -44,7 +60,7 @@ func (h *IBNetDiscoverK8S) Run(ctx context.Context, node string) (*bytes.Buffer,
 		return nil, fmt.Errorf("expected 1 data broker pod on %q node; got %d", node, n)
 	}
 
-	return k8s.ExecInPod(ctx, h.client, h.config, pods.Items[0].Name, dataBrokerNamespace, []string{"ibnetdiscover"})
+	return k8s.ExecInPod(ctx, h.client, h.config, pods.Items[0].Name, dataBrokerNamespace, command)
 }
 
 func GetNodeAnnotations(ctx context.Context, client kubernetes.Interface, config *rest.Config, hostname string, section accelerator.Section) (map[string]string, error) {

@@ -21,8 +21,9 @@ import (
 const NAME_SIM = "infiniband-sim"
 
 type ProviderSim struct {
-	output    []byte
-	instances []topology.ComputeInstances
+	output         []byte
+	instances      []topology.ComputeInstances
+	switchSelector *switchSelector
 }
 
 func NamedLoaderSim() (string, providers.Loader) {
@@ -33,6 +34,10 @@ func NamedLoaderSim() (string, providers.Loader) {
 func LoaderSim(_ context.Context, config providers.Config) (providers.Provider, *httperr.Error) {
 	if _, exists := config.Params["modelFileName"]; exists {
 		return nil, httperr.NewError(http.StatusBadRequest, "provider.params.modelFileName is not supported by infiniband-sim; use ibnetdiscoverFileName")
+	}
+	selector, err := newSwitchSelector(config.Params)
+	if err != nil {
+		return nil, httperr.NewError(http.StatusBadRequest, err.Error())
 	}
 	fileName, ok := config.Params["ibnetdiscoverFileName"].(string)
 	if !ok || strings.TrimSpace(fileName) == "" {
@@ -66,8 +71,9 @@ func LoaderSim(_ context.Context, config providers.Config) (providers.Provider, 
 		return nil, httperr.NewError(http.StatusBadRequest, "ibnetdiscover output has no named hosts connected to switches")
 	}
 	return &ProviderSim{
-		output:    output,
-		instances: []topology.ComputeInstances{{Region: "local", Instances: instances}},
+		output:         output,
+		instances:      []topology.ComputeInstances{{Region: "local", Instances: instances}},
+		switchSelector: selector,
 	}, nil
 }
 
@@ -76,9 +82,18 @@ func (p *ProviderSim) GenerateTopologyConfig(_ context.Context, _ *int, cis []to
 		return nil, httperr.NewError(http.StatusBadRequest, "on-prem does not support multi-region topology requests")
 	}
 
-	roots, _, err := ib.GenerateTopologyConfig(p.output, cis)
+	var roots []*topology.Vertex
+	var err error
+	if p.switchSelector == nil {
+		roots, _, err = ib.GenerateTopologyConfig(p.output, cis)
+	} else {
+		roots, _, err = ib.GenerateTopologyConfigFiltered(p.output, cis, p.switchSelector.acceptsLeaf, p.switchSelector.excludes)
+	}
 	if err != nil {
 		return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to build InfiniBand topology: %v", err))
+	}
+	if p.switchSelector != nil && len(roots) == 0 {
+		return nil, httperr.NewError(http.StatusInternalServerError, "switchSelector matched no usable InfiniBand topology")
 	}
 	tiers := &topology.Vertex{Vertices: make(map[string]*topology.Vertex, len(roots))}
 	for _, root := range roots {

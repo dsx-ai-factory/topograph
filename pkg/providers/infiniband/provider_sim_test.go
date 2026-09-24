@@ -19,6 +19,7 @@ import (
 )
 
 const exampleIBOutput = "../../../tests/output/ibnetdiscover/example.out"
+const computeStorageIBOutput = "../../../tests/output/ibnetdiscover/compute-storage.out"
 
 func TestLoaderSim(t *testing.T) {
 	name, loader := NamedLoaderSim()
@@ -34,6 +35,7 @@ func TestLoaderSim(t *testing.T) {
 		{"missing file", map[string]any{"ibnetdiscoverFileName": "not-a-file.out"}},
 		{"model file", map[string]any{"modelFileName": "small-tree.yaml"}},
 		{"model and capture", map[string]any{"modelFileName": "small-tree.yaml", "ibnetdiscoverFileName": exampleIBOutput}},
+		{"invalid switch selector", map[string]any{"ibnetdiscoverFileName": computeStorageIBOutput, "switchSelector": map[string]any{"exclude": []any{"["}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			provider, httpErr := loader(context.Background(), providers.Config{Params: tc.params})
@@ -60,6 +62,63 @@ func TestLoaderSim(t *testing.T) {
 	instances, httpErr := provider.(*ProviderSim).GetComputeInstances(context.Background())
 	require.Nil(t, httpErr)
 	require.Equal(t, map[string]string{"node-a": "node-a"}, instances[0].Instances)
+}
+
+func TestProviderSimSwitchSelector(t *testing.T) {
+	const spine = "S-0000000000000021"
+	const computeLeaf1 = "S-0000000000000011"
+	const computeLeaf2 = "S-0000000000000012"
+	const storageLeaf = "S-0000000000000031"
+
+	for _, tc := range []struct {
+		name           string
+		selector       map[string]any
+		expectedLeaves []string
+	}{
+		{"unfiltered", nil, []string{computeLeaf1, computeLeaf2, storageLeaf}},
+		{"include compute", map[string]any{"include": []any{"^IB-ComputeLeaf"}}, []string{computeLeaf1, computeLeaf2}},
+		{"exclude storage", map[string]any{"exclude": []any{"^IB-Storage"}}, []string{computeLeaf1, computeLeaf2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := map[string]any{"ibnetdiscoverFileName": computeStorageIBOutput}
+			if tc.selector != nil {
+				params["switchSelector"] = tc.selector
+			}
+			provider, httpErr := LoaderSim(context.Background(), providers.Config{Params: params})
+			require.Nil(t, httpErr)
+			instances, httpErr := provider.(*ProviderSim).GetComputeInstances(context.Background())
+			require.Nil(t, httpErr)
+			require.Len(t, instances[0].Instances, 6)
+
+			graph, httpErr := provider.GenerateTopologyConfig(context.Background(), nil, instances)
+			require.Nil(t, httpErr)
+			require.Contains(t, graph.Tiers.Vertices, spine)
+			leaves := make([]string, 0, len(graph.Tiers.Vertices[spine].Vertices))
+			for id := range graph.Tiers.Vertices[spine].Vertices {
+				leaves = append(leaves, id)
+			}
+			require.ElementsMatch(t, tc.expectedLeaves, leaves)
+			expectedHosts := []string{"node-a", "node-b", "node-c", "node-d", "node-e", "node-f"}
+			if tc.selector != nil {
+				require.ElementsMatch(t, expectedHosts, leafNames(graph.Tiers))
+				require.ElementsMatch(t, []string{"node-a", "node-b", "node-c"}, leafNames(graph.Tiers.Vertices[spine].Vertices[computeLeaf1]))
+				require.ElementsMatch(t, []string{"node-d", "node-e", "node-f"}, leafNames(graph.Tiers.Vertices[spine].Vertices[computeLeaf2]))
+			} else {
+				require.ElementsMatch(t, expectedHosts, leafNames(graph.Tiers.Vertices[spine].Vertices[storageLeaf]))
+			}
+		})
+	}
+
+	provider, httpErr := LoaderSim(context.Background(), providers.Config{Params: map[string]any{
+		"ibnetdiscoverFileName": computeStorageIBOutput,
+		"switchSelector":        map[string]any{"include": []any{"^not-present"}},
+	}})
+	require.Nil(t, httpErr)
+	instances, httpErr := provider.(*ProviderSim).GetComputeInstances(context.Background())
+	require.Nil(t, httpErr)
+	_, httpErr = provider.GenerateTopologyConfig(context.Background(), nil, instances)
+	require.Equal(t, http.StatusInternalServerError, httpErr.Code())
+	require.ErrorContains(t, httpErr, "switchSelector matched no usable InfiniBand topology")
 }
 
 func TestProviderSimGenerateTopologyConfig(t *testing.T) {

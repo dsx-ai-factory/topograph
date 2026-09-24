@@ -20,7 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node filtering and no fabric access.
+- `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node and switch-selector filtering and no fabric access. A synthetic compute/storage capture supports selector regression tests.
+- InfiniBand bare-metal and Kubernetes providers accept `switchSelector.include` and `switchSelector.exclude` regular-expression lists to select HCA-facing switches by name. When configured, discovery checks active local IB ports so compute and storage subnets can be distinguished; conflicting compute rail groupings fail explicitly.
 - SHA-256 checksum files published beside Helm chart packages and included
   with their corresponding GitHub release assets.
 - Tag-driven official releases that publish the Helm chart, checksum, build

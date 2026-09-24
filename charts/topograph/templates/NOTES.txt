@@ -46,6 +46,11 @@
 
   NOTE: InfiniBand fabric discovery uses ibnetdiscover; accelerator-domain
         discovery source is {{ include "nodeDataBroker.acceleratorSource" . }}.
+{{- $providerParams := default dict .Values.provider.params }}
+{{- if hasKey $providerParams "switchSelector" }}
+  NOTE: The InfiniBand switch selector checks all active local IB ports and
+        publishes only matching leaf-switch branches.
+{{- end }}
 {{- end }}
 {{- if eq .Values.engine.name "nfd" }}
 

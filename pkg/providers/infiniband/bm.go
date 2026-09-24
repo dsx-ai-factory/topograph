@@ -21,6 +21,19 @@ func (h *IBNetDiscoverBM) Run(ctx context.Context, node string) (*bytes.Buffer, 
 	return exec.Pdsh(ctx, "sudo ibnetdiscover", []string{node}, "-N")
 }
 
+func (h *IBNetDiscoverBM) Ports(ctx context.Context, node string) ([]IBPort, error) {
+	command := "sudo sh -c '" + strings.ReplaceAll(listActiveIBPorts, "'", "'\"'\"'") + "'"
+	output, err := exec.Pdsh(ctx, command, []string{node}, "-N")
+	if err != nil {
+		return nil, err
+	}
+	return parseIBPorts(output)
+}
+
+func (h *IBNetDiscoverBM) RunPort(ctx context.Context, node string, port IBPort) (*bytes.Buffer, error) {
+	return exec.Pdsh(ctx, "sudo ibnetdiscover -C "+port.CA+" -P "+port.Port, []string{node}, "-N")
+}
+
 type pdshNvidiaSMIRunner struct{}
 
 func (pdshNvidiaSMIRunner) Run(ctx context.Context, command string, targets []accelerator.Target) (map[string]string, error) {

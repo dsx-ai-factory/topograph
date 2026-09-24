@@ -23,6 +23,43 @@ For **Multi-Node NVLink (MNNVL) Kubernetes clusters** (e.g. GB200 NVL72), do not
 
 All three variants are single-region only (multi-region requests return a `400 Bad Request` error). No CSP credentials are required.
 
+### Selecting a compute fabric
+
+When nodes have separate compute and storage InfiniBand subnets, configure a
+switch selector to keep the compute fabric. All three variants accept the same
+`provider.params.switchSelector` setting:
+
+```yaml
+provider:
+  name: infiniband-k8s # or infiniband-bm
+  params:
+    switchSelector:
+      include:
+        - '^IB-Compute'
+      exclude:
+        - '-Maintenance$'
+```
+
+`include` and `exclude` are optional lists of Go regular expressions, but at
+least one must be non-empty. Patterns match the parsed switch name (for example,
+`IB-ComputeLeaf-101` from an `MF0;IB-ComputeLeaf-101:...` node description).
+An HCA-facing switch is selected when it matches any `include` pattern, or
+when `include` is omitted. A matching `exclude` pattern always rejects it.
+Selected leaves retain their connected upstream switches, unless an upstream
+switch matches `exclude`. Switches and nodes outside the selected branches are
+omitted. Invalid patterns fail provider loading with HTTP 400, and a selector
+that produces no usable topology fails generation explicitly.
+
+With a selector, the live providers enumerate active local IB ports and run
+`ibnetdiscover` on each port so a default storage port cannot hide a separate
+compute subnet. Equivalent compute rails are deduplicated; rails that give
+conflicting leaf groups for the same nodes fail generation rather than assign
+ambiguous tier-0 labels. The simulation provider applies the selector to its
+saved capture; it does not enumerate ports. Without a selector, live discovery
+still uses the default `ibnetdiscover` port. This feature publishes one chosen
+fabric hierarchy under the existing `fabric.topograph.run/tier-N` labels; it
+does not add a second set of storage labels.
+
 ## Output
 
 All three variants produce the same fabric topology representation, and are in turn consumed by whichever engine you configure. The simulation variant has no accelerator-domain data:
@@ -126,6 +163,8 @@ The following optional parameters can be passed in the topology request payload:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `nodeSelector` | `map[string]string` | — | Label selector to filter which nodes participate in topology discovery |
+| `switchSelector.include` | `list[string]` | — | Regular expressions selecting HCA-facing switches by parsed name. Omitted means all leaves are eligible. |
+| `switchSelector.exclude` | `list[string]` | — | Regular expressions rejecting switches by parsed name; takes precedence over `include`. |
 | `accelerator` | `object` | — | Enables and configures accelerator-domain discovery. When omitted or empty, no accelerator domains are discovered. |
 | `accelerator.source` | `string` | — | Required when the `accelerator` section is non-empty. Accelerator-domain source: `nvidia-smi`, `kubernetes-label`, or `none`. |
 | `accelerator.kubernetesLabel.key` | `string` | — | Required for the `kubernetes-label` source. Kubernetes Node label read as the accelerator-domain ID; no default is assumed. |
@@ -241,3 +280,20 @@ Set `provider.params.ibnetdiscoverFileName` to a readable file path containing r
 ```
 
 Instance IDs are hostnames in this variant. The request's `nodes` list filters the captured fabric to those hosts. With the graph engine, omitting `nodes` selects all named hosts connected to a switch in the capture. CA records without a switch connection are excluded from automatic selection because they cannot appear in the switch tree. A missing or invalid capture returns `400 Bad Request`, as does a multi-region request. The sample capture is intended for local testing; use an absolute path when the server runs from a different working directory.
+
+To exercise switch selection offline from the repository root:
+
+```json
+{
+  "provider": {
+    "name": "infiniband-sim",
+    "params": {
+      "ibnetdiscoverFileName": "tests/output/ibnetdiscover/compute-storage.out",
+      "switchSelector": { "exclude": ["^IB-Storage"] }
+    }
+  },
+  "engine": { "name": "graph" }
+}
+```
+
+The synthetic capture has six hosts with separate compute and storage HCAs in one connected switch graph. Without a selector, both switch branches appear. With the exclusion above (or `include: ["^IB-ComputeLeaf"]`), the storage leaf is omitted and the two compute leaves remain under the spine. A real separate storage subnet normally requires its own `ibnetdiscover` run; this single-capture fixture tests graph filtering, not live port enumeration.

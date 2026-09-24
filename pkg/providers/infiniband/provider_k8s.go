@@ -24,10 +24,11 @@ import (
 const NAME_K8S = "infiniband-k8s"
 
 type ProviderK8S struct {
-	config      *rest.Config
-	client      *kubernetes.Clientset
-	nodeListOpt *metav1.ListOptions
-	accelerator accelerator.Discoverer
+	config         *rest.Config
+	client         *kubernetes.Clientset
+	nodeListOpt    *metav1.ListOptions
+	accelerator    accelerator.Discoverer
+	switchSelector *switchSelector
 }
 
 func NamedLoaderK8S() (string, providers.Loader) {
@@ -35,6 +36,10 @@ func NamedLoaderK8S() (string, providers.Loader) {
 }
 
 func LoaderK8S(ctx context.Context, config providers.Config) (providers.Provider, *httperr.Error) {
+	selector, err := newSwitchSelector(config.Params)
+	if err != nil {
+		return nil, httperr.NewError(http.StatusBadRequest, err.Error())
+	}
 	nodeListOpt, err := k8s.NodeListOptions(config.Params)
 	if err != nil {
 		return nil, httperr.NewError(http.StatusBadRequest, err.Error())
@@ -57,10 +62,11 @@ func LoaderK8S(ctx context.Context, config providers.Config) (providers.Provider
 	}
 
 	return &ProviderK8S{
-		config:      cfg,
-		client:      client,
-		nodeListOpt: nodeListOpt,
-		accelerator: acceleratorDiscoverer,
+		config:         cfg,
+		client:         client,
+		nodeListOpt:    nodeListOpt,
+		accelerator:    acceleratorDiscoverer,
+		switchSelector: selector,
 	}, nil
 }
 
@@ -80,7 +86,7 @@ func (p *ProviderK8S) GenerateTopologyConfig(ctx context.Context, _ *int, cis []
 	}
 
 	ibnetdiscover := NewIBNetDiscoverK8S(p.config, p.client)
-	treeRoot, err := getIbTree(ctx, cis, ibnetdiscover)
+	treeRoot, err := getIbTree(ctx, cis, ibnetdiscover, p.switchSelector)
 	if err != nil {
 		return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("getIbTree failed: %v", err))
 	}
