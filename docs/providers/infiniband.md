@@ -1,6 +1,6 @@
 # InfiniBand Topology Provider
 
-Topograph provides two variations of InfiniBand provider. Both discover the IB fabric switch tree using `ibnetdiscover`, which is useful for any cluster — CPU-only, mixed, or GPU-accelerated — where topology-aware scheduling across an InfiniBand fabric improves workload performance. NVLink domain discovery is an additional capability that applies only to nodes with NVLink-connected NVIDIA GPUs.
+Topograph provides two live variations of the InfiniBand provider and one offline simulation variant. The live providers discover the IB fabric switch tree using `ibnetdiscover`, which is useful for any cluster — CPU-only, mixed, or GPU-accelerated — where topology-aware scheduling across an InfiniBand fabric improves workload performance. NVLink domain discovery is an additional capability that applies only to nodes with NVLink-connected NVIDIA GPUs.
 
 **Why automate IB discovery?** Hand-maintaining IB topology — a static `topology.conf` or a set of hand-applied node labels — is feasible at ~32 nodes with a stable network and a careful operator. It does not scale. At 1,000 nodes with InfiniBand fabric churn, NVLink partitions shifting with tenant allocation, and a constant background rate of link degradation and node cycling, manual maintenance becomes the dominant source of scheduling misplacement. Topograph keeps topology data current as the cluster changes, removing that burden.
 
@@ -8,6 +8,7 @@ The choice of which to use depends on the specifics of the deployment environmen
 
 - Use **`infiniband-bm`** for bare-metal clusters (e.g. Slurm)
 - Use **`infiniband-k8s`** for Kubernetes clusters
+- Use **`infiniband-sim`** to replay a saved `ibnetdiscover` capture without fabric access
 
 If **NetQ is deployed** in your environment, consider using the [NetQ provider](./netq.md) instead — it discovers topology via the NetQ management API rather than directly from the fabric, which avoids node access requirements and is the standard approach for Spectrum-X environments.
 
@@ -20,11 +21,11 @@ For **Multi-Node NVLink (MNNVL) Kubernetes clusters** (e.g. GB200 NVL72), do not
 | **Accelerator-domain source** | Configurable: `nvidia-smi` via pdsh, or none | Configurable: `nvidia-smi`, Kubernetes Node label, or none |
 | **Target environment** | Bare-metal / Slurm | Kubernetes |
 
-Both variants are presently single-region only (multi-region requests return a `400 Bad Request` error). No CSP credentials are required.
+All three variants are single-region only (multi-region requests return a `400 Bad Request` error). No CSP credentials are required.
 
 ## Output
 
-Both variants produce the same topology representation, and are in turn consumed by whichever engine you configure:
+All three variants produce the same fabric topology representation, and are in turn consumed by whichever engine you configure. The simulation variant has no accelerator-domain data:
 
 - **Slurm engine** (`engine: slurm`) — writes a `topology.conf` file describing the switch tree, used by the Slurm topology plugin for topology-aware scheduling
 - **Kubernetes engine** (`engine: k8s`) — applies `fabric.topograph.run/` labels to nodes reflecting their position in the switch hierarchy and (where applicable) their NVLink domain
@@ -210,3 +211,33 @@ kubectl get nodes -o json | jq '.items[].metadata.labels | with_entries(select(.
 ```
 
 See the [Kubernetes engine documentation](../engines/k8s.md) for details on the label schema.
+
+---
+
+## `infiniband-sim` (Offline Simulation)
+
+`infiniband-sim` reads a saved `ibnetdiscover` output file and uses the same parser and switch-tree builder as the live providers. It requires no InfiniBand devices, Kubernetes cluster, or credentials. It simulates fabric tiers only; it does not discover accelerator domains.
+
+Set `provider.params.ibnetdiscoverFileName` to a readable file path containing raw `ibnetdiscover` text on the Topograph server. `modelFileName` is reserved for YAML models used by other simulation providers and is rejected here. For example, from the repository root:
+
+```json
+{
+  "provider": {
+    "name": "infiniband-sim",
+    "params": {
+      "ibnetdiscoverFileName": "tests/output/ibnetdiscover/example.out"
+    }
+  },
+  "engine": { "name": "graph" },
+  "nodes": [
+    {
+      "region": "local",
+      "instances": {
+        "b07-p1-dgx-07-c01": "b07-p1-dgx-07-c01"
+      }
+    }
+  ]
+}
+```
+
+Instance IDs are hostnames in this variant. The request's `nodes` list filters the captured fabric to those hosts. With the graph engine, omitting `nodes` selects all named hosts connected to a switch in the capture. CA records without a switch connection are excluded from automatic selection because they cannot appear in the switch tree. A missing or invalid capture returns `400 Bad Request`, as does a multi-region request. The sample capture is intended for local testing; use an absolute path when the server runs from a different working directory.
