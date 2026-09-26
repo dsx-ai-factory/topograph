@@ -51,6 +51,7 @@ Currently supported providers:
 - [DRA](./providers/dra.md) — provides Slinky block topology from a configured pre-existing Node label (default `nvidia.com/gpu.clique`); it does not discover the backend switch fabric
 - [InfiniBand (bare-metal)](./providers/infiniband.md#infiniband-bm-bare-metal)
 - [InfiniBand (Kubernetes)](./providers/infiniband.md#infiniband-k8s-kubernetes)
+- [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation)
 - [Test](./providers/test.md) - simulates Topograph success, pending, and error responses for integration testing
 
 Currently supported engines:
@@ -72,6 +73,7 @@ Currently supported engines:
 | InfiniBand fabric, NetQ deployed | [NetQ](./providers/netq.md) |
 | InfiniBand fabric, no NetQ, bare-metal / Slurm | [InfiniBand (bare-metal)](./providers/infiniband.md) |
 | InfiniBand fabric, no NetQ, Kubernetes | [InfiniBand (Kubernetes)](./providers/infiniband.md) |
+| Replay a captured InfiniBand fabric without node access | [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation) |
 | Crusoe Cloud, including Crusoe Managed Kubernetes | [Crusoe](./providers/crusoe.md) |
 | Client integration and regression testing | [Test](./providers/test.md) |
 

@@ -45,6 +45,7 @@ var Providers = providers.NewRegistry(
 	crusoe.NamedLoaderSim,
 	infiniband.NamedLoaderBM,
 	infiniband.NamedLoaderK8S,
+	infiniband.NamedLoaderSim,
 	dra.NamedLoader,
 	gcp.NamedLoader,
 	gcp.NamedLoaderSim,

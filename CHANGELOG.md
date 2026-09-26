@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node filtering and no fabric access.
 - SHA-256 checksum files published beside Helm chart packages and included
   with their corresponding GitHub release assets.
 - Tag-driven official releases that publish the Helm chart, checksum, build
