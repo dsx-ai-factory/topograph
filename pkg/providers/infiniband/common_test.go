@@ -32,6 +32,14 @@ func (h *testIBNetDiscover) Run(ctx context.Context, node string) (*bytes.Buffer
 	return bytes.NewBuffer(data), nil
 }
 
+func (h *testIBNetDiscover) Ports(context.Context, string) ([]IBPort, error) {
+	return []IBPort{{CA: "mlx5_0", Port: "1"}}, nil
+}
+
+func (h *testIBNetDiscover) RunPort(ctx context.Context, node string, _ IBPort) (*bytes.Buffer, error) {
+	return h.Run(ctx, node)
+}
+
 func TestGetIbTree(t *testing.T) {
 	testCases := []struct {
 		name string
@@ -97,7 +105,7 @@ func TestGetIbTree(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			root, err := getIbTree(ctx, cis, &testIBNetDiscover{err: tc.err})
+			root, err := getIbTree(ctx, cis, &testIBNetDiscover{err: tc.err}, nil)
 			require.NoError(t, err)
 			require.NotNil(t, root)
 			require.Equal(t, tc.root, root)

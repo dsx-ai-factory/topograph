@@ -19,8 +19,9 @@ import (
 const NAME_BM = "infiniband-bm"
 
 type ProviderBM struct {
-	accelerator   accelerator.Discoverer
-	ibNetDiscover IBNetDiscover
+	accelerator    accelerator.Discoverer
+	ibNetDiscover  IBNetDiscover
+	switchSelector *switchSelector
 }
 
 func NamedLoaderBM() (string, providers.Loader) {
@@ -28,6 +29,10 @@ func NamedLoaderBM() (string, providers.Loader) {
 }
 
 func LoaderBM(_ context.Context, providerConfig providers.Config) (providers.Provider, *httperr.Error) {
+	selector, err := newSwitchSelector(providerConfig.Params)
+	if err != nil {
+		return nil, httperr.NewError(http.StatusBadRequest, err.Error())
+	}
 	discoverer, err := accelerator.NewCommandDiscoverer(
 		accelerator.SectionFromProviderParams(providerConfig.Params),
 		pdshNvidiaSMIRunner{},
@@ -36,7 +41,7 @@ func LoaderBM(_ context.Context, providerConfig providers.Config) (providers.Pro
 		return nil, httperr.NewError(http.StatusBadRequest, err.Error())
 	}
 
-	return &ProviderBM{accelerator: discoverer, ibNetDiscover: &IBNetDiscoverBM{}}, nil
+	return &ProviderBM{accelerator: discoverer, ibNetDiscover: &IBNetDiscoverBM{}, switchSelector: selector}, nil
 }
 
 func (p *ProviderBM) GenerateTopologyConfig(ctx context.Context, _ *int, cis []topology.ComputeInstances) (*topology.Graph, *httperr.Error) {
@@ -51,7 +56,7 @@ func (p *ProviderBM) GenerateTopologyConfig(ctx context.Context, _ *int, cis []t
 	}
 	domainMap := accelerator.DomainMapFromAssignments(assignments, targets)
 
-	treeRoot, err := getIbTree(ctx, cis, p.ibNetDiscover)
+	treeRoot, err := getIbTree(ctx, cis, p.ibNetDiscover, p.switchSelector)
 	if err != nil {
 		return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("getIbTree failed: %v", err))
 	}

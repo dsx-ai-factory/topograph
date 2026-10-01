@@ -6,6 +6,14 @@ provider:
   # name: "aws", "crusoe", "oci", "gcp", "nebius", "nscale", "lambdai", "netq", "infiniband-k8s", "dra" or "test".
   name: test
   # params:
+  #   # For infiniband-k8s, select HCA-facing switches by parsed name. Either
+  #   # list may be omitted; exclude takes precedence. When configured,
+  #   # discovery checks every active local IB port.
+  #   switchSelector:
+  #     include:
+  #       - '^IB-Compute'
+  #     exclude:
+  #       - '-Maintenance$'
   #   accelerator:
   #     # Accelerator-domain discovery is independent of fabric discovery.
   #     # Sources supported by infiniband-k8s: nvidia-smi, kubernetes-label,

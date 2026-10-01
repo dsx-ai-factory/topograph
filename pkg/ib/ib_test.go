@@ -265,7 +265,7 @@ func TestGenerateTopologyConfigValid(t *testing.T) {
 		},
 	}
 
-	forest, _, err := GenerateTopologyConfig(data, instances)
+	forest, _, err := GenerateTopologyConfig(data, instances, nil)
 	require.NoError(t, err)
 
 	root := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
@@ -300,7 +300,7 @@ func TestGenerateTopologyConfigInvalid(t *testing.T) {
 		},
 	}
 
-	forest, _, err := GenerateTopologyConfig(data, instances)
+	forest, _, err := GenerateTopologyConfig(data, instances, nil)
 	require.NoError(t, err)
 
 	root := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}

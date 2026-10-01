@@ -46,11 +46,73 @@ type Switch struct {
 	Nodes map[string]string // ID:node name
 }
 
-func GenerateTopologyConfig(data []byte, instances []topology.ComputeInstances) ([]*topology.Vertex, map[string]string, error) {
+// SwitchSelector chooses HCA-facing switches and rejects switches at any level.
+type SwitchSelector interface {
+	AcceptsLeaf(string) bool
+	Excludes(string) bool
+}
+
+func GenerateTopologyConfig(data []byte, instances []topology.ComputeInstances, selector SwitchSelector) ([]*topology.Vertex, map[string]string, error) {
 	switches, hca, err := ParseIbnetdiscoverFile(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to parse ibnetdiscover output: %v", err)
 	}
+	if selector == nil {
+		return topologyFromSwitches(switches, hca, instances), hca, nil
+	}
+
+	selected := make(map[string]bool)
+	nodes := topology.GetNodeNameMap(instances)
+	var visit func(string)
+	visit = func(id string) {
+		if selected[id] {
+			return
+		}
+		sw, ok := switches[id]
+		if !ok || selector.Excludes(sw.Name) {
+			return
+		}
+		selected[id] = true
+		for neighbor := range sw.Conn {
+			other, ok := switches[neighbor]
+			if !ok || selector.Excludes(other.Name) {
+				continue
+			}
+			if switchHasClusterHCA(other, hca, nodes) && !selector.AcceptsLeaf(other.Name) {
+				continue
+			}
+			visit(neighbor)
+		}
+	}
+	for id, sw := range switches {
+		if switchHasClusterHCA(sw, hca, nodes) && selector.AcceptsLeaf(sw.Name) && !selector.Excludes(sw.Name) {
+			visit(id)
+		}
+	}
+	for id, sw := range switches {
+		if !selected[id] {
+			delete(switches, id)
+			continue
+		}
+		for neighbor := range sw.Conn {
+			if _, isSwitch := switches[neighbor]; isSwitch && !selected[neighbor] {
+				delete(sw.Conn, neighbor)
+			}
+		}
+	}
+	return topologyFromSwitches(switches, hca, instances), hca, nil
+}
+
+func switchHasClusterHCA(sw *Switch, hca map[string]string, nodes map[string]bool) bool {
+	for id := range sw.Conn {
+		if node, ok := hca[id]; ok && nodes[node] {
+			return true
+		}
+	}
+	return false
+}
+
+func topologyFromSwitches(switches map[string]*Switch, hca map[string]string, instances []topology.ComputeInstances) []*topology.Vertex {
 	nodes := topology.GetNodeNameMap(instances)
 	roots := buildTree(switches, hca, nodes)
 
@@ -61,7 +123,7 @@ func GenerateTopologyConfig(data []byte, instances []topology.ComputeInstances) 
 	merger := topology.NewMerger(top)
 	merger.Merge()
 
-	return merger.TopTier(), hca, nil
+	return merger.TopTier()
 }
 
 // process output of ibnetdiscover

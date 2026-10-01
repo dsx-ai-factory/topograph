@@ -73,7 +73,8 @@ Currently supported engines:
 | InfiniBand fabric, NetQ deployed | [NetQ](./providers/netq.md) |
 | InfiniBand fabric, no NetQ, bare-metal / Slurm | [InfiniBand (bare-metal)](./providers/infiniband.md) |
 | InfiniBand fabric, no NetQ, Kubernetes | [InfiniBand (Kubernetes)](./providers/infiniband.md) |
-| Replay a captured InfiniBand fabric without node access | [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation) |
+| Replay a captured InfiniBand fabric and test switch selection without node access | [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation) |
+| Separate compute and storage InfiniBand subnets | [InfiniBand](./providers/infiniband.md#selecting-a-compute-fabric) with a switch selector for the compute fabric |
 | Crusoe Cloud, including Crusoe Managed Kubernetes | [Crusoe](./providers/crusoe.md) |
 | Client integration and regression testing | [Test](./providers/test.md) |
 
