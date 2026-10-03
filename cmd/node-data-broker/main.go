@@ -36,6 +36,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nebius"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/oci"
+	provider_test "github.com/dsx-ai-factory/topograph/pkg/providers/test"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
@@ -148,6 +149,10 @@ func (b *nodeBroker) apply(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if len(annotations) == 0 {
+		klog.Infof("no node annotations to add in node %s for provider %s", b.nodeName, b.config.Provider.Name)
+		return nil
+	}
 	klog.Infof("adding annotations %v in node %s for provider %s", annotations, b.nodeName, b.config.Provider.Name)
 
 	node, err := b.clientset.CoreV1().Nodes().Get(ctx, b.nodeName, metav1.GetOptions{})
@@ -224,6 +229,10 @@ func (b *nodeBroker) getAnnotations(ctx context.Context) (map[string]string, err
 		return infiniband.GetNodeAnnotations(ctx, b.clientset, b.restConfig, b.nodeName, section)
 	case lambdai.NAME:
 		return lambdai.GetNodeAnnotations(ctx, b.clientset, b.nodeName)
+	case provider_test.NAME:
+		// The test provider takes its compute instances from the simulation
+		// model, so there is no node-local data to collect.
+		return nil, nil
 	case "":
 		return nil, fmt.Errorf("must set provider")
 	default:

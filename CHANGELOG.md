@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `node-data-broker` no longer crash-loops with `unsupported provider "test"` when the `test` provider is selected, which is the Helm chart's default. The broker has no node-local data to collect for that provider, so it skips the node update and stays healthy, letting the node-observer's broker readiness gate open. Previously a default `helm install --wait` failed and no topology was ever generated.
 - The `Go` workflow now also runs on pushes to `main`, so Codecov receives a coverage report for every merged commit. Merges are squashed, so the SHA that lands on `main` no longer matches the `pull-request/<n>` SHA that uploaded coverage; without a `main` trigger, Codecov's `main` branch had gone stale since 2026-07-06 and the README coverage badge reported a figure roughly six points below actual coverage.
 - `nscale` provider's Slurm auto-discovery now issues a single `pdsh` sweep to fetch IMDS metadata for the node list, instead of running it twice (once each for `Instances2NodeMap` and `GetInstancesRegions`).
 - `node-data-broker`'s per-node self-annotation for the `nscale` provider now honors the configured `imdsUrl` parameter instead of always querying the default IMDS endpoint, matching the Slurm auto-discovery path's behavior.
