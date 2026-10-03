@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -18,10 +19,12 @@ import (
 )
 
 type testIBNetDiscover struct {
-	err bool
+	err  bool
+	runs int
 }
 
 func (h *testIBNetDiscover) Run(ctx context.Context, node string) (*bytes.Buffer, error) {
+	h.runs++
 	if h.err {
 		return nil, errors.New("error")
 	}
@@ -103,4 +106,25 @@ func TestGetIbTree(t *testing.T) {
 			require.Equal(t, tc.root, root)
 		})
 	}
+}
+
+func TestGetIbTreeFQDNNodes(t *testing.T) {
+	instances := map[string]string{}
+	for i := 1; i <= 4; i++ {
+		name := fmt.Sprintf("b07-p1-dgx-07-c%02d.example.com", i)
+		instances[name] = name
+	}
+	cis := []topology.ComputeInstances{{Region: "on-prem", Instances: instances}}
+
+	ibnetdiscover := &testIBNetDiscover{}
+	root, err := getIbTree(context.TODO(), cis, ibnetdiscover)
+	require.NoError(t, err)
+
+	// ibnetdiscover output reports short host names; once they resolve to
+	// the FQDN node names, a single run covers every node on the fabric.
+	require.Equal(t, 1, ibnetdiscover.runs)
+	leaf := root.Vertices["S-2c5eab0300b879c0"].Vertices["S-2c5eab0300c25f00"].Vertices["S-2c5eab0300c26140"]
+	require.NotNil(t, leaf)
+	require.Len(t, leaf.Vertices, 4)
+	require.Contains(t, leaf.Vertices, "b07-p1-dgx-07-c01.example.com")
 }

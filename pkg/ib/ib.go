@@ -20,8 +20,12 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"net"
 	"regexp"
+	"slices"
 	"strings"
+
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
@@ -52,6 +56,7 @@ func GenerateTopologyConfig(data []byte, instances []topology.ComputeInstances) 
 		return nil, nil, fmt.Errorf("failed to parse ibnetdiscover output: %v", err)
 	}
 	nodes := topology.GetNodeNameMap(instances)
+	hca = resolveNodeNames(hca, nodes)
 	roots := buildTree(switches, hca, nodes)
 
 	top := make([]*topology.Vertex, 0, len(roots))
@@ -199,4 +204,43 @@ func extractNodeName(name string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// resolveNodeNames maps HCA host names to cluster node names.
+// The HCA node description usually carries the short host name, while
+// the cluster may register nodes by their FQDN (e.g. RKE2 on SLES), or
+// the other way round. Names that match exactly are kept; otherwise the
+// short names (up to the first dot) are compared, and a match is used
+// only when it identifies exactly one cluster node.
+func resolveNodeNames(hca map[string]string, nodesInCluster map[string]bool) map[string]string {
+	byShortName := make(map[string][]string)
+	for node := range nodesInCluster {
+		short := shortHostName(node)
+		byShortName[short] = append(byShortName[short], node)
+	}
+
+	resolved := make(map[string]string, len(hca))
+	for id, name := range hca {
+		resolved[id] = name
+		if nodesInCluster[name] {
+			continue
+		}
+		switch candidates := byShortName[shortHostName(name)]; len(candidates) {
+		case 0:
+		case 1:
+			resolved[id] = candidates[0]
+		default:
+			slices.Sort(candidates)
+			klog.Warningf("HCA host name %q matches multiple nodes %v; skipping", name, candidates)
+		}
+	}
+	return resolved
+}
+
+func shortHostName(name string) string {
+	if net.ParseIP(name) != nil {
+		return name
+	}
+	short, _, _ := strings.Cut(name, ".")
+	return short
 }
