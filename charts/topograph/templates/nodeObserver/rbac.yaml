@@ -12,7 +12,8 @@ rules:
   resources: [daemonsets]
   verbs: [list,watch]
 {{- end }}
-{{- if (default dict .Values.nodeObserver.topograph.trigger).nodeSelector }}
+{{- $trigger := include "nodeObserver.trigger" . | fromYaml }}
+{{- if or $trigger.nodeSelector $trigger.nodeLabels $trigger.nodeReadiness }}
 - apiGroups: [""]
   resources: [nodes]
   verbs: [list,watch]

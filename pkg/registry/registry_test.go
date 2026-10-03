@@ -28,6 +28,7 @@ func TestProviders(t *testing.T) {
 		"aws", "aws-sim",
 		"infiniband-bm", "infiniband-k8s", "infiniband-sim",
 		"dra",
+		"kubernetes",
 		"gcp", "gcp-sim",
 		"oci", "oci-imds", "oci-sim",
 		"nebius", "nebius-sim",

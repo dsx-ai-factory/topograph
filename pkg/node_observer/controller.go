@@ -31,6 +31,10 @@ type Controller struct {
 }
 
 func NewController(ctx context.Context, client kubernetes.Interface, cfg *Config) (*Controller, error) {
+	trigger, err := cfg.nodeTrigger()
+	if err != nil {
+		return nil, err
+	}
 	headers := map[string]string{"Content-Type": "application/json"}
 	payload := topology.NewRequest(cfg.Provider, cfg.Engine)
 	data, err := json.Marshal(payload)
@@ -47,7 +51,7 @@ func NewController(ctx context.Context, client kubernetes.Interface, cfg *Config
 	statusInformer, err := NewStatusInformer(
 		ctx,
 		client,
-		&cfg.Trigger,
+		trigger,
 		&cfg.APIServer,
 		os.Getenv(nodeDataBrokerNameEnv),
 		os.Getenv(nodeDataBrokerNamespaceEnv),

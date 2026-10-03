@@ -26,4 +26,4 @@ data:
         {{- end }}
     {{- end }}
     trigger:
-      {{- toYaml .Values.nodeObserver.topograph.trigger | nindent 6 }}
+      {{- include "nodeObserver.trigger" . | nindent 6 }}

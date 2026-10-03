@@ -30,6 +30,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dsx"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/gcp"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
+	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/lambdai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nebius"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/netq"
@@ -47,6 +48,7 @@ var Providers = providers.NewRegistry(
 	infiniband.NamedLoaderK8S,
 	infiniband.NamedLoaderSim,
 	dra.NamedLoader,
+	kubernetesprovider.NamedLoader,
 	gcp.NamedLoader,
 	gcp.NamedLoaderSim,
 	oci.NamedLoaderAPI,

@@ -577,3 +577,16 @@ tests:
             resources: [pods/exec]
             verbs: [create]
         documentIndex: 0
+
+  - it: grants node listing for the kubernetes provider with graph output
+    set:
+      provider.name: kubernetes
+      engine.name: graph
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: [nodes]
+              verbs: [list]

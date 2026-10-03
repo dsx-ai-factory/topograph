@@ -27,6 +27,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/internal/httpreq"
 	"github.com/dsx-ai-factory/topograph/internal/k8s"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 const topologyQueueKey = "cluster-topology"
@@ -35,6 +36,8 @@ const topologyQueueKey = "cluster-topology"
 // their cluster-wide topology through a single rate-limited work queue key.
 // The exported name is retained for compatibility with existing callers.
 type StatusInformer struct {
+	nodeLabels          []string
+	nodeReadiness       bool
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	nodeFactory         informers.SharedInformerFactory
@@ -70,7 +73,9 @@ func NewStatusInformer(ctx context.Context, client kubernetes.Interface, trigger
 		),
 	}
 
-	if trigger != nil && len(trigger.NodeSelector) != 0 {
+	if trigger != nil && (len(trigger.NodeSelector) != 0 || len(trigger.NodeLabels) != 0 || trigger.NodeReadiness) {
+		statusInformer.nodeLabels = append([]string(nil), trigger.NodeLabels...)
+		statusInformer.nodeReadiness = trigger.NodeReadiness
 		listOptionsFunc := func(options *metav1.ListOptions) {
 			options.LabelSelector = labels.Set(trigger.NodeSelector).AsSelector().String()
 		}
@@ -208,6 +213,13 @@ func (s *StatusInformer) startNodeInformer() error {
 			AddFunc: func(obj any) {
 				if node, ok := obj.(*corev1.Node); ok {
 					klog.V(4).Infof("Informer added node %s", node.Name)
+					s.sendRequest()
+				}
+			},
+			UpdateFunc: func(oldObj, newObj any) {
+				oldNode, oldOK := oldObj.(*corev1.Node)
+				newNode, newOK := newObj.(*corev1.Node)
+				if oldOK && newOK && s.shouldRequestOnNodeUpdate(oldNode, newNode) {
 					s.sendRequest()
 				}
 			},
@@ -536,4 +548,36 @@ func (s *StatusInformer) reconcile() (time.Duration, error) {
 		return 0, fmt.Errorf("failed to send topology generation request: %w", err)
 	}
 	return 0, nil
+}
+
+func (s *StatusInformer) shouldRequestOnNodeUpdate(oldNode, newNode *corev1.Node) bool {
+	if s.nodeReadiness && nodeReady(oldNode) != nodeReady(newNode) {
+		return true
+	}
+	if len(s.nodeLabels) == 0 {
+		return false
+	}
+	if (oldNode.DeletionTimestamp == nil) != (newNode.DeletionTimestamp == nil) {
+		return true
+	}
+	for _, key := range s.nodeLabels {
+		if oldNode.Labels[key] != newNode.Labels[key] {
+			return true
+		}
+	}
+	for _, key := range []string{topology.KeyNodeInstance, topology.KeyNodeRegion} {
+		if oldNode.Annotations[key] != newNode.Annotations[key] {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeReady(node *corev1.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }
