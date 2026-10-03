@@ -8,6 +8,8 @@ navigation:
         path: overview.md
       - page: Install on Kubernetes
         path: get-started/quickstart-k8s.md
+      - page: Install on RKE2 (SUSE)
+        path: get-started/rke2-suse.md
       - page: Install on Slurm
         path: get-started/quickstart-slurm.md
       - page: Community

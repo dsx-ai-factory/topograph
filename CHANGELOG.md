@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- "Install on RKE2 (SUSE)" guide (`docs/get-started/rke2-suse.md`) covering the GPU Operator location for `nvidia-smi` discovery, FQDN node names, Pod Security under RKE2's CIS profile, SELinux on SLES, and RoCE fabrics.
 - `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node filtering and no fabric access.
 - SHA-256 checksum files published beside Helm chart packages and included
   with their corresponding GitHub release assets.
