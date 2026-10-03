@@ -6,6 +6,8 @@ Topograph installs on a Kubernetes cluster via a Helm chart. This quickstart cov
 - **[`nfd` engine](#engine-nfd)** — publishes topology as Node Feature Discovery `NodeFeature` and `NodeFeatureGroup` custom resources for NFD-aware consumers
 - **[`slinky` engine](#engine-slinky)** — writes Slurm topology configuration into a `ConfigMap` for [Slinky](https://github.com/SlinkyProject) (Slurm-on-Kubernetes) deployments
 
+If you run RKE2, including RKE2 on SLES, also read [Install on RKE2 (SUSE)](rke2-suse.md).
+
 Prerequisites, install flow, and verification are common to all three engines —
 they differ only in a few `engine.*` values and in what downstream artifact is
 produced.
