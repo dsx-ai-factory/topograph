@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Manual Helm chart publishing now targets the NGC `dsx-ai-factory-staging/topograph` team using the `NGC_API_KEY` GitHub Actions secret instead of GitHub Pages.
+- Container image publishing now targets `nvcr.io/dsx-ai-factory-staging/topograph/topograph` in NGC using the `NGC_API_KEY` GitHub Actions secret.
 - **BREAKING:** The Go module and canonical repository moved from `github.com/NVIDIA/topograph` to `github.com/dsx-ai-factory/topograph`. Repository links, published container and Helm chart locations, build metadata, and examples now use the `dsx-ai-factory` organization.
 - **BREAKING:** `topograph` and `node-observer` binaries now use [pflag](https://github.com/spf13/pflag) for flag parsing, matching `node-data-broker`. Single-dash long flags (`-version`, `-logtostderr`, `-vmodule`, etc.) now require a double dash (`--version`, `--logtostderr`, `--vmodule`). This affects the use of all [klog](https://github.com/kubernetes/klog) flags
 - **BREAKING:** `kwok-nodes` now uses [pflag](https://github.com/spf13/pflag) for flag parsing. Single-dash long flags (`-model`, `-output`, etc.) now require a double dash (`--model`, `--output`); the short forms `-m`, `-o`, `-g`, and `-p` are newly added aliases for `--model`, `--output`, `--gpus`, and `--pods` respectively.
@@ -31,7 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Signed SLSA build provenance for published container images and Helm chart
   packages. Release workflows bind each artifact to its source commit and
   workflow using GitHub artifact attestations; container provenance is also
-  published to GHCR alongside the image.
+  published to NGC alongside the image.
 - Crusoe provider now derives accelerator domains from `nvidia.com/gpu.clique`, so `topology/block` renders one Slurm block per distinct clique value on rack-scale NVLink systems. The domain is the clique verbatim, matching how the InfiniBand and Lambda AI providers publish theirs. That value is the NVL Partition, which can be finer than the physical NVL Domain when one rack is split into several cliques. The InfiniBand partition is deliberately not used as a fallback domain: a partition can span many racks while a clique cannot, so keying blocks on the partition would let Slurm spread one job across racks and fall back to InfiniBand. Nodes without the clique label get no accelerator domain and are scheduled by the switch tree alone, leaving existing GPU classes unchanged.
 - Crusoe provider (`crusoe`) and its simulation variant (`crusoe-sim`) discover the InfiniBand switch fabric on Crusoe Cloud from the `crusoe.ai/ib.partition.id` and `crusoe.ai/pod.id` Node labels the Crusoe control plane publishes. Crusoe compute is virtualized, so a guest VM cannot run `ibnetdiscover` and there is no per-node metadata service for switch identity. Fabric tiers are the rail-optimized pod, the InfiniBand partition, and a synthetic root above them. Nodes without those labels are placed under placeholder tiers beneath the same root, so one Slurm tree spans a heterogeneous cluster. Use it with `topology/tree`.
 - Shared optional provider parameter `imdsUrl` (`providers.GetIMDSURL`, `topology.KeyIMDSURL`) for overriding a provider's default Instance Metadata Service URL. Only the `nscale` provider consumes it so far, falling back to its built-in IMDS URL when unset.
