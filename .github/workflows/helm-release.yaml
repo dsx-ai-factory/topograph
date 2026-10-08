@@ -8,11 +8,15 @@ concurrency:
 
 permissions: {}
 
+env:
+  HELM_REPOSITORY: https://helm.ngc.nvidia.com/1070195845945670/topograph
+
 jobs:
   release:
     runs-on: linux-amd64-cpu8
+    environment: ngc-publish
     permissions:
-      contents: write
+      contents: read
       id-token: write
       attestations: write
 
@@ -33,6 +37,9 @@ jobs:
           helm lint charts/topograph
           helm package charts/topograph --destination packaged
 
+      - name: Install Helm push plugin
+        run: helm plugin install https://github.com/chartmuseum/helm-push --version v0.10.4
+
       - name: Generate SHA-256 checksum
         run: |
           set -euo pipefail
@@ -47,35 +54,16 @@ jobs:
         with:
           subject-path: packaged/topograph-*.tgz
 
-      - name: Fetch existing Helm repo index
+      - name: Publish Helm chart to NGC
+        env:
+          HELM_REPO_USERNAME: $oauthtoken
+          HELM_REPO_PASSWORD: ${{ secrets.NGC_API_KEY }}
         run: |
           set -euo pipefail
-          if ! remote_ref=$(git ls-remote --heads origin refs/heads/gh-pages); then
-            echo "::error::Failed to check for the existing gh-pages branch."
+          if [[ -z "${HELM_REPO_PASSWORD}" ]]; then
+            echo "::error::The NGC_API_KEY secret is required to publish Helm charts."
             exit 1
           fi
-          if [[ -n "${remote_ref}" ]]; then
-            git fetch origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
-            git checkout origin/gh-pages -- index.yaml
-          fi
-
-      - name: Generate Helm repo index
-        # Pass context values through env rather than expanding ${{ }} inside
-        # the script, so the shell never parses them as code.
-        env:
-          REPO_OWNER: ${{ github.repository_owner }}
-          REPO_NAME: ${{ github.event.repository.name }}
-        run: |
-          if [ -f index.yaml ]; then
-            helm repo index packaged --url "https://${REPO_OWNER}.github.io/${REPO_NAME}" --merge index.yaml
-          else
-            helm repo index packaged --url "https://${REPO_OWNER}.github.io/${REPO_NAME}"
-          fi
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./packaged
-          publish_branch: gh-pages
-          keep_files: true
+          for chart in packaged/topograph-*.tgz; do
+            helm cm-push "${chart}" "${HELM_REPOSITORY}"
+          done

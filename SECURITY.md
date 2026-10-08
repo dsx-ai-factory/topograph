@@ -69,7 +69,7 @@ attestation for either, no checksum file, and no assets on their GitHub release 
 expected for those releases, not a supply chain problem.
 
 An official release publishes a multi-architecture container image at
-`ghcr.io/dsx-ai-factory/topograph:vX.Y.Z`, a Helm chart package in the chart repository at
+`nvcr.io/nvidia/topograph/topograph:vX.Y.Z`, a Helm chart package in the chart repository at
 `https://dsx-ai-factory.github.io/topograph`, and a SHA-256 checksum file beside the chart package. The
 chart package and its checksum are also attached to the GitHub release.
 
@@ -80,7 +80,7 @@ substituting the release you are checking for `vX.Y.Z` and `X.Y.Z`.
 Container image:
 
 ```bash
-gh attestation verify oci://ghcr.io/dsx-ai-factory/topograph:vX.Y.Z \
+gh attestation verify oci://nvcr.io/nvidia/topograph/topograph:vX.Y.Z \
   --repo dsx-ai-factory/topograph \
   --signer-workflow dsx-ai-factory/topograph/.github/workflows/docker.yml \
   --source-ref refs/tags/vX.Y.Z

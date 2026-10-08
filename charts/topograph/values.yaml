@@ -55,8 +55,9 @@ service:
 
 replicaCount: 1
 
+# Official NGC container image shared by all Topograph components.
 image:
-  repository: ghcr.io/dsx-ai-factory/topograph
+  repository: nvcr.io/nvidia/topograph/topograph
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
   pullPolicy: IfNotPresent

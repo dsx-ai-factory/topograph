@@ -16,7 +16,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-image=ghcr.io/dsx-ai-factory/topograph:tas-lab
+image=nvcr.io/nvidia/topograph/topograph:$TOPOGRAPH_VERSION
 topograph_ns=topograph
 
 labels() {
@@ -46,7 +46,7 @@ install)
     # The image runs in kind nodes, so build for the container engine's architecture, not the host's.
     arch="${GOARCH:-$(docker info --format '{{.Architecture}}' | sed 's/aarch64/arm64/; s/x86_64/amd64/')}"
     (cd "$repo_root" && make image-build GOOS=linux GOARCH="$arch" \
-        IMAGE_REPO=ghcr.io/dsx-ai-factory/topograph IMAGE_TAG=tas-lab)
+        IMAGE_REPO=nvcr.io/nvidia/topograph/topograph IMAGE_TAG=tas-lab)
     archive_dir="$(mktemp -d)"
     docker save -o "$archive_dir/topograph.tar" "$image"
     kind load image-archive "$archive_dir/topograph.tar" --name tas-lab

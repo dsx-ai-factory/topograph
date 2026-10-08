@@ -148,7 +148,7 @@ Topograph sits between topology sources and schedulers, and replaces neither.
 
 | Artifact | Where it comes from |
 |---|---|
-| Container image | `ghcr.io/dsx-ai-factory/topograph` |
+| Container image | `nvcr.io/nvidia/topograph/topograph` |
 | Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://dsx-ai-factory.github.io/topograph` |
 | `.deb` package | `make deb`, written to `bin/` |
 | `.rpm` package | `make rpm`, written to `bin/` |

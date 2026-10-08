@@ -66,7 +66,7 @@ renders default values.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -168,7 +168,7 @@ renders default values.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -327,7 +327,7 @@ renders default values.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -496,7 +496,7 @@ renders default values.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -548,7 +548,7 @@ renders default values.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:
@@ -641,7 +641,7 @@ renders values.k8s.gateway-api-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -765,7 +765,7 @@ renders values.k8s.gateway-api-example.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -924,7 +924,7 @@ renders values.k8s.gateway-api-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -1093,7 +1093,7 @@ renders values.k8s.gateway-api-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -1145,7 +1145,7 @@ renders values.k8s.gateway-api-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:
@@ -1240,7 +1240,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
                   value: topograph
                 - name: GOOGLE_APPLICATION_CREDENTIALS
                   value: /etc/topograph/gcp/credentials-config.json
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -1362,7 +1362,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -1528,7 +1528,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -1704,7 +1704,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -1756,7 +1756,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:
@@ -1851,7 +1851,7 @@ renders values.k8s.gcp-service-account-example.yaml:
                   value: topograph
                 - name: GOOGLE_APPLICATION_CREDENTIALS
                   value: /etc/topograph/gcp/service-account-keys.json
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -1961,7 +1961,7 @@ renders values.k8s.gcp-service-account-example.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -2125,7 +2125,7 @@ renders values.k8s.gcp-service-account-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -2301,7 +2301,7 @@ renders values.k8s.gcp-service-account-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -2353,7 +2353,7 @@ renders values.k8s.gcp-service-account-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:
@@ -2449,7 +2449,7 @@ renders values.k8s.ib-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -2556,7 +2556,7 @@ renders values.k8s.ib-example.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -2730,7 +2730,7 @@ renders values.k8s.ib-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -2924,7 +2924,7 @@ renders values.k8s.ib-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -2976,7 +2976,7 @@ renders values.k8s.ib-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:
@@ -3069,7 +3069,7 @@ renders values.slinky.block-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -3178,7 +3178,7 @@ renders values.slinky.block-example.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -3355,7 +3355,7 @@ renders values.slinky.block-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -3538,7 +3538,7 @@ renders values.slinky.block-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -3590,7 +3590,7 @@ renders values.slinky.block-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:
@@ -3683,7 +3683,7 @@ renders values.slinky.partition-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -3789,7 +3789,7 @@ renders values.slinky.partition-example.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -3983,7 +3983,7 @@ renders values.slinky.partition-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -4167,7 +4167,7 @@ renders values.slinky.partition-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -4219,7 +4219,7 @@ renders values.slinky.partition-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:
@@ -4312,7 +4312,7 @@ renders values.slinky.tree-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -4418,7 +4418,7 @@ renders values.slinky.tree-example.yaml:
                   valueFrom:
                     fieldRef:
                       fieldPath: spec.nodeName
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 httpGet:
@@ -4587,7 +4587,7 @@ renders values.slinky.tree-example.yaml:
                   value: chart-ci-topograph-node-data-broker
                 - name: NODE_DATA_BROKER_NAMESPACE
                   value: topograph
-              image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+              image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
               name: node-observer
               resources:
@@ -4770,7 +4770,7 @@ renders values.slinky.tree-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
           resources:
@@ -4822,7 +4822,7 @@ renders values.slinky.tree-example.yaml:
           command:
             - sh
             - -c
-          image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
+          image: nvcr.io/nvidia/topograph/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
           resources:

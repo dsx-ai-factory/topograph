@@ -231,15 +231,13 @@ Release and maintenance workflows:
 - `.github/workflows/release.yml`: on a `v*` tag push, or a manual re-run
   for an existing tag, checks the tag against `charts/topograph/Chart.yaml`
   and `CHANGELOG.md`, packages and attests the Helm chart, updates the Helm
-  repository on `gh-pages`, and creates the GitHub release
+  repository, and creates the GitHub release
 - `.github/workflows/publish-fern-docs.yml`: on a `vX.Y.Z` tag push or
   manual dispatch, publishes the versioned docs site
 - `.github/workflows/helm-release.yaml`: manual Helm chart publication to
   `gh-pages`
 - `.github/workflows/scorecard.yaml`: OpenSSF Scorecard analysis on pushes
   to `main`, weekly, and on demand
-- `.github/workflows/cleanup-untagged-images.yml`: nightly removal of
-  untagged GHCR images older than 30 days
 
 Every `actions/setup-go` step reads the Go version from `go.mod`, so a
 toolchain bump there also moves the CI jobs that use it. The container
