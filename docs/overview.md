@@ -42,6 +42,7 @@ Currently supported providers:
 
 - [AWS](./providers/aws.md)
 - [Crusoe](./providers/crusoe.md)
+- [Firebird](./providers/firebird.md) — client credentials authentication; includes `firebird-sim` for offline model-based testing
 - [OCI](./providers/oci.md)
 - [GCP](./providers/gcp.md)
 - [Nebius](./providers/nebius.md)
@@ -75,6 +76,8 @@ Currently supported engines:
 | InfiniBand fabric, no NetQ, Kubernetes | [InfiniBand (Kubernetes)](./providers/infiniband.md) |
 | Replay a captured InfiniBand fabric without node access | [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation) |
 | Crusoe Cloud, including Crusoe Managed Kubernetes | [Crusoe](./providers/crusoe.md) |
+| Cluster with a Firebird topology API and client credentials | [Firebird](./providers/firebird.md) |
+| Test Firebird topology without API access | [Firebird simulation](./providers/firebird.md#simulation) |
 | Client integration and regression testing | [Test](./providers/test.md) |
 
 The DRA provider is a narrow Slinky integration, not a general Kubernetes MNNVL topology provider. It groups nodes into Slurm `topology/block` domains from an existing Node label, defaulting to `nvidia.com/gpu.clique`. That label is not present in every GPU Operator deployment, and DRA does not discover the backend switch fabric between NVLink partitions. Consequently, if a workload cannot fit in one partition, selection of additional partitions is not informed by network proximity. Use NetQ or `infiniband-k8s` when cross-partition fabric locality is required.

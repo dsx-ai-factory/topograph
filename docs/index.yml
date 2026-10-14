@@ -30,6 +30,8 @@ navigation:
         path: providers/aws.md
       - page: Crusoe
         path: providers/crusoe.md
+      - page: Firebird
+        path: providers/firebird.md
       - page: GCP
         path: providers/gcp.md
       - page: OCI
