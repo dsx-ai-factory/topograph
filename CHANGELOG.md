@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Firebird simulation provider (`firebird-sim`) exercises production topology conversion and token pagination using YAML models, with model-based engine discovery, tier trimming, and API failure injection.
+
+- Firebird provider (`firebird`) discovers arbitrary-depth fabric paths from `GET /topology/nodes`, with token pagination, client-credentials authentication through `POST /auth/token` over a required HTTPS API URL, with cached access tokens and automatic renewal, leaf-first network paths, switch names taken directly from `networkPath`, snake_case pagination query parameters, requested-node filtering, and structured diagnostics for Firebird HTTP 400, 401, 403, 404, and 429 errors.
+
 - `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node filtering and no fabric access.
 - SHA-256 checksum files published beside Helm chart packages and included
   with their corresponding GitHub release assets.

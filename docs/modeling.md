@@ -87,6 +87,7 @@ Several providers also have simulation variants, such as:
 - `oci-sim`
 - `nebius-sim`
 - `nscale-sim`
+- `firebird-sim`
 - `lambdai-sim`
 - `dsx-sim`
 

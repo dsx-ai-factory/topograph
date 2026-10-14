@@ -28,6 +28,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/providers/crusoe"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dra"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dsx"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/firebird"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/gcp"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/lambdai"
@@ -47,6 +48,8 @@ var Providers = providers.NewRegistry(
 	infiniband.NamedLoaderK8S,
 	infiniband.NamedLoaderSim,
 	dra.NamedLoader,
+	firebird.NamedLoader,
+	firebird.NamedLoaderSim,
 	gcp.NamedLoader,
 	gcp.NamedLoaderSim,
 	oci.NamedLoaderAPI,
