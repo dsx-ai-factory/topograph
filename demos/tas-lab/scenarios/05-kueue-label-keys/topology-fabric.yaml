@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Kueue levels are Topograph's fabric keys, widest first, with the hostname last.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Topology
+metadata:
+  name: label-keys-fabric
+spec:
+  levels:
+    - nodeLabel: fabric.topograph.run/tier-1
+    - nodeLabel: fabric.topograph.run/tier-0
+    - nodeLabel: kubernetes.io/hostname

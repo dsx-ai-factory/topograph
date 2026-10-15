@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Step 2: the accelerator domain is added as a level while a workload is waiting.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Topology
+metadata:
+  name: topograph-mutable
+spec:
+  levels:
+    - nodeLabel: fabric.topograph.run/tier-1
+    - nodeLabel: accelerator.topograph.run/domain
+    - nodeLabel: fabric.topograph.run/tier-0
+    - nodeLabel: kubernetes.io/hostname

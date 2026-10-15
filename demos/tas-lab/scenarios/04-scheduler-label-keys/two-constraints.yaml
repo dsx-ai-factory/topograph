@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Two topology constraints on one PodGroup: the multi-tier labels cannot be combined.
+apiVersion: scheduling.k8s.io/v1beta1
+kind: PodGroup
+metadata:
+  name: two-constraints
+  namespace: tas-lab
+spec:
+  schedulingPolicy:
+    gang:
+      minCount: 2
+  schedulingConstraints:
+    topology:
+      - key: fabric.topograph.run/tier-1
+      - key: fabric.topograph.run/tier-0

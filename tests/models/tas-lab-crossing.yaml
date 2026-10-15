@@ -1,0 +1,34 @@
+# TAS lab model: tas-lab-multitier.yaml, except that the accelerator domain nvl-a crosses the
+# spines: it holds tas-lab-worker and tas-lab-worker2 (spine-1) and tas-lab-worker3 (spine-2).
+#
+#   fabric.topograph.run/tier-0       leaf-1 .. leaf-4, one node each
+#   fabric.topograph.run/tier-1       spine-1 (w1, w2), spine-2 (w3, w4)
+#   accelerator.topograph.run/domain  nvl-a (w1, w2, w3), nvl-c (w4)
+#
+# Node names must match the kind node names (see demos/tas-lab).
+switches:
+  spine-1:
+    switches:
+    - leaf-1
+    - leaf-2
+  spine-2:
+    switches:
+    - leaf-3
+    - leaf-4
+blocks:
+- switch: leaf-1
+  nodes: ["tas-lab-worker"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+- switch: leaf-2
+  nodes: ["tas-lab-worker2"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+- switch: leaf-3
+  nodes: ["tas-lab-worker3"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+- switch: leaf-4
+  nodes: ["tas-lab-worker4"]
+  annotations:
+    accelerator.topology.test/domain: nvl-c

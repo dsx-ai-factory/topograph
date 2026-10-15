@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Two LeaderWorkerSet groups of 2 pods (spread), written only in terms of the rack alias
+# ${RACK_KEY}: each group must stay inside one rack, and the groups are spread across racks.
+# Rendered by run.sh with envsubst (RACK_KEY).
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: spread-demo
+  namespace: tas-lab
+  labels:
+    app: spread-demo
+    kueue.x-k8s.io/queue-name: aliases
+spec:
+  replicas: 2
+  leaderWorkerTemplate:
+    size: 2
+    workerTemplate:
+      metadata:
+        labels:
+          app: spread-demo
+        annotations:
+          kueue.x-k8s.io/podset-required-topology: ${RACK_KEY}
+          kueue.x-k8s.io/podset-topology-spreading: |
+              {
+                "workloadLabelSelectors": [{"key": "app", "operator": "In", "values": ["spread-demo"]}],
+                "rules": [{"topologyKey": "${RACK_KEY}", "maxShareAllowingPlacement": "0.5", "enforcementMode": "Required"}]
+              }
+      spec:
+        containers:
+          - name: pause
+            image: registry.k8s.io/pause:3.10
+            resources:
+              requests:
+                cpu: "1"
+                memory: 64Mi

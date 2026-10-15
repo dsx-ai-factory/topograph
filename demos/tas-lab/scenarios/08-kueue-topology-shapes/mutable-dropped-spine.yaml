@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Step 3: the widest level is dropped while a workload is admitted.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Topology
+metadata:
+  name: topograph-mutable
+spec:
+  levels:
+    - nodeLabel: accelerator.topograph.run/domain
+    - nodeLabel: fabric.topograph.run/tier-0
+    - nodeLabel: kubernetes.io/hostname

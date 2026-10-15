@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Topograph for the TAS lab: the test provider replays tests/models/tas-lab.yaml (two leaf
+# switches under one spine) and the k8s engine writes fabric.topograph.run/tier-N on the
+# four kind workers. The image is built from this checkout so the model is embedded in it.
+image:
+  repository: ghcr.io/dsx-ai-factory/topograph
+  tag: tas-lab
+  pullPolicy: Never
+
+provider:
+  name: test
+  params:
+    modelFileName: tas-lab.yaml
+    generateResponseCode: 202
+    topologyResponseCode: 200
+engine:
+  name: k8s
+
+config:
+  requestAggregationDelay: 2s
+
+# Only label the workers, never the control plane.
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+nodeObserver:
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  topograph:
+    trigger:
+      nodeSelector:
+        tas-lab: worker
+
+nodeDataBroker:
+  enabled: false

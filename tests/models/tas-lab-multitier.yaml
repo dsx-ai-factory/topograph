@@ -1,0 +1,43 @@
+# TAS lab model: fabric tiers plus an accelerator domain that nests inside the fabric. The three
+# groupings of the four kind workers differ, so a topology constraint can key on any of them:
+#
+#   fabric.topograph.run/tier-0       leaf switch       4 values, one node each
+#   fabric.topograph.run/tier-1       spine switch      2 values, two nodes each
+#   accelerator.topograph.run/domain  NVLink domain     3 values: an NVLink domain occupies a
+#                                                       whole switch and never spans spines
+#
+#                 spine-1                         spine-2
+#               /         \                     /        \
+#          leaf-1         leaf-2            leaf-3       leaf-4
+#            |              |                 |            |
+#           w1             w2                w3           w4
+#           \_____ nvl-a _____/            nvl-b        nvl-c
+#           (whole of spine-1)     (whole of leaf-3) (whole of leaf-4)
+#
+# Node names must match the kind node names (see demos/tas-lab).
+switches:
+  spine-1:
+    switches:
+    - leaf-1
+    - leaf-2
+  spine-2:
+    switches:
+    - leaf-3
+    - leaf-4
+blocks:
+- switch: leaf-1
+  nodes: ["tas-lab-worker"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+- switch: leaf-2
+  nodes: ["tas-lab-worker2"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+- switch: leaf-3
+  nodes: ["tas-lab-worker3"]
+  annotations:
+    accelerator.topology.test/domain: nvl-b
+- switch: leaf-4
+  nodes: ["tas-lab-worker4"]
+  annotations:
+    accelerator.topology.test/domain: nvl-c

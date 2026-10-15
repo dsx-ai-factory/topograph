@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A ResourceFlavor, ClusterQueue and LocalQueue wired to one Kueue Topology.
+# Rendered with envsubst: STACK (object name), TOPOLOGY (the Topology to use) and CPU_QUOTA
+# (the workers' allocatable CPU, from kueue_cpu_quota, so the quota never limits a Job that fits).
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: ${STACK}
+spec:
+  nodeLabels:
+    tas-lab: worker
+  topologyName: ${TOPOLOGY}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: ${STACK}
+spec:
+  namespaceSelector: {}
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: ${STACK}
+          resources:
+            - name: cpu
+              nominalQuota: ${CPU_QUOTA}
+            - name: memory
+              nominalQuota: 100Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: ${STACK}
+  namespace: tas-lab
+spec:
+  clusterQueue: ${STACK}

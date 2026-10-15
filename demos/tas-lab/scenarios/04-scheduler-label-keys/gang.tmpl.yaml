@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A gang of ${MIN} pods, one per node (hostname anti-affinity), constrained to one domain of the
+# node label ${KEY}. Rendered by run.sh with envsubst: NAME, KEY and MIN.
+apiVersion: scheduling.k8s.io/v1beta1
+kind: Workload
+metadata:
+  name: ${NAME}
+  namespace: tas-lab
+spec:
+  podGroupTemplates:
+    - name: ${NAME}
+      schedulingPolicy:
+        gang:
+          minCount: ${MIN}
+      schedulingConstraints:
+        topology:
+          - key: ${KEY}
+---
+apiVersion: scheduling.k8s.io/v1beta1
+kind: PodGroup
+metadata:
+  name: ${NAME}
+  namespace: tas-lab
+spec:
+  workloadRef:
+    workloadName: ${NAME}
+    templateName: ${NAME}
+  schedulingPolicy:
+    gang:
+      minCount: ${MIN}
+  schedulingConstraints:
+    topology:
+      - key: ${KEY}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${NAME}
+  namespace: tas-lab
+spec:
+  parallelism: ${MIN}
+  completions: ${MIN}
+  template:
+    metadata:
+      labels:
+        lab: ${NAME}
+    spec:
+      schedulingGroup:
+        podGroupName: ${NAME}
+      restartPolicy: Never
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  lab: ${NAME}
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10
+          resources:
+            requests:
+              cpu: 100m

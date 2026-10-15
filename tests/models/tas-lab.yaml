@@ -1,0 +1,20 @@
+# TAS lab model: the four workers of the kind cluster in demos/tas-lab, two per leaf switch.
+# Node names must match the kind node names. Topograph's k8s engine writes
+# fabric.topograph.run/tier-0 (leaf switch, "rack") and tier-1 (spine) from it.
+#
+#            spine
+#          /       \
+#      rack-a     rack-b
+#       |   |      |   |
+#    w1  w2      w3  w4
+#
+switches:
+  spine:
+    switches:
+    - rack-a
+    - rack-b
+blocks:
+- switch: rack-a
+  nodes: ["tas-lab-worker", "tas-lab-worker2"]
+- switch: rack-b
+  nodes: ["tas-lab-worker3", "tas-lab-worker4"]

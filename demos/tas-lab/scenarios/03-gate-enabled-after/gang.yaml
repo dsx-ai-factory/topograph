@@ -1,0 +1,139 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# A 4-pod gang with one-pod-per-node anti-affinity: it fits only if the tier-0 constraint is NOT
+# enforced (a rack has two nodes), which is what makes the gate state observable.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Unschedulable gang. Hostname anti-affinity allows one pod per node, so a rack
+# (two workers) holds at most 2 pods and minCount 5 can never fit in one rack.
+# Expect the whole gang to stay Pending with no partial placement.
+apiVersion: scheduling.k8s.io/v1beta1
+kind: Workload
+metadata:
+  name: gang-spread
+  namespace: tas-lab
+spec:
+  podGroupTemplates:
+    - name: gang-spread
+      schedulingPolicy:
+        gang:
+          minCount: 4
+      schedulingConstraints:
+        topology:
+          - key: fabric.topograph.run/tier-0
+---
+apiVersion: scheduling.k8s.io/v1beta1
+kind: PodGroup
+metadata:
+  name: gang-spread
+  namespace: tas-lab
+spec:
+  workloadRef:
+    workloadName: gang-spread
+    templateName: gang-spread
+  schedulingPolicy:
+    gang:
+      minCount: 4
+  schedulingConstraints:
+    topology:
+      - key: fabric.topograph.run/tier-0
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-spread-1
+  namespace: tas-lab
+  labels:
+    lab: gang-spread
+spec:
+  schedulingGroup:
+    podGroupName: gang-spread
+  restartPolicy: Never
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              lab: gang-spread
+  containers:
+    - name: pause
+      image: registry.k8s.io/pause:3.10
+      resources:
+        requests:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-spread-2
+  namespace: tas-lab
+  labels:
+    lab: gang-spread
+spec:
+  schedulingGroup:
+    podGroupName: gang-spread
+  restartPolicy: Never
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              lab: gang-spread
+  containers:
+    - name: pause
+      image: registry.k8s.io/pause:3.10
+      resources:
+        requests:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-spread-3
+  namespace: tas-lab
+  labels:
+    lab: gang-spread
+spec:
+  schedulingGroup:
+    podGroupName: gang-spread
+  restartPolicy: Never
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              lab: gang-spread
+  containers:
+    - name: pause
+      image: registry.k8s.io/pause:3.10
+      resources:
+        requests:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gang-spread-4
+  namespace: tas-lab
+  labels:
+    lab: gang-spread
+spec:
+  schedulingGroup:
+    podGroupName: gang-spread
+  restartPolicy: Never
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              lab: gang-spread
+  containers:
+    - name: pause
+      image: registry.k8s.io/pause:3.10
+      resources:
+        requests:
+          cpu: 100m

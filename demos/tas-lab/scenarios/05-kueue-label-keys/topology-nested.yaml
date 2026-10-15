@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The accelerator domain nests inside the fabric here (an NVLink domain fills a whole switch),
+# so it is one more level of the same hierarchy: spine > NVLink domain > leaf > node.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Topology
+metadata:
+  name: label-keys-nested
+spec:
+  levels:
+    - nodeLabel: fabric.topograph.run/tier-1
+    - nodeLabel: accelerator.topograph.run/domain
+    - nodeLabel: fabric.topograph.run/tier-0
+    - nodeLabel: kubernetes.io/hostname

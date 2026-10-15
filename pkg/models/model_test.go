@@ -391,3 +391,67 @@ blocks:
 	_, err = translate.NewNetworkTopology(graph, &translate.Config{Plugin: topology.TopologyBlock})
 	require.EqualError(t, err, "missing block topology")
 }
+
+func TestTASLabModels(t *testing.T) {
+	workers := []string{"tas-lab-worker", "tas-lab-worker2", "tas-lab-worker3", "tas-lab-worker4"}
+	testCases := []struct {
+		name       string
+		file       string
+		layers     [][]string // NetLayers per worker, closest first
+		domains    []string
+		subDomains []string
+	}{
+		{name: "default", file: "tas-lab.yaml",
+			layers:  [][]string{{"rack-a", "spine"}, {"rack-a", "spine"}, {"rack-b", "spine"}, {"rack-b", "spine"}},
+			domains: []string{"", "", "", ""}, subDomains: []string{"", "", "", ""}},
+		{
+			name: "multitier",
+			file: "tas-lab-multitier.yaml",
+			layers: [][]string{
+				{"leaf-1", "spine-1"}, {"leaf-2", "spine-1"}, {"leaf-3", "spine-2"}, {"leaf-4", "spine-2"},
+			},
+			domains:    []string{"nvl-a", "nvl-a", "nvl-b", "nvl-c"},
+			subDomains: []string{"", "", "", ""},
+		},
+		{
+			name: "nodomain",
+			file: "tas-lab-nodomain.yaml",
+			layers: [][]string{
+				{"leaf-1", "spine-1"}, {"leaf-2", "spine-1"}, {"leaf-3", "spine-2"}, {"leaf-4", "spine-2"},
+			},
+			domains:    []string{"nvl-a", "nvl-a", "", "nvl-c"},
+			subDomains: []string{"", "", "", ""},
+		},
+		{
+			name: "crossing",
+			file: "tas-lab-crossing.yaml",
+			layers: [][]string{
+				{"leaf-1", "spine-1"}, {"leaf-2", "spine-1"}, {"leaf-3", "spine-2"}, {"leaf-4", "spine-2"},
+			},
+			domains:    []string{"nvl-a", "nvl-a", "nvl-a", "nvl-c"},
+			subDomains: []string{"", "", "", ""},
+		},
+		{
+			name:       "subdomain",
+			file:       "tas-lab-subdomain.yaml",
+			layers:     [][]string{{"rack-a", "spine"}, {"rack-a", "spine"}, {"rack-b", "spine"}, {"rack-b", "spine"}},
+			domains:    []string{"nvl-a", "nvl-a", "nvl-a", "nvl-a"},
+			subDomains: []string{"nvl-a.rack-a", "nvl-a.rack-a", "nvl-a.rack-b", "nvl-a.rack-b"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			model, err := NewModelFromFile("../../tests/models/" + tc.file)
+			require.NoError(t, err)
+			require.Len(t, model.Nodes, len(workers))
+			for i, name := range workers {
+				node, ok := model.Nodes[name]
+				require.True(t, ok, "missing node %s", name)
+				require.Equal(t, tc.layers[i], node.NetLayers, name)
+				require.Equal(t, tc.domains[i], node.AcceleratorDomain(), name)
+				require.Equal(t, tc.subDomains[i], node.AcceleratorSubDomain(), name)
+			}
+		})
+	}
+}

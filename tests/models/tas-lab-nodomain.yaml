@@ -1,0 +1,33 @@
+# TAS lab model: tas-lab-multitier.yaml, except that tas-lab-worker3 has no accelerator domain, as
+# with a provider that reports a domain only for some nodes. The node keeps its fabric tiers but
+# gets no accelerator.topograph.run/domain label.
+#
+#   fabric.topograph.run/tier-0       leaf-1 .. leaf-4, one node each
+#   fabric.topograph.run/tier-1       spine-1 (w1, w2), spine-2 (w3, w4)
+#   accelerator.topograph.run/domain  nvl-a (w1, w2), none (w3), nvl-c (w4)
+#
+# Node names must match the kind node names (see demos/tas-lab).
+switches:
+  spine-1:
+    switches:
+    - leaf-1
+    - leaf-2
+  spine-2:
+    switches:
+    - leaf-3
+    - leaf-4
+blocks:
+- switch: leaf-1
+  nodes: ["tas-lab-worker"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+- switch: leaf-2
+  nodes: ["tas-lab-worker2"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+- switch: leaf-3
+  nodes: ["tas-lab-worker3"]
+- switch: leaf-4
+  nodes: ["tas-lab-worker4"]
+  annotations:
+    accelerator.topology.test/domain: nvl-c

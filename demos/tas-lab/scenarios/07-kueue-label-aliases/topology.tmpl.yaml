@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Kueue Topology over the aliases only. Rendered by run.sh with envsubst (BLOCK_KEY, RACK_KEY,
+# and LEAF_KEY for the tier Topograph writes below the rack in the second mapping).
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Topology
+metadata:
+  name: aliases
+spec:
+  levels:
+${LEVELS}
+    - nodeLabel: kubernetes.io/hostname

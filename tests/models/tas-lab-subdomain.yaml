@@ -1,0 +1,32 @@
+# TAS lab model with an accelerator domain and a nested sub-domain (the OCI shape: one GPU
+# memory fabric with racks inside it):
+#
+#   fabric.topograph.run/tier-0          leaf switch   2 values, two nodes each
+#   fabric.topograph.run/tier-1          spine         1 value
+#   accelerator.topograph.run/domain     nvl-a         1 value, all four nodes
+#   accelerator.topograph.run/sub-domain nvl-a.rack-a / nvl-a.rack-b, one per leaf
+#
+#                    spine
+#                  /       \
+#             rack-a       rack-b
+#             |    |       |    |
+#            w1   w2      w3   w4
+#           \_______ nvl-a _______/
+#
+# Node names must match the kind node names (see demos/tas-lab).
+switches:
+  spine:
+    switches:
+    - rack-a
+    - rack-b
+blocks:
+- switch: rack-a
+  nodes: ["tas-lab-worker", "tas-lab-worker2"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+    accelerator.topology.test/sub-domain: nvl-a.rack-a
+- switch: rack-b
+  nodes: ["tas-lab-worker3", "tas-lab-worker4"]
+  annotations:
+    accelerator.topology.test/domain: nvl-a
+    accelerator.topology.test/sub-domain: nvl-a.rack-b
