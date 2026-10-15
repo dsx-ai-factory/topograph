@@ -42,7 +42,7 @@ func TestNewConfigFromFile(t *testing.T) {
 			data: `
 generateTopologyUrl: "http://topograph.default.svc.cluster.local:49021/v1/generate"
 `,
-			err: "must specify nodeSelector and/or podSelector in trigger, or apiServer.podSelector",
+			err: "must specify nodeSelector, nodeLabels, nodeReadiness and/or podSelector in trigger, or apiServer.podSelector",
 		},
 		{
 			name: "Case 5: valid with default retry delay",

@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 
 provider:
-  # name: "aws", "crusoe", "oci", "gcp", "nebius", "nscale", "lambdai", "netq", "infiniband-k8s", "dra" or "test".
+  # name: "aws", "crusoe", "oci", "gcp", "nebius", "nscale", "lambdai", "netq", "infiniband-k8s", "dra", "kubernetes" or "test".
   name: test
   # params:
   #   accelerator:
@@ -346,6 +346,8 @@ nodeObserver:
       containerName: topograph
     trigger:
       # nodeSelector: {}
+      # nodeLabels: []  # Defaults to the provider's topologyLabels when omitted.
+      # nodeReadiness: false  # Opt in to readiness-based regeneration.
       # podSelector: {}
 
   podAnnotations: {}

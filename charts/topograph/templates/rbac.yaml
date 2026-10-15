@@ -33,7 +33,7 @@ Kubernetes API access when the selected engine or provider actually calls the
 API.
 */ -}}
 {{- $needsNodes := false -}}
-{{- if or (eq $engine "k8s") (eq $engine "slinky") (eq $engine "nfd") (eq $provider "dra") (eq $provider "infiniband-k8s") (eq $provider "crusoe") -}}
+{{- if or (eq $engine "k8s") (eq $engine "slinky") (eq $engine "nfd") (eq $provider "dra") (eq $provider "kubernetes") (eq $provider "infiniband-k8s") (eq $provider "crusoe") -}}
 {{- $needsNodes = true -}}
 {{- end -}}
 {{- $needsPods := false -}}

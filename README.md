@@ -46,7 +46,7 @@ helm install topograph topograph/topograph \
   --set engine.name=k8s
 ```
 
-Replace `<provider>` with one of `aws`, `crusoe`, `gcp`, `oci`, `nebius`, `nscale`, `lambdai`, `netq`, `infiniband-k8s`, `dra` or `test`. Provider credentials and parameters are passed as Helm values; the full values shape is in [`charts/topograph/values.yaml`](charts/topograph/values.yaml).
+Replace `<provider>` with one of `aws`, `crusoe`, `gcp`, `oci`, `nebius`, `nscale`, `lambdai`, `netq`, `infiniband-k8s`, `dra`, `kubernetes` or `test`. Provider credentials and parameters are passed as Helm values; the full values shape is in [`charts/topograph/values.yaml`](charts/topograph/values.yaml).
 
 To confirm it worked, run the bundled chart tests, which probe `/healthz` and `/metrics` inside the cluster, then look for the labels the `k8s` engine writes onto nodes a few seconds after install:
 

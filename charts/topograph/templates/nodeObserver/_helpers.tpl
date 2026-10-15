@@ -8,6 +8,28 @@ Kubernetes DNS-label limit.
 {{- printf "%s-node-observer" $base -}}
 {{- end }}
 
+{{/* Resolve the trigger once for both configuration and node RBAC. */}}
+{{- define "nodeObserver.trigger" -}}
+{{- $trigger := deepCopy (default dict .Values.nodeObserver.topograph.trigger) -}}
+{{- if eq .Values.provider.name "kubernetes" -}}
+{{- $params := default dict .Values.provider.params -}}
+{{- if not (hasKey $trigger "nodeLabels") -}}
+{{- $_ := set $trigger "nodeLabels" (default list $params.topologyLabels) -}}
+{{- end -}}
+{{- if not $trigger.nodeSelector -}}
+{{- $_ := set $trigger "nodeSelector" (default dict $params.nodeSelector) -}}
+{{- end -}}
+{{- if $params.requireReady -}}
+{{- $_ := set $trigger "nodeReadiness" true -}}
+{{- end -}}
+{{- end -}}
+{{- if empty $trigger -}}
+null
+{{- else -}}
+{{- toYaml $trigger -}}
+{{- end -}}
+{{- end -}}
+
 {{/*
 Create chart name and version as used by the chart label.
 */}}

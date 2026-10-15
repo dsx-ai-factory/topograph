@@ -15,7 +15,7 @@ http:
   ssl: false
 
 # provider: the provider that topograph will use (optional)
-# Valid options include "aws", "oci", "gcp", "nebius", "nscale", "netq", "dra", "infiniband-k8s", "infiniband-bm" or "test".
+# Valid options include "aws", "oci", "gcp", "nebius", "nscale", "netq", "kubernetes", "dra", "infiniband-k8s", "infiniband-bm" or "test".
 # Can be overridden if the provider is specified in a topology request to topograph
 provider: test
 
@@ -70,9 +70,10 @@ Topograph exposes five endpoints for interacting with the service. Below are the
 - **Payload:** The request body is a JSON object organized into three top-level sections:
 
   - **provider**: (optional) Selects the topology source and provides any provider-specific authentication or parameters.
-    - **name**: (optional) A string specifying the Service Provider, such as `aws`, `oci`, `gcp`, `nebius`, `nscale`, `netq`, `dra`, `infiniband-k8s`, `infiniband-bm` or `test`. This parameter will override the provider set in the topograph config.
+    - **name**: (optional) A string specifying the Service Provider, such as `aws`, `oci`, `gcp`, `nebius`, `nscale`, `netq`, `kubernetes`, `dra`, `infiniband-k8s`, `infiniband-bm` or `test`. This parameter will override the provider set in the topograph config.
     - **creds**: (optional) A key-value map with provider-specific parameters for authentication.
     - **params**: (optional) A key-value map with provider-specific parameters. The `test` provider uses these parameters for response simulation; for complete behavior and examples, see [Test Mode and Test Provider](./providers/test.md).
+      - **topologyLabels**: Required for [`kubernetes`](./providers/kubernetes.md). A nonempty list of distinct Node label keys, closest fabric tier first. An optional `nodeSelector` map filters Nodes. `requireReady` enables readiness filtering (default `false`); `onMissingLabel` chooses `skip` (default) or `fail` for Nodes with incomplete labels.
       - **accelerator**: (optional) Used in: [`dra`, `infiniband-k8s`, `infiniband-bm`]. Configures accelerator-domain discovery independently of network-fabric discovery. For InfiniBand, omitting this section or setting it to an empty object disables accelerator-domain discovery. DRA supports only `kubernetes-label` and retains its legacy `nvidia.com/gpu.clique` default when the section is omitted.
         - **source**: (required when `accelerator` is non-empty) `nvidia-smi`, `kubernetes-label` (`dra` and `infiniband-k8s`), or `none`. DRA accepts only `kubernetes-label`.
         - **kubernetesLabel.key**: (required for `kubernetes-label`) Kubernetes Node label read as the accelerator-domain ID. No default is assumed for an explicit section.
