@@ -17,6 +17,7 @@ echo " without the spreading annotation"
 check "both groups admitted" 2 "$(val baseline.workloads_admitted)"
 check "each group stays in one spine (group 0)" 1 "$(val baseline.group0.spines)"
 check "each group stays in one spine (group 1)" 1 "$(val baseline.group1.spines)"
+check "two pods run in each group" "2,2" "$(val baseline.group0.running),$(val baseline.group1.running)"
 check "both groups share the same spine" "$(val baseline.group0.spine)" "$(val baseline.group1.spine)"
 
 echo " with the spreading annotation (rule on tier-1, maxShareAllowingPlacement 0.5, Required)"

@@ -54,6 +54,16 @@ kueue_cpu_request() {
     echo "$(( min / 2 + 1 ))m"
 }
 
+# kueue_small_cpu_request: an eighth of the smallest worker's allocatable CPU, in millicores, for
+# pods that must share a node however few CPUs the host gave the kind nodes (four pods plus the
+# system pods' requests always fit).
+kueue_small_cpu_request() {
+    local min
+    min="$(kueue_cpu_stats min)"
+    (( min > 0 )) || { echo "cannot read the allocatable CPU of the workers" >&2; return 1; }
+    echo "$(( min / 8 > 0 ? min / 8 : 1 ))m"
+}
+
 # kueue_job <name> <stack> <pods> <annotation suffix: required|preferred> <node label>
 kueue_job() {
     local cpu
@@ -78,14 +88,24 @@ kueue_message() { # <job name>
 
 # kueue_record <job name> <results file>: wait a little, then store what happened.
 kueue_record() {
-    local name="$1" out="$2" admitted i
+    local name="$1" out="$2" admitted i pods
+    pods="$(kubectl -n "$ns" get job "$name" -o jsonpath='{.spec.parallelism}')"
     for i in $(seq 1 20); do
         admitted="$(kueue_admitted "$name")"
         [[ "$admitted" == True ]] && break
         sleep 1
     done
+    # An admitted Job's pods must actually run (image pulled, container started), not only be
+    # assigned to nodes: wait for all of them before recording.
+    if [[ "$admitted" == True ]]; then
+        for i in $(seq 1 60); do
+            [[ "$(count_pods Running "$name-")" == "$pods" ]] && break
+            sleep 2
+        done
+    fi
     sleep 8
     {
+        echo "$name.pods=$pods"
         echo "$name.admitted=$(kueue_admitted "$name")"
         echo "$name.running=$(count_pods Running "$name-")"
         echo "$name.nodes=$(pod_nodes "$name-")"

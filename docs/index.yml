@@ -60,6 +60,11 @@ navigation:
       - page: Graph
         path: engines/graph.md
 
+  - section: Demos
+    contents:
+      - page: TAS Lab
+        path: demos/tas-lab.md
+
   - section: Reference
     contents:
       - page: Node Labels and Annotations

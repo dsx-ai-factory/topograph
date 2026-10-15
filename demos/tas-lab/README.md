@@ -109,7 +109,7 @@ If a label is later changed by hand, `./setup/topograph.sh generate` makes Topog
 override a value for one run:
 
 ```bash
-K8S_VERSION=v1.38.0 ./setup/setup.sh
+K8S_VERSION=v1.37.0 ./setup/setup.sh      # any version that has a kindest/node image
 ```
 
 The scripts are version-agnostic, but some manifests are not: the `scheduling.k8s.io` API
@@ -118,6 +118,10 @@ Kubernetes version, and the `kueue.x-k8s.io` API version and Kueue gate names fo
 version. `versions.env` lists what to re-check after a bump.
 
 ## Scenarios
+
+A short, plain-language description of each scenario (the problem, what it does, how it is
+validated) is in [docs/demos/tas-lab.md](../../docs/demos/tas-lab.md). The details below are for
+running and debugging.
 
 Run any scenario with `./scenarios/NN-name/run.sh` and check it with
 `./scenarios/NN-name/validate.sh`; `./scenarios/run-all.sh` does both for all eight (about fifteen
@@ -242,7 +246,7 @@ requests just over half of a worker's CPU, so a Job of N pods needs N nodes.
 **What it shows.** `TASTopologySpreading`: two `LeaderWorkerSet` groups (2 pods each) that must each
 stay in one spine (`podset-required-topology: ...tier-1`) and are spread across spines by
 `podset-topology-spreading` (rule on `tier-1`, `maxShareAllowingPlacement: 0.5`, `Required`). Run
-twice, with and without the spreading annotation. Pods request 1 CPU, so without spreading nothing
+twice, with and without the spreading annotation. Pods request a small share of a worker's CPU, so without spreading nothing
 stops the groups from sharing a spine.
 
 **Run.** `./scenarios/06-kueue-topology-spreading/run.sh` (needs setup steps 3 and 4)
@@ -275,8 +279,7 @@ and regenerates the default labels when it finishes.
 
 ### 08 Kueue Topology per label shape, and changing its levels
 
-**What it shows.** The example Kueue `Topology` objects published in
-[docs/engines/k8s.md](../../docs/engines/k8s.md), all in
+**What it shows.** Kueue `Topology` objects, all in
 [`topologies.yaml`](scenarios/08-kueue-topology-shapes/topologies.yaml), one per shape of Topograph labels: fabric tiers
 only (`tas-lab.yaml`), fabric plus accelerator domain (`tas-lab-multitier.yaml`), and fabric plus
 domain plus sub-domain (`tas-lab-subdomain.yaml`). Then a Topology whose levels change while a

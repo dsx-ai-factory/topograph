@@ -122,67 +122,7 @@ without a usable source value retain the provider-derived labels.
 
 [KEP-4962: Standardizing the Representation of Cluster Network Topology](https://github.com/kubernetes/enhancements/issues/4962) proposed reserved label keys under the `topology.kubernetes.io/` namespace, but it was closed without being adopted. Topograph therefore publishes its topology contract under the project-controlled, vendor-neutral `fabric.topograph.run/*` and `accelerator.topograph.run/*` namespaces. If Kubernetes adopts stable standard topology label keys in the future, Topograph will evaluate aligning with or publishing those keys alongside its project-scoped labels.
 
-A related upstream effort, [KEP-5732: Topology Aware Scheduling](https://github.com/kubernetes/enhancements/issues/5732) (alpha in Kubernetes v1.37), introduces topology-aware workload scheduling that consumes existing node labels via a caller-provided key. It does not define a new label namespace — operators point it at whatever label keys are present, including Topograph's `fabric.topograph.run/*` keys. See [Using Topograph labels with the kube-scheduler and Kueue](../engines/k8s.md#using-topograph-labels-with-the-kube-scheduler-and-kueue) for how to use them.
-
-## Using the labels as scheduler levels
-
-Kueue (`Topology.spec.levels[].nodeLabel`) and the Kubernetes scheduler (`PodGroup`
-`schedulingConstraints.topology[0].key`) take node label keys and do not know what a Topograph tier
-means. This section gives the meaning of each key and the order to list them. Examples are in
-[Using Topograph labels with the kube-scheduler and Kueue](../engines/k8s.md#using-topograph-labels-with-the-kube-scheduler-and-kueue).
-
-### Shapes of labels
-
-| Shape | Labels written | Providers that can produce it (see the table above) |
-|---|---|---|
-| 1. Fabric only | `fabric.topograph.run/tier-0` ... `tier-N` | `nebius`; any provider while no accelerator domain is reported |
-| 2. Fabric and accelerator domain | shape 1 plus `accelerator.topograph.run/domain` | `aws`, `gcp`, `lambdai`, `nscale`, `netq`, `oci` without rack metadata; `crusoe` and `infiniband-*` when a domain is configured |
-| 3. Fabric, domain and sub-domain | shape 2 plus `accelerator.topograph.run/sub-domain` | `oci` when rack metadata is available |
-
-The shape describes what a cluster can carry, not what every node has: a provider may report a domain
-or sub-domain for only some nodes (an AWS instance might not carry a `CapacityBlockId`; `crusoe` and
-`infiniband-*` report one only when configured). Check the nodes of the pool you schedule on. A node
-without a label is skipped by both Kueue and the kube-scheduler, so it silently leaves the pool for
-topology-aware workloads. A sub-domain is written only together with a domain.
-
-### Semantic level of each key
-
-| Key | Semantic level |
-|---|---|
-| `fabric.topograph.run/tier-0` | The switch group closest to the node: leaf or top-of-rack switch. `crusoe`: the rail-optimized pod. |
-| `fabric.topograph.run/tier-1` | The next tier outward: spine or aggregation. `crusoe`: the InfiniBand partition. |
-| `fabric.topograph.run/tier-2` | The outermost tier of a three-tier fabric: core. On `crusoe` it is a synthetic root with a single value; `trimTiers` drops it. |
-| `fabric.topograph.run/tier-N` | Deeper trees (`netq`, `infiniband-*`) have no fixed depth; each tier is the next switch layer outward. |
-| `accelerator.topograph.run/domain` | The accelerator-interconnect (NVLink) domain: the AWS capacity block, GCP subblock, OCI GPU memory fabric, and so on. |
-| `accelerator.topograph.run/sub-domain` | Locality inside a domain (the OCI rack). Written only together with `domain`. |
-
-### Order of levels for a Kueue `Topology`
-
-List levels coarsest first and `kubernetes.io/hostname` last, so that each level nests inside the one
-above it:
-
-1. the fabric tiers from the highest down to the narrowest tier that contains an accelerator domain;
-2. `accelerator.topograph.run/domain`, then `accelerator.topograph.run/sub-domain` if present;
-3. the remaining fabric tiers down to `tier-0`;
-4. `kubernetes.io/hostname`.
-
-This assumes the domain nests inside a tier, as an NVLink domain that fills a whole switch does.
-Topograph does not record how a domain relates to the tiers. If a domain spans several tiers, do not
-put it in the same hierarchy as them.
-
-### Rack and block
-
-Rack and block are site names, not something Topograph discovers. Choose them with the `k8s` engine
-parameters (see [Configuring label keys](#configuring-label-keys)):
-
-- `fabricLabels`, closest tier first, publishes tiers under your names instead of `tier-N`, for
-  example `[cloud.provider.com/topology-rack, cloud.provider.com/topology-block]`. Tiers beyond the
-  array are not written, and the default `tier-N` keys are not written at all.
-- `acceleratorLabel` publishes the accelerator domain under your name, for example
-  `cloud.provider.com/topology-rack` on rack-scale NVLink systems where a domain is a rack.
-
-These names are provisional; the agreed project names will replace them. A manifest that uses them
-still depends on what rack means in your cluster.
+A related upstream effort, [KEP-5732: Topology Aware Scheduling](https://github.com/kubernetes/enhancements/issues/5732) (alpha in Kubernetes v1.37), introduces topology-aware workload scheduling that consumes existing node labels via a caller-provided key. It does not define a new label namespace — operators point it at whatever label keys are present, including Topograph's `fabric.topograph.run/*` keys.
 
 ## Without Topograph
 

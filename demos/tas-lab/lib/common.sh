@@ -101,6 +101,22 @@ show_pods() {
     done < <(kubectl -n "$ns" get pods -o name | sed 's|pod/||')
 }
 
+# Wait until <count> pods exist and every pod of the namespace is Ready. Pods of a controller
+# (LeaderWorkerSet) appear some time after the object, so waiting on the pods that exist is not
+# enough, and the LeaderWorkerSet's Available condition is true before its pods exist. Returns 1
+# on timeout; callers record whatever state was reached.
+wait_pods_ready() { # <count> [timeout-seconds]
+    local want="$1" deadline=$((SECONDS + ${2:-90})) n ready
+    while (( SECONDS < deadline )); do
+        n="$(kubectl -n "$ns" get pods --no-headers 2>/dev/null | wc -l | tr -d ' ')"
+        ready="$(kubectl -n "$ns" get pods -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -c True || true)"
+        (( n >= want && ready >= want )) && return 0
+        sleep 2
+    done
+    echo "warning: $want pods were not all Ready in time" >&2
+    return 1
+}
+
 # Number of pods with the given phase, optionally limited to a name prefix.
 count_pods() { # <phase> [name-prefix]
     kubectl -n "$ns" get pods --no-headers -o custom-columns=N:.metadata.name,P:.status.phase \
@@ -148,5 +164,10 @@ check_gt() { # <description> <actual> (must be > 0)
     else
         printf '  \033[31mFAIL\033[0m %s: expected > 0, got %s\n' "$1" "$2"; FAIL=$((FAIL + 1))
     fi
+}
+# check_job_running <job name>: an admitted Job has all of its pods Running (needs val() of the
+# validate script and the "<job>.pods" value that kueue_record writes).
+check_job_running() {
+    check "...and all of its pods are Running" "$(val "$1.pods")" "$(val "$1.running")"
 }
 finish() { echo; echo "$PASS passed, $FAIL failed"; (( FAIL == 0 )); }

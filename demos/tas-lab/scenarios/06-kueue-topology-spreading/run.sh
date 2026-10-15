@@ -19,8 +19,8 @@ lws_case() {
     local label="$1" manifest="$2" g
     step "LeaderWorkerSet, $label"
     reset_namespace
-    kubectl apply -f "$manifest" >/dev/null
-    kubectl -n "$ns" wait --for=condition=Ready pod --all --timeout=90s >/dev/null 2>&1 || true
+    CPU_REQUEST="$(kueue_small_cpu_request)" envsubst '$CPU_REQUEST' <"$manifest" | kubectl apply -f - >/dev/null
+    wait_pods_ready 4 90 || true
     sleep 5
     show_pods
     kubectl get nodes -L "$tier1" --no-headers | awk '$NF != "" && $1 ~ /worker/ {print "  " $1 " -> " $NF}' || true

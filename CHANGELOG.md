@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Documentation for using Topograph labels as KEP-5732 `TopologyConstraint` keys and as Kueue `Topology` levels: what each `fabric.topograph.run/*` and `accelerator.topograph.run/*` key means per shape of labels, example `Topology` and `ResourceFlavor` manifests per shape, and the limits found on Kubernetes v1.37 and Kueue v0.20.0 (see `docs/engines/k8s.md` and `docs/reference/node-labels.md`). Includes the `demos/tas-lab` demo that validates them.
+- `demos/tas-lab`, a kind-based lab with eight scenarios that use Topograph labels as KEP-5732 `TopologyConstraint` keys and as Kueue `Topology` levels, run and validated against Kubernetes v1.37 and Kueue v0.20.0. Each scenario states the problem, what it does and how it is validated in `docs/demos/tas-lab.md`; the example Kueue `Topology` manifests for each shape of labels are in `demos/tas-lab/scenarios/08-kueue-topology-shapes/topologies.yaml`.
 - `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node filtering and no fabric access.
 - SHA-256 checksum files published beside Helm chart packages and included
   with their corresponding GitHub release assets.

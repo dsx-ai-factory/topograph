@@ -3,9 +3,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Scenario 08: the Kueue Topology for each shape of Topograph labels (topologies.yaml, the
-# manifests published in docs/engines/k8s.md), and changing
-# a Topology's levels while workloads are waiting or admitted. Each pod fills a node (just
+# Scenario 08: the Kueue Topology for each shape of Topograph labels (topologies.yaml), and
+# changing a Topology's levels while workloads are waiting or admitted. Each pod fills a node (just
 # over half of its CPUs), so a Job of N pods needs N nodes. Needs setup/kueue.sh.
 set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -62,7 +61,13 @@ trap cleanup EXIT
 
 cleanup_objects
 : >"$result"
-for i in $(seq 1 30); do kubectl apply -f "$here/topologies.yaml" >/dev/null && break; sleep 5; done
+# The Kueue webhook can need a few seconds; give up with an error instead of running on without Topologies.
+applied=false
+for _ in $(seq 1 30); do
+    if kubectl apply -f "$here/topologies.yaml" >/dev/null; then applied=true; break; fi
+    sleep 5
+done
+$applied || { echo "the Kueue Topologies were not accepted; is the webhook ready?" >&2; exit 1; }
 
 step "Shape 1: fabric tiers only (tas-lab.yaml: two racks under one spine)"
 ensure_labels
@@ -128,6 +133,7 @@ if out="$(kubectl apply -f "$here/mutable-no-hostname.yaml" 2>&1)"; then
     echo "mut.no_hostname=accepted" >>"$result"
 else
     echo "mut.no_hostname=rejected" >>"$result"
+    echo "mut.no_hostname.error=$(tr '\n' ' ' <<<"$out")" >>"$result"
 fi
 echo "$out"
 

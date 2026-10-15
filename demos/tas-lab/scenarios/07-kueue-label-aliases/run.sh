@@ -46,8 +46,8 @@ lws_case() { # <label> <template>
     local label="$1" g p n
     step "LeaderWorkerSet, $label"
     reset_namespace
-    envsubst <"$here/$2" | kubectl apply -f - >/dev/null
-    kubectl -n "$ns" wait --for=condition=Ready pod --all --timeout=90s >/dev/null 2>&1 || true
+    CPU_REQUEST="$(kueue_small_cpu_request)" envsubst <"$here/$2" | kubectl apply -f - >/dev/null
+    wait_pods_ready 4 90 || true
     sleep 5
     show_pods
     for g in 0 1; do
