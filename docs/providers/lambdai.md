@@ -112,7 +112,7 @@ helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
   -f values.k8s.lambdai-workload-identity-example.yaml
 ```
 
-See [`values.k8s.lambdai-workload-identity-example.yaml`](../../charts/topograph/values.k8s.lambdai-workload-identity-example.yaml) for a complete example. Unlike the static-token flow, **no `config.credentialsSecret` is set**.
+See [`values.k8s.lambdai-workload-identity-example.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.k8s.lambdai-workload-identity-example.yaml) for a complete example. Unlike the static-token flow, **no `config.credentialsSecret` is set**.
 
 ### How it works
 
