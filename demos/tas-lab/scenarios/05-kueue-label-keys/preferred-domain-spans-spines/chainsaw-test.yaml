@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: preferred-domain-spans-spines
+spec:
+  description: |
+    Given the same four-level Topology, where the largest accelerator domain holds two nodes.
+    When a 3-pod Job asks for preferred accelerator-domain locality.
+    Then Kueue admits the Job at a wider level and all three pods are Running, across both spines.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Make sure the workers carry the multi-tier labels (four leaves, two spines, three domains).
+  - name: labels
+    use:
+      template: ../../templates/multitier-labels.yaml
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 3 pods that asks Kueue for preferred topology on accelerator.topograph.run/domain.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 3
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-preferred-topology: accelerator.topograph.run/domain
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 3
+  # Assert the pods ran across both spines (two tier-1 values).
+  - name: in-2-tier1
+    use:
+      template: ../../templates/spread-tier1.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: count
+          value: 2

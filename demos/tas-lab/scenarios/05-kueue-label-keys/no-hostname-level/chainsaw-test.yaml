@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: no-hostname-level
+spec:
+  description: |
+    Given a Topology with only the levels tier-1 > tier-0, and no hostname level.
+    When a 2-pod Job asks for required tier-1 locality.
+    Then Kueue admits the Job and both pods are Running: the hostname level is not needed for a tier-1 request.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Make sure the workers carry the multi-tier labels (four leaves, two spines, three domains).
+  - name: labels
+    use:
+      template: ../../templates/multitier-labels.yaml
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: fabric.topograph.run/tier-0
+  # Submit a Job of 2 pods that asks Kueue for required topology on fabric.topograph.run/tier-1.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 2
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: fabric.topograph.run/tier-1
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 2

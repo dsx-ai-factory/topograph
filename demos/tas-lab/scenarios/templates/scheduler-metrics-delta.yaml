@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Checks how much the scheduler metric series matching $series changed since
+# templates/scheduler-metrics-snapshot.yaml (a ConfigMap in the test namespace), after a short settle time (SETTLE_SECONDS, default 5)
+# so that the scheduling attempt is in the metrics; a check that does not hold yet is retried for
+# up to WAIT_TIMEOUT seconds (default 30). $mode is one of:
+#   exactly      the change equals $value
+#   at-least     the change is at least $value
+#   multiple-of  the change is positive and a multiple of $value (each attempt adds the same number)
+# Needs the bindings: series (a regular expression over the series name and labels, e.g.
+# '^scheduler_generated_placements_total'), mode, value.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: scheduler-metrics-delta
+spec:
+  try:
+  - script:
+      env:
+      - name: KUBE_CONTEXT
+        value: chainsaw
+      # The test namespace: the baseline ConfigMap is created and read there.
+      - name: NAMESPACE
+        value: ($namespace)
+      - name: SERIES
+        value: ($series)
+      - name: MODE
+        value: ($mode)
+      - name: VALUE
+        value: (to_string($value))
+      # See templates/multitier-labels.yaml for how the lab directory is found.
+      content: |
+        bash -c '
+        set -eo pipefail
+        lab="${TAS_LAB_DIR:-}"
+        if [[ -z "$lab" ]]; then
+            lab="$PWD"
+            until [[ -f "$lab/versions.env" || "$lab" == / ]]; do lab="$(dirname "$lab")"; done
+        fi
+        [[ -f "$lab/lib/common.sh" ]] || { echo "cannot find the TAS lab directory; run scenarios/run.sh or set TAS_LAB_DIR" >&2; exit 1; }
+        source "$lab/lib/common.sh"
+        f="$(mktemp)"; trap '"'"'rm -f "$f"'"'"' EXIT
+        kubectl -n "$NAMESPACE" get configmap scheduler-metrics-baseline -o go-template='"'"'{{index .data "metrics"}}'"'"' >"$f" \
+            || { echo "no metrics baseline: add the scheduler-metrics-snapshot step before the step that submits the workload" >&2; exit 1; }
+        # Let the scheduling attempt reach the metrics, then keep reading until the check holds
+        # (up to WAIT_TIMEOUT seconds, default 30): a slow attempt only delays the test.
+        sleep "${SETTLE_SECONDS:-5}"
+        deadline=$((SECONDS + ${WAIT_TIMEOUT:-30}))
+        while :; do
+            ok=0
+            # A scrape that fails is retried like a check that does not hold yet, never read as 0.
+            if d="$("$lab/lib/capture-metrics.sh" --delta "$f" "$SERIES")"; then
+                case "$MODE" in
+                    exactly) ok=$(( d == VALUE )) ;;
+                    at-least) ok=$(( d >= VALUE )) ;;
+                    multiple-of) ok=$(( d > 0 && d % VALUE == 0 )) ;;
+                    *) echo "unknown mode $MODE" >&2; exit 1 ;;
+                esac
+            else
+                d=""
+            fi
+            (( ok )) && break
+            (( SECONDS < deadline )) || { echo "$SERIES changed by ${d:-an unreadable amount}, expected $MODE $VALUE" >&2; exit 1; }
+            sleep 2
+        done
+        echo "$SERIES changed by $d"'

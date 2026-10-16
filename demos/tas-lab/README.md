@@ -18,33 +18,36 @@ tests/models/tas-lab.yaml ──> Topograph (test provider, k8s engine)
 ```
 
 The kind, Kubernetes and Kueue versions are set in one place, [`versions.env`](versions.env)
-(see [Versions](#versions)). Every scenario below passes its `validate.sh` from a clean setup
-with the versions listed there.
+(see [Versions](#versions)). Every scenario below passes from a clean setup with the versions
+listed there.
 
 ## Layout
 
 ```
 demos/tas-lab/
 ├── setup/                       prepare the lab (run once, in order)
-│   ├── setup.sh                 runs the four steps below
-│   ├── cluster.sh               1. kind cluster, namespace, scheduler-metrics RBAC
+│   ├── setup.sh                 runs the five steps below
+│   ├── cluster.sh               1. kind cluster, scheduler-metrics RBAC
 │   ├── topograph.sh             2. build + install Topograph, which labels the nodes
 │   ├── kueue.sh                 3. install Kueue
 │   ├── lws.sh                   4. install LeaderWorkerSet
-│   └── kind-config.yaml, values.topograph.yaml, metrics-rbac.yaml, namespace.yaml
-├── scenarios/                   one directory per scenario, everything it needs inside
+│   ├── chainsaw.sh              5. install the Chainsaw CLI into .bin/
+│   └── kind-config.yaml, values.topograph.yaml, metrics-rbac.yaml
+├── scenarios/                   Chainsaw tests, one directory per scenario (a README and one test per case)
 │   ├── 01-gang-rack/                          kube-scheduler
-│   ├── 02-missing-label/                       kube-scheduler
+│   ├── 02-missing-label/                      kube-scheduler
 │   ├── 03-gate-enabled-after/                 kube-scheduler
 │   ├── 04-scheduler-label-keys/               kube-scheduler
 │   ├── 05-kueue-label-keys/                   Kueue
 │   ├── 06-kueue-topology-spreading/           Kueue
 │   ├── 07-kueue-label-aliases/                Kueue
 │   ├── 08-kueue-topology-shapes/              Kueue
-│   └── run-all.sh               run + validate every scenario
+│   ├── templates/               steps the tests share (Kueue queues, a Job, Topograph labels, metrics)
+│   ├── chainsaw-config.yaml     Chainsaw settings (one test at a time)
+│   └── run.sh                   runs the tests against the lab cluster
 ├── teardown/teardown.sh         delete the cluster
-├── versions.env                 kind, Kubernetes, Kueue and LWS versions (one place)
-└── lib/                         helpers shared by the scripts (common.sh, kueue.sh, capture-metrics.sh)
+├── versions.env                 kind, Kubernetes, Kueue, LWS and Chainsaw versions (one place)
+└── lib/                         helpers shared by the scripts (common.sh, capture-metrics.sh)
 ```
 
 The topologies Topograph replays live outside this directory, in
@@ -59,20 +62,19 @@ spines; scenario 08). Scenarios switch between them themselves. The test provide
 models embedded in the Topograph binary, which is why `setup/topograph.sh` builds the image from
 this checkout.
 
-Each scenario has the same two scripts. `run.sh` resets the namespace, makes sure Topograph's
-labels are in place, runs the scenario and prints what happened. `validate.sh` checks the
-outcome and exits non-zero on a failure. They are independent, so you can run any scenario at
-any time after setup.
+Each case is a [Chainsaw](https://kyverno.github.io/chainsaw/) test: it makes sure Topograph's labels
+are in place, creates what it needs in a namespace of its own, asserts the outcome and removes
+everything it created. You can run any scenario at any time after setup.
 
 ## Setup
 
-Prerequisites: `kind`, `kubectl`, `helm`, `curl`, `make`, `python3`, `envsubst` (from gettext), and a
+Prerequisites: `kind`, `kubectl`, `helm`, `curl`, `make`, `python3`, and a
 container engine reachable as `docker` (podman's Docker shim works). The container engine needs a few GB free: the Topograph
 build pulls a Go image and every kind node imports the Topograph image.
 
 ```bash
 cd demos/tas-lab
-./setup/setup.sh          # all four steps, about 5 minutes the first time
+./setup/setup.sh          # all five steps, about 5 minutes the first time
 ```
 
 Or step by step:
@@ -83,6 +85,7 @@ Or step by step:
 | 2 | `./setup/topograph.sh install` | Builds the Topograph image from this checkout, loads it into kind and installs the chart. Topograph labels the workers from `tas-lab.yaml`. |
 | 3 | `./setup/kueue.sh` | Installs Kueue, turns on `TopologyAwareScheduling` and `TASTopologySpreading`, and sets `integrations.labelKeysToCopy: [app]` so spreading can select workloads by label. |
 | 4 | `./setup/lws.sh` | Installs LeaderWorkerSet; Kueue's LeaderWorkerSet integration is on by default. |
+| 5 | `./setup/chainsaw.sh` | Installs the [Chainsaw](https://kyverno.github.io/chainsaw/) CLI (`CHAINSAW_VERSION` in `versions.env`) into `.bin/`, after checking its checksum. A matching `chainsaw` already on `PATH` is reused. It is only needed for the Chainsaw scenarios and is not part of the cluster. |
 
 Check the result:
 
@@ -113,7 +116,7 @@ K8S_VERSION=v1.37.0 ./setup/setup.sh      # any version that has a kindest/node 
 ```
 
 The scripts are version-agnostic, but some manifests are not: the `scheduling.k8s.io` API
-version and feature-gate names in `setup/kind-config.yaml` and `scenarios/*/gang.yaml` follow the
+version and feature-gate names in `setup/kind-config.yaml` and the scheduler scenarios (01-04) follow the
 Kubernetes version, and the `kueue.x-k8s.io` API version and Kueue gate names follow the Kueue
 version. `versions.env` lists what to re-check after a bump.
 
@@ -123,11 +126,29 @@ A short, plain-language description of each scenario (the problem, what it does,
 validated) is in [docs/demos/tas-lab.md](../../docs/demos/tas-lab.md). The details below are for
 running and debugging.
 
-Run any scenario with `./scenarios/NN-name/run.sh` and check it with
-`./scenarios/NN-name/validate.sh`; `./scenarios/run-all.sh` does both for all eight (about fifteen
-minutes; scenario 03 alone takes two). Scenarios 01-04 exercise the **kube-scheduler** (KEP-5732);
-05-08 exercise **Kueue**. Scenarios that submit pods to the kube-scheduler diff its placement metrics
-around the submission:
+Scenarios 01-04 exercise the **kube-scheduler** (KEP-5732); 05-08 exercise **Kueue**. Each scenario
+directory has a README with its lab fabric, a table of its cases and how they are validated; every
+case's `description` states it as Given, When and Then. Chainsaw waits for the state to be true, gives
+every test its own namespace and removes everything it created, so there are no wait loops, result
+files or cleanup traps.
+
+```bash
+./scenarios/run.sh                                           # every case (about 20 minutes)
+./scenarios/run.sh scenarios/05-kueue-label-keys             # one scenario
+./scenarios/run.sh --include-test-regex 'chainsaw/too-big'   # only the cases whose name matches
+```
+
+(`chainsaw/` in the regex is not a directory: Chainsaw names every test `chainsaw/<case>`, so the
+regex has to start with it.)
+
+Use `scenarios/run.sh`: it exports the lab directory that the tests' scripts need. The cases share one
+cluster and its node labels, so run one thing at a time (`chainsaw-config.yaml` runs the tests
+serially). Scenario 03 restarts the scheduler twice, so its test takes a few minutes. The shared steps
+(the Kueue queues, a Job, switching the Topograph labels, the scheduler metrics) are in
+[`scenarios/templates/`](scenarios/templates).
+
+Scenarios that submit pods to the kube-scheduler also check its placement metrics, which the tests read
+through `lib/capture-metrics.sh` (a baseline before the submission, the change after it):
 
 - `scheduler_generated_placements_total`: candidate placements, one per distinct constraint value
 - `scheduler_placement_evaluations_total{result}`: feasibility checks of those candidates
@@ -140,7 +161,7 @@ around the submission:
 group, placed all-or-nothing inside one tier-0 domain. A second case adds an ordinary pod with no
 `schedulingGroup` next to the gang.
 
-**Run.** `./scenarios/01-gang-rack/run.sh`
+**Run.** `./scenarios/run.sh scenarios/01-gang-rack`
 
 **Expect.**
 - Case 1: all four pods Running on workers that share one tier-0 value (both workers of one rack).
@@ -150,34 +171,31 @@ group, placed all-or-nothing inside one tier-0 domain. A second case adds an ord
 - Case 2: five pods Running. The plain pod lands on any node, unconstrained, and adds no
   placement: the metrics change exactly as in case 1.
 
-**Validate.** `./scenarios/01-gang-rack/validate.sh`
-
 ### 02 A node without the constraint key
 
 **What it shows.** What the scheduler does with a node that lacks the constraint key. Topograph
 labels the workers from [`tas-lab-nodomain.yaml`](../../tests/models/tas-lab-nodomain.yaml), where
 `tas-lab-worker3` has no accelerator domain and so gets no `accelerator.topograph.run/domain` label.
 
-**Run.** `./scenarios/02-missing-label/run.sh`
+**Run.** `./scenarios/run.sh scenarios/02-missing-label`
 
 **Expect.** With the other workers cordoned and a one-pod gang constrained on the domain key, the
 gang stays `Pending` although `tas-lab-worker3` is free. A node without the key belongs to no
 placement and adds none (two placements per attempt: `nvl-a` and `nvl-c`).
 
-The script restores the default labels with `./setup/topograph.sh generate` when it exits.
-
-**Validate.** `./scenarios/02-missing-label/validate.sh`
+The test uncordons the workers and restores the default labels with `./setup/topograph.sh generate`
+when it ends.
 
 ### 03 Gate enabled after the fact
 
 **What it shows.** The trap of turning the feature on late. The gang here fits only if the rack
 constraint is **not** enforced (four pods, one per node, but a rack has two nodes), so the gate's
-effect is visible. The script turns the scheduler's `TopologyAwareWorkloadScheduling` gate off,
+effect is visible. The test turns the scheduler's `TopologyAwareWorkloadScheduling` gate off,
 submits the gang, turns the gate on, then deletes and recreates the pods under the same PodGroup. It
 needs `docker exec` access to the control-plane node and always leaves the gate on.
 
-**Run.** `./scenarios/03-gate-enabled-after/run.sh` (about two minutes; the scheduler restarts twice
-and the script waits about 30 s after each for it to take its leader lease, because pods submitted
+**Run.** `./scenarios/run.sh scenarios/03-gate-enabled-after` (about two minutes; the scheduler restarts twice
+and the test waits about 30 s after each for it to take its leader lease, because pods submitted
 sooner sit `Pending` and look like a result).
 
 **Expect.**
@@ -187,19 +205,18 @@ sooner sit `Pending` and look like a result).
 
 The workload looks fine until it is rescheduled.
 
-**Validate.** `./scenarios/03-gate-enabled-after/validate.sh` reads the results `run.sh` recorded and
-asserts the three outcomes, plus that the gate is back on.
+The test also asserts that the gate is back on at the end.
 
 ### 04 Topograph labels as kube-scheduler constraint keys
 
 **What it shows.** Which Topograph labels work as the `PodGroup` `topology[0].key`, and the
-single-level limitation. The scenario switches the nodes to `tas-lab-multitier.yaml`, which labels the
+single-level limitation. The tests switch the nodes to `tas-lab-multitier.yaml`, which labels the
 same four workers three ways: `tier-0` (four leaf switches, one node each), `tier-1` (two spines, two
 nodes each) and `accelerator.topograph.run/domain` (three NVLink domains; `nvl-a` fills the whole of
 spine-1, `nvl-b` and `nvl-c` are single leaves, so a domain never spans spines). Each gang runs one
 pod per node (hostname anti-affinity), so a domain needs as many nodes as pods.
 
-**Run.** `./scenarios/04-scheduler-label-keys/run.sh`
+**Run.** `./scenarios/run.sh scenarios/04-scheduler-label-keys`
 
 **Expect.**
 
@@ -215,8 +232,6 @@ pod per node (hostname anti-affinity), so a domain needs as many nodes as pods.
 The number of placements generated per attempt equals the number of distinct label values; that is
 the quantity `PercentageOfPlacementsToScore` caps in releases that have it (not in v1.37).
 
-**Validate.** `./scenarios/04-scheduler-label-keys/validate.sh`
-
 ### 05 Topograph labels as Kueue Topology levels
 
 **What it shows.** The same labels in a Kueue `Topology` with `podset-required-topology` and
@@ -224,7 +239,7 @@ the quantity `PercentageOfPlacementsToScore` caps in releases that have it (not 
 `tier-1 > accelerator domain > tier-0 > hostname`, where the domain nests in the fabric. Each pod
 requests just over half of a worker's CPU, so a Job of N pods needs N nodes.
 
-**Run.** `./scenarios/05-kueue-label-keys/run.sh`
+**Run.** `./scenarios/run.sh scenarios/05-kueue-label-keys`
 
 **Expect.**
 
@@ -239,8 +254,6 @@ requests just over half of a worker's CPU, so a Job of N pods needs N nodes.
 | preferred | accelerator domain | 3 | Admitted at a wider level, across both spines |
 | required | `tier-1`, Topology without a hostname level | 2 | Admitted |
 
-**Validate.** `./scenarios/05-kueue-label-keys/validate.sh`
-
 ### 06 Kueue topology spreading of LeaderWorkerSet groups
 
 **What it shows.** `TASTopologySpreading`: two `LeaderWorkerSet` groups (2 pods each) that must each
@@ -249,22 +262,20 @@ stay in one spine (`podset-required-topology: ...tier-1`) and are spread across 
 twice, with and without the spreading annotation. Pods request a small share of a worker's CPU, so without spreading nothing
 stops the groups from sharing a spine.
 
-**Run.** `./scenarios/06-kueue-topology-spreading/run.sh` (needs setup steps 3 and 4)
+**Run.** `./scenarios/run.sh scenarios/06-kueue-topology-spreading` (needs setup steps 3 and 4)
 
 **Expect.** Without the annotation both groups land in the same spine (here on one node). With it the
 groups land in different spines and each group's pods stay together.
 
-**Validate.** `./scenarios/06-kueue-topology-spreading/validate.sh`
-
 ### 07 Rack and block aliases
 
 **What it shows.** Whether workload manifests need to know which `tier-N` is the rack. The k8s
-engine's `fabricLabels` parameter writes alias keys (default `cloud.provider.com/topology-rack` and
-`-block`, which are provisional; override with `RACK_KEY` / `BLOCK_KEY`) instead of `tier-N`.
+engine's `fabricLabels` parameter writes alias keys (`cloud.provider.com/topology-rack` and
+`-block`, which are provisional) instead of `tier-N`.
 Mapping A makes rack the leaf (`tier-0`) and block the spine (`tier-1`). Mapping B makes rack the
 spine on the same fabric. The Jobs and LeaderWorkerSets name only the aliases.
 
-**Run.** `./scenarios/07-kueue-label-aliases/run.sh` (needs setup steps 3 and 4)
+**Run.** `./scenarios/run.sh scenarios/07-kueue-label-aliases` (needs setup steps 3 and 4)
 
 **Expect.**
 - Mapping A: only the alias labels exist (the default `tier-N` keys are gone); a 2-pod Job with
@@ -274,19 +285,18 @@ spine on the same fabric. The Jobs and LeaderWorkerSets name only the aliases.
   numbers, but what "rack" means is set by the Topograph configuration of each cluster, and so are
   the Kueue `Topology` levels.
 
-**Validate.** `./scenarios/07-kueue-label-aliases/validate.sh`. The scenario removes its alias labels
-and regenerates the default labels when it finishes.
+Each test removes its alias labels and regenerates the default labels when it finishes.
 
 ### 08 Kueue Topology per label shape, and changing its levels
 
-**What it shows.** Kueue `Topology` objects, all in
-[`topologies.yaml`](scenarios/08-kueue-topology-shapes/topologies.yaml), one per shape of Topograph labels: fabric tiers
+**What it shows.** A Kueue `Topology` for each shape of Topograph labels (the manifests are in the
+[scenario's README](scenarios/08-kueue-topology-shapes/README.md#the-topology-for-each-shape)): fabric tiers
 only (`tas-lab.yaml`), fabric plus accelerator domain (`tas-lab-multitier.yaml`), and fabric plus
 domain plus sub-domain (`tas-lab-subdomain.yaml`). Then a Topology whose levels change while a
-workload waits and while one is admitted. `stack.tmpl.yaml` adds the `ResourceFlavor`
-and queues over each Topology.
+workload waits and while one is admitted. [`templates/stack.yaml`](scenarios/templates/stack.yaml) adds
+the `ResourceFlavor` and queues over each Topology.
 
-**Run.** `./scenarios/08-kueue-topology-shapes/run.sh` (needs setup step 3)
+**Run.** `./scenarios/run.sh scenarios/08-kueue-topology-shapes` (needs setup step 3)
 
 **Expect.**
 - Each shape admits a Job that fits one domain of a level and refuses one that does not
@@ -299,8 +309,6 @@ and queues over each Topology.
   while it is admitted leaves it admitted and running; removing the hostname level is rejected
   (`levels are mutable only when kubernetes.io/hostname is the lowest level both before and after
   the change`).
-
-**Validate.** `./scenarios/08-kueue-topology-shapes/validate.sh`
 
 ## Tear down
 

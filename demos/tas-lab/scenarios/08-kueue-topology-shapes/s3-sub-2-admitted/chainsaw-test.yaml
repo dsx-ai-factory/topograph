@@ -1,0 +1,95 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: s3-sub-2-admitted
+spec:
+  description: |
+    Given tas-lab-subdomain.yaml (one domain, a sub-domain per rack) and a Topology tier-1 > domain > sub-domain > tier-0 > hostname.
+    When a 2-pod Job asks for required sub-domain locality.
+    Then Kueue admits it: both pods are Running in one sub-domain.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-subdomain.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-subdomain.yaml
+        - name: params
+          value: '{}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker
+            labels:
+              accelerator.topograph.run/sub-domain: nvl-a.rack-a
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: accelerator.topograph.run/sub-domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 2 pods that asks Kueue for required topology on accelerator.topograph.run/sub-domain.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 2
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: accelerator.topograph.run/sub-domain
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 2
+  # Assert the pods ran in one sub-domain.
+  - name: in-1-subdomain
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    - name: pods
+      value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'job')])
+    - name: values
+      value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."accelerator.topograph.run/sub-domain")
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(keys(object_from_lists($values, $values)))): 1

@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: domain-too-big
+spec:
+  description: |
+    Given the same model, where the largest accelerator domain holds two nodes, and a 3-pod gang, one pod per node, constrained to one accelerator domain.
+    When the gang is submitted.
+    Then it is not placed: all three pods stay Pending.
+  steps:
+  # Make sure the workers carry the multi-tier labels (four leaves, two spines, three domains).
+  - name: labels
+    use:
+      template: ../../templates/multitier-labels.yaml
+  # Create the gang: a Workload and PodGroup (minCount 3, topology constraint accelerator.topograph.run/domain) and the Job whose pods, one per node, join it.
+  - name: gang
+    try:
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: Workload
+          metadata:
+            name: domain-too-big
+          spec:
+            podGroupTemplates:
+            - name: domain-too-big
+              schedulingPolicy:
+                gang:
+                  minCount: 3
+              schedulingConstraints:
+                topology:
+                - key: accelerator.topograph.run/domain
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: domain-too-big
+          spec:
+            workloadRef:
+              workloadName: domain-too-big
+              templateName: domain-too-big
+            schedulingPolicy:
+              gang:
+                minCount: 3
+            schedulingConstraints:
+              topology:
+              - key: accelerator.topograph.run/domain
+    - apply:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: domain-too-big
+          spec:
+            parallelism: 3
+            completions: 3
+            template:
+              metadata:
+                labels:
+                  lab: domain-too-big
+              spec:
+                affinity:
+                  podAntiAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          lab: domain-too-big
+                schedulingGroup:
+                  podGroupName: domain-too-big
+                restartPolicy: Never
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: 100m
+  # Wait for the scheduler's decision: PodGroupInitiallyScheduled is False, the gang was not placed.
+  - name: decided
+    try:
+    - assert:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: domain-too-big
+          status:
+            (conditions[?type == 'PodGroupInitiallyScheduled'].status): ['False']
+  # Give the scheduler time to retry, so that "still Pending" is not just the first instant.
+  - name: settle
+    try:
+    - sleep:
+        duration: 8s
+  # Assert the pods are still Pending: the gang was not placed.
+  - name: stays-pending
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'domain-too-big') && status.phase == 'Pending'])): 3

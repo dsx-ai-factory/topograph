@@ -1,0 +1,157 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: mutable-levels
+spec:
+  description: |
+    Given a Topology tier-1 > tier-0 > hostname that does not know the accelerator domain yet.
+    When a Job requires the domain (not a level): it waits. Then the domain is added as a level, then the widest level (tier-1) is dropped while the Job is admitted, then the hostname level is removed.
+    Then, in order: the Job is not admitted and Kueue says the level is missing; adding the level admits the waiting Job without recreating it, inside one domain; dropping the widest level keeps it admitted with its pods Running; removing the hostname level is rejected by the API server.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Make sure the workers carry the multi-tier labels (four leaves, two spines, three domains).
+  - name: labels
+    use:
+      template: ../../templates/multitier-labels.yaml
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 2 pods that asks Kueue for required topology on accelerator.topograph.run/domain.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 2
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: accelerator.topograph.run/domain
+  # Assert Kueue did not admit the Job, and says why: "does not contain the requested level".
+  - name: refused
+    use:
+      template: ../../templates/refused.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: message
+          value: does not contain the requested level
+  # Add the accelerator domain as a Topology level while the Job waits.
+  - name: add-domain-level
+    try:
+    - apply:
+        resource:
+          apiVersion: kueue.x-k8s.io/v1beta2
+          kind: Topology
+          metadata:
+            name: ($stack)
+          spec:
+            levels:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 2
+  # Assert the pods ran in one accelerator domain.
+  - name: in-1-domain
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    - name: pods
+      value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'job')])
+    - name: values
+      value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."accelerator.topograph.run/domain")
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(keys(object_from_lists($values, $values)))): 1
+  # Drop the widest level (tier-1) while the Job is admitted.
+  - name: drop-widest-level
+    try:
+    - apply:
+        resource:
+          apiVersion: kueue.x-k8s.io/v1beta2
+          kind: Topology
+          metadata:
+            name: ($stack)
+          spec:
+            levels:
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Give the scheduler time to retry, so that "still Pending" is not just the first instant.
+  - name: settle
+    try:
+    - sleep:
+        duration: 12s
+  # Assert the Job is still admitted after the level was dropped.
+  - name: still-admitted
+    try:
+    - assert:
+        resource:
+          apiVersion: kueue.x-k8s.io/v1beta2
+          kind: Workload
+          status:
+            (conditions[?type == 'Admitted'].status): ['True']
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 2
+  # Remove the hostname level and expect the API server to reject it.
+  - name: remove-hostname-level
+    try:
+    - apply:
+        resource:
+          apiVersion: kueue.x-k8s.io/v1beta2
+          kind: Topology
+          metadata:
+            name: ($stack)
+          spec:
+            levels:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+        expect:
+        - check:
+            ($error != null): true
+            (contains($error, 'kubernetes.io/hostname')): true

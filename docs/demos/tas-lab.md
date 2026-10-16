@@ -24,33 +24,31 @@ model, four leaves under two spines plus accelerator domains in the multi-tier m
 
 ## Run it
 
-Prerequisites: `kind`, `kubectl`, `helm`, `curl`, `make`, `python3`, `envsubst`, and a container
+Prerequisites: `kind`, `kubectl`, `helm`, `curl`, `make`, `python3`, and a container
 runtime.
 
 ```bash
 cd demos/tas-lab
 ./setup/setup.sh                      # about 5 minutes the first time
-./scenarios/run-all.sh                # every scenario: run, then validate (about 15 minutes)
+./scenarios/run.sh                    # every scenario (about 20 minutes)
 
-./scenarios/01-gang-rack/run.sh       # or one scenario at a time
-./scenarios/01-gang-rack/validate.sh
+./scenarios/run.sh scenarios/01-gang-rack   # or one scenario at a time
 ./teardown/teardown.sh                # delete the cluster
 ```
 
 Scenarios 05 to 08 need Kueue (`./setup/kueue.sh`), and 06 and 07 also need LeaderWorkerSet
-(`./setup/lws.sh`). `setup.sh` installs both.
+(`./setup/lws.sh`). `setup.sh` installs both, and also the Chainsaw CLI (`./setup/chainsaw.sh`).
+
+The scenarios are [Chainsaw](https://kyverno.github.io/chainsaw/) tests, one directory per scenario
+under `scenarios/`, each with a README. Each case is one test with a Given/When/Then description.
+A test makes sure the nodes carry the right labels, creates what it needs in a namespace of its own,
+asserts the outcome and removes everything it created, even if it fails. Do not run two tests at the
+same time, because they share the cluster and the node labels.
 
 ## How each scenario works
 
-Every scenario has two scripts:
-
-- `run.sh` creates the workload, waits for the scheduler's answer and writes what happened to a
-  result file in a private scratch directory (`${TMPDIR:-/tmp}/tas-lab-<uid>`).
-- `validate.sh` reads that file and prints `PASS` or `FAIL` for each expectation. It exits non-zero
-  if any check fails.
-
 Scenarios that use the kube-scheduler also compare its placement metrics from before and after
-the submission:
+the submission (a test takes a baseline, submits the workload, then checks the change):
 
 - `scheduler_generated_placements_total`: candidate placements, one per distinct label value.
 - `scheduler_placement_evaluations_total{result}`: how many candidates were feasible or not.
@@ -132,7 +130,7 @@ and `accelerator.../sub-domain`. It also tries a constraint with two keys.
 | `sub-domain` | 2 pods / 3 pods | Running in one sub-domain / Pending |
 | two keys | n/a | Rejected by the API (at most one item) |
 
-**How it is validated.** For each case the validator checks how many pods are Running or Pending,
+**How it is validated.** For each case the test checks how many pods are Running or Pending,
 how many label values they span, the `PodGroupInitiallyScheduled` condition, and the metrics: the
 number of generated placements equals the number of distinct label values, and only the domain
 that fits is feasible. For the two-key case it checks that the API rejected it with the item-limit
@@ -167,9 +165,9 @@ sizes.
 | required / preferred | domain | 2 / 3 | Admitted on `nvl-a` / admitted across both spines |
 | required | `tier-1`, no hostname level | 2 | Admitted |
 
-**How it is validated.** For each Job it reads Kueue's `Admitted` condition, counts the distinct
-label values of the nodes the pods ran on, and checks that the refusal message says
-`fit only 2 out of 3`.
+**How it is validated.** For each Job it reads Kueue's `Admitted` condition, checks that every pod
+of an admitted Job is actually Running (not just assigned to a node), counts the distinct label
+values of the nodes the pods ran on, and checks that each refusal message gives the expected reason, such as `fit only 2 out of 3`.
 
 ### 06 Spreading groups across spines
 
@@ -200,10 +198,11 @@ switch. Mapping B maps rack to the spine, on the same fabric, with the same mani
 refused (a rack is one node) and a required-block Job is admitted. In mapping B the same
 required-rack manifest is admitted.
 
-**How it is validated.** Four nodes carry the rack alias and no `tier-N` labels remain; the
-admitted state of each Job; and for the LeaderWorkerSets, two Running pods per group, non-empty
-rack values, groups sharing a rack without spreading and in different racks with it. The scenario
-removes its alias labels and restores the default labels when it ends.
+**How it is validated.** The test checks that four nodes carry the rack alias and that no `tier-N`
+labels remain. It checks the admitted state of each Job and that all pods of an admitted Job are
+Running. For the LeaderWorkerSets, it checks that each group has two Running pods, that the rack
+values are not empty, and that the groups share a rack without spreading and are in different racks
+with it. Each test removes its alias labels and restores the default labels when it ends.
 
 ### 08 One Topology per label shape, and changing levels
 
@@ -225,10 +224,11 @@ three-pod jobs), and a Topology whose levels are edited at run time.
   recreating it. Dropping the widest level keeps an admitted Job running. Removing the hostname
   level is rejected.
 
-**How it is validated.** The admitted state and the number of tier, domain and sub-domain values
-used for each Job, the three level-change outcomes, and the API's rejection of removing the
-hostname level. The scenario removes its queues and Topologies and restores the default labels
-when it ends, even if it fails part way.
+**How it is validated.** The test checks the admitted state of each Job, that all pods of every
+admitted Job are Running, and the number of tier, domain and sub-domain values the pods used. It
+checks the three level-change outcomes and that the API rejects removing the hostname level.
+Chainsaw removes the queues and Topologies a test created, and the test restores the default labels,
+even if it fails part way.
 
 ---
 
@@ -242,5 +242,5 @@ when it ends, even if it fails part way.
 
 See the [Kubernetes engine](../engines/k8s.md) page for how Topograph labels nodes, and
 [Node Labels and Annotations](../reference/node-labels.md) for every key. The Kueue `Topology`
-manifests used by scenario 08 are in
-[`topologies.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/demos/tas-lab/scenarios/08-kueue-topology-shapes/topologies.yaml).
+manifests for each shape of labels are in the
+[scenario 08 README](https://github.com/dsx-ai-factory/topograph/blob/main/demos/tas-lab/scenarios/08-kueue-topology-shapes/README.md#the-topology-for-each-shape).

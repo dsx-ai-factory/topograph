@@ -1,0 +1,245 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gate-enabled-after
+spec:
+  description: |
+    Given the scheduler's TopologyAwareWorkloadScheduling gate turned OFF and a 4-pod gang (one pod per node, tier-0 constraint) that therefore ran with the constraint ignored, on both racks.
+    When the gate is turned ON again, and then the pods are deleted and recreated under the same PodGroup.
+    Then the existing pods kept running when the gate came on, the recreated pods are all Pending (a rack has two nodes, the gang needs four), and the gate is left ON.
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab.yaml
+        - name: params
+          value: '{}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker
+            labels:
+              fabric.topograph.run/tier-0: rack-a
+  # Turn the scheduler's TopologyAwareWorkloadScheduling gate OFF; the cleanup turns it back ON.
+  - name: gate-off
+    try:
+    - script:
+        timeout: 4m
+        env:
+        - name: KUBE_CONTEXT
+          value: chainsaw
+        content: |
+          # Turn the scheduler's TopologyAwareWorkloadScheduling gate OFF. The cleanup always turns it back ON.
+          bash -c '
+          "${DOCKER:-docker}" exec tas-lab-control-plane sed -i -E "s/TopologyAwareWorkloadScheduling=(true|false)/TopologyAwareWorkloadScheduling=false/" /etc/kubernetes/manifests/kube-scheduler.yaml
+          # The kubelet recreates the static pod: wait for it, then for it to win the leader lease.
+          sleep 5
+          kubectl -n kube-system wait --for=condition=Ready pod -l component=kube-scheduler --timeout=120s
+          sleep 30'
+    cleanup:
+    - script:
+        timeout: 4m
+        env:
+        - name: KUBE_CONTEXT
+          value: chainsaw
+        content: |
+          bash -c '
+          "${DOCKER:-docker}" exec tas-lab-control-plane sed -i -E "s/TopologyAwareWorkloadScheduling=(true|false)/TopologyAwareWorkloadScheduling=true/" /etc/kubernetes/manifests/kube-scheduler.yaml
+          # The kubelet recreates the static pod: wait for it, then for it to win the leader lease.
+          sleep 5
+          kubectl -n kube-system wait --for=condition=Ready pod -l component=kube-scheduler --timeout=120s'
+  # Create the gang: a Workload and PodGroup (minCount 4, topology constraint fabric.topograph.run/tier-0) and the Job whose pods, one per node, join it.
+  - name: gang
+    try:
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: Workload
+          metadata:
+            name: gang-spread
+          spec:
+            podGroupTemplates:
+            - name: gang-spread
+              schedulingPolicy:
+                gang:
+                  minCount: 4
+              schedulingConstraints:
+                topology:
+                - key: fabric.topograph.run/tier-0
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: gang-spread
+          spec:
+            workloadRef:
+              workloadName: gang-spread
+              templateName: gang-spread
+            schedulingPolicy:
+              gang:
+                minCount: 4
+            schedulingConstraints:
+              topology:
+              - key: fabric.topograph.run/tier-0
+    - apply:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: gang-spread
+          spec:
+            parallelism: 4
+            completions: 4
+            template:
+              metadata:
+                labels:
+                  lab: gang-spread
+              spec:
+                affinity:
+                  podAntiAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          lab: gang-spread
+                schedulingGroup:
+                  podGroupName: gang-spread
+                restartPolicy: Never
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: 100m
+  # Assert the gang ran: with the gate off the constraint is ignored.
+  - name: ran-with-gate-off
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'gang-spread') && status.phase == 'Running'])): 4
+  # Assert the pods spread over both racks: the constraint was not enforced.
+  - name: constraint-ignored
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    - name: pods
+      value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'gang-spread')])
+    - name: values
+      value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."fabric.topograph.run/tier-0")
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(keys(object_from_lists($values, $values)))): 2
+  # Turn the gate ON again.
+  - name: gate-on
+    try:
+    - script:
+        timeout: 4m
+        env:
+        - name: KUBE_CONTEXT
+          value: chainsaw
+        content: |
+          # Turn the gate ON again; the running pods are untouched.
+          bash -c '
+          "${DOCKER:-docker}" exec tas-lab-control-plane sed -i -E "s/TopologyAwareWorkloadScheduling=(true|false)/TopologyAwareWorkloadScheduling=true/" /etc/kubernetes/manifests/kube-scheduler.yaml
+          # The kubelet recreates the static pod: wait for it, then for it to win the leader lease.
+          sleep 5
+          kubectl -n kube-system wait --for=condition=Ready pod -l component=kube-scheduler --timeout=120s
+          sleep 30'
+  # Assert turning the gate on left the running pods alone.
+  - name: existing-pods-keep-running
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'gang-spread') && status.phase == 'Running'])): 4
+  # Delete the Job and its pods (the PodGroup stays).
+  - name: delete-pods
+    try:
+    - delete:
+        ref:
+          apiVersion: batch/v1
+          kind: Job
+          name: gang-spread
+        deletionPropagationPolicy: Foreground
+  # Recreate the Job under the same PodGroup.
+  - name: recreate-pods
+    try:
+    - apply:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: gang-spread
+          spec:
+            parallelism: 4
+            completions: 4
+            template:
+              metadata:
+                labels:
+                  lab: gang-spread
+              spec:
+                affinity:
+                  podAntiAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          lab: gang-spread
+                schedulingGroup:
+                  podGroupName: gang-spread
+                restartPolicy: Never
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: 100m
+  # Give the scheduler time to retry, so that "still Pending" is not just the first instant.
+  - name: settle
+    try:
+    - sleep:
+        duration: 10s
+  # Assert the recreated pods are all Pending: the constraint is enforced now.
+  - name: recreated-pending
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'gang-spread') && status.phase == 'Pending'])): 4
+  # Assert the gate is ON at the end of the test.
+  - name: gate-is-on
+    try:
+    - script:
+        content: |
+          bash -c '"${DOCKER:-docker}" exec tas-lab-control-plane grep -o "TopologyAwareWorkloadScheduling=[a-z]*" /etc/kubernetes/manifests/kube-scheduler.yaml'
+        check:
+          ($error == null): true
+          (contains($stdout, 'TopologyAwareWorkloadScheduling=true')): true

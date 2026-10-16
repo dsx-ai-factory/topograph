@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Kueue did not admit the Job $job, and for the reason the test expects: the Workload's QuotaReserved
+# message contains $message. Checking the reason matters, because Kueue's first answer, before its
+# topology cache has the nodes, is a refusal too ("no topology domains at level ..."), and a refusal for
+# any reason would otherwise pass. Needs the bindings: job, message.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: refused
+spec:
+  try:
+  - assert:
+      resource:
+        apiVersion: kueue.x-k8s.io/v1beta2
+        kind: Workload
+        metadata:
+          (ownerReferences[?name == $job] | length(@)): 1
+        status:
+          (conditions[?type == 'Admitted'].status): ['False']
+          (conditions[?type == 'QuotaReserved'] | [0].message | contains(@, $message)): true

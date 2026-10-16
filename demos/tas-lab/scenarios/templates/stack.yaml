@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A Kueue Topology, ResourceFlavor, ClusterQueue and LocalQueue, all named $stack. Needs the
+# bindings: stack, levels (the Topology levels, coarsest first). The ClusterQueue CPU quota is the
+# workers' total allocatable CPU, so the quota never refuses a Job that fits the nodes. Chainsaw
+# deletes all four when the test ends.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: stack
+spec:
+  bindings:
+  - name: nodes
+    value: (x_k8s_list($client, 'v1', 'Node', '').items)
+  - name: workers
+    value: ($nodes[?metadata.labels."tas-lab" == 'worker'])
+  # Allocatable CPU of each worker in millicores ("7" or "7500m").
+  - name: millis
+    value: ($workers[*].status.allocatable.cpu | map(&multiply(to_number(trim(@, 'm')), (ends_with(@, 'm') && `1` || `1000`)), @))
+  - name: cpu_quota
+    value: (join('', [to_string(sum($millis)), 'm']))
+  try:
+  - apply:
+      resource:
+        apiVersion: kueue.x-k8s.io/v1beta2
+        kind: Topology
+        metadata:
+          name: ($stack)
+        spec:
+          levels: ($levels)
+  - apply:
+      resource:
+        apiVersion: kueue.x-k8s.io/v1beta2
+        kind: ResourceFlavor
+        metadata:
+          name: ($stack)
+        spec:
+          nodeLabels:
+            tas-lab: worker
+          topologyName: ($stack)
+  - apply:
+      resource:
+        apiVersion: kueue.x-k8s.io/v1beta2
+        kind: ClusterQueue
+        metadata:
+          name: ($stack)
+        spec:
+          namespaceSelector: {}
+          resourceGroups:
+          - coveredResources: [cpu, memory]
+            flavors:
+            - name: ($stack)
+              resources:
+              - name: cpu
+                nominalQuota: ($cpu_quota)
+              - name: memory
+                nominalQuota: 100Gi
+  - apply:
+      resource:
+        apiVersion: kueue.x-k8s.io/v1beta2
+        kind: LocalQueue
+        metadata:
+          name: ($stack)
+        spec:
+          clusterQueue: ($stack)

@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Records the kube-scheduler's placement metrics (lib/capture-metrics.sh --snapshot) as the baseline
+# for templates/scheduler-metrics-delta.yaml. Use it before the step that submits the workload.
+# The baseline is kept in a ConfigMap (scheduler-metrics-baseline) in the test namespace, so it needs
+# no local file and Chainsaw removes it with the namespace when the test ends.
+# Needs no bindings.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: scheduler-metrics-snapshot
+spec:
+  try:
+  - script:
+      env:
+      - name: KUBE_CONTEXT
+        value: chainsaw
+      # The test namespace: the baseline ConfigMap is created and read there.
+      - name: NAMESPACE
+        value: ($namespace)
+      # See templates/multitier-labels.yaml for how the lab directory is found.
+      content: |
+        bash -c '
+        # A failed scrape must stop the step, not become an empty baseline.
+        set -eo pipefail
+        lab="${TAS_LAB_DIR:-}"
+        if [[ -z "$lab" ]]; then
+            lab="$PWD"
+            until [[ -f "$lab/versions.env" || "$lab" == / ]]; do lab="$(dirname "$lab")"; done
+        fi
+        [[ -f "$lab/lib/common.sh" ]] || { echo "cannot find the TAS lab directory; run scenarios/run.sh or set TAS_LAB_DIR" >&2; exit 1; }
+        source "$lab/lib/common.sh"
+        f="$(mktemp)"; trap '"'"'rm -f "$f"'"'"' EXIT
+        "$lab/lib/capture-metrics.sh" --snapshot "$f"
+        kubectl -n "$NAMESPACE" delete configmap scheduler-metrics-baseline --ignore-not-found >/dev/null
+        kubectl -n "$NAMESPACE" create configmap scheduler-metrics-baseline --from-file=metrics="$f" >/dev/null'

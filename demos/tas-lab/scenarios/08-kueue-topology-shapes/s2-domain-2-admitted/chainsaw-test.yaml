@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: s2-domain-2-admitted
+spec:
+  description: |
+    Given fabric tiers plus an accelerator domain that nests inside the fabric (tas-lab-multitier.yaml) and a Topology tier-1 > domain > tier-0 > hostname.
+    When a 2-pod Job asks for required accelerator-domain locality.
+    Then Kueue admits it: both pods are Running in one domain, which nests inside one spine.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Make sure the workers carry the multi-tier labels (four leaves, two spines, three domains).
+  - name: labels
+    use:
+      template: ../../templates/multitier-labels.yaml
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 2 pods that asks Kueue for required topology on accelerator.topograph.run/domain.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 2
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: accelerator.topograph.run/domain
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 2
+  # Assert the pods ran in one accelerator domain.
+  - name: in-1-domain
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    - name: pods
+      value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'job')])
+    - name: values
+      value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."accelerator.topograph.run/domain")
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(keys(object_from_lists($values, $values)))): 1
+  # Assert the pods ran in one spine (one tier-1 value).
+  - name: in-1-spine
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    - name: pods
+      value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'job')])
+    - name: spines
+      value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."fabric.topograph.run/tier-1")
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(keys(object_from_lists($spines, $spines)))): 1

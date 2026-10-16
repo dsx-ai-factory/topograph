@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: two-constraints
+spec:
+  description: |
+    Given a PodGroup that lists two topology constraints (tier-1 and tier-0).
+    When it is applied to the API server.
+    Then the API server rejects it because a PodGroup allows at most one topology constraint, so the multi-tier labels cannot be combined.
+  steps:
+  # Apply a PodGroup with two topology constraints and expect the API server to reject it.
+  - name: rejected
+    try:
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: two-constraints
+          spec:
+            schedulingPolicy:
+              gang:
+                minCount: 2
+            schedulingConstraints:
+              topology:
+              - key: fabric.topograph.run/tier-1
+              - key: fabric.topograph.run/tier-0
+        expect:
+        # Rejected for the item limit itself, not for another reason such as a missing Workload.
+        - check:
+            ($error != null): true
+            (contains($error, 'at most 1 item')): true

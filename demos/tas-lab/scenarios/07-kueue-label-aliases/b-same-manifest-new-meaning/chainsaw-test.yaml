@@ -1,0 +1,97 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: b-same-manifest-new-meaning
+spec:
+  description: |
+    Given the same fabric mapped differently: rack = tier-1 (spine), and tier-0 goes to example.com/leaf; the Topology is rack > leaf > hostname.
+    When the same 2-pod Job as in a-required-rack-refused (required rack locality) is submitted.
+    Then Kueue admits it and both pods are Running: the workload manifest is unchanged, and what a rack is was decided once, in the Topograph configuration.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-multitier.yaml (the k8s engine writes the alias keys, fabricLabels); the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-multitier.yaml
+        - name: params
+          value: '{"fabricLabels":["example.com/leaf","cloud.provider.com/topology-rack"]}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker
+            labels:
+              example.com/leaf: leaf-1
+              cloud.provider.com/topology-rack: spine-1
+    cleanup:
+    - script:
+        env:
+        - name: KUBE_CONTEXT
+          value: chainsaw
+        content: |
+          bash -c 'for key in cloud.provider.com/topology-rack cloud.provider.com/topology-block example.com/leaf; do kubectl label nodes -l tas-lab=worker "$key-" >/dev/null 2>&1 || true; done'
+  # Assert all four workers carry the rack alias label.
+  - name: all-nodes-have-the-rack-alias
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length($workers[?contains(keys(metadata.labels), 'cloud.provider.com/topology-rack')])): 4
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: cloud.provider.com/topology-rack
+            - nodeLabel: example.com/leaf
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 2 pods that asks Kueue for required topology on cloud.provider.com/topology-rack.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 2
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: cloud.provider.com/topology-rack
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 2

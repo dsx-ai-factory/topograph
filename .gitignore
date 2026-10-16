@@ -10,4 +10,6 @@
 /deb/topograph/etc/topograph/
 /deb/topograph/lib
 /rpmbuild
+# Chainsaw CLI downloaded by demos/tas-lab/setup/chainsaw.sh
+/demos/tas-lab/.bin/
 .vscode

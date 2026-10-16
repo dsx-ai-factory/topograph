@@ -1,0 +1,164 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: unlabelled-node-not-used
+spec:
+  description: |
+    Given tas-lab-nodomain.yaml, where tas-lab-worker3 has no accelerator domain and so no accelerator.topograph.run/domain label, and the other workers are cordoned (the unlabelled node is the only free one).
+    When a one-pod gang whose PodGroup constrains accelerator.topograph.run/domain is submitted.
+    Then the scheduler decides the gang cannot be placed and the pod stays Pending: a node that lacks the constraint key is not a domain of its own.
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-nodomain.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-nodomain.yaml
+        - name: params
+          value: '{}'
+  # Assert only three workers carry a domain label (tas-lab-worker3 has none).
+  - name: three-nodes-have-a-domain
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length($workers[?contains(keys(metadata.labels), 'accelerator.topograph.run/domain')])): 3
+  # Cordon the other workers, so the unlabelled tas-lab-worker3 is the only free node.
+  - name: cordon
+    try:
+    - script:
+        env:
+        - name: KUBE_CONTEXT
+          value: chainsaw
+        content: |
+          # The unlabelled tas-lab-worker3 is the only free node.
+          kubectl cordon tas-lab-worker tas-lab-worker2 tas-lab-worker4
+    cleanup:
+    - script:
+        env:
+        - name: KUBE_CONTEXT
+          value: chainsaw
+        content: |
+          kubectl uncordon tas-lab-worker tas-lab-worker2 tas-lab-worker4
+  # Record the scheduler's placement metrics before the workload is submitted.
+  - name: metrics-baseline
+    use:
+      template: ../../templates/scheduler-metrics-snapshot.yaml
+  # Create the gang: a Workload and PodGroup (minCount 1, topology constraint accelerator.topograph.run/domain) and the Job whose pods join it.
+  - name: gang
+    try:
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: Workload
+          metadata:
+            name: gang-domain
+          spec:
+            podGroupTemplates:
+            - name: gang-domain
+              schedulingPolicy:
+                gang:
+                  minCount: 1
+              schedulingConstraints:
+                topology:
+                - key: accelerator.topograph.run/domain
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: gang-domain
+          spec:
+            workloadRef:
+              workloadName: gang-domain
+              templateName: gang-domain
+            schedulingPolicy:
+              gang:
+                minCount: 1
+            schedulingConstraints:
+              topology:
+              - key: accelerator.topograph.run/domain
+    - apply:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: gang-domain
+          spec:
+            parallelism: 1
+            completions: 1
+            template:
+              metadata:
+                labels:
+                  lab: gang-domain
+              spec:
+                schedulingGroup:
+                  podGroupName: gang-domain
+                restartPolicy: Never
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: 100m
+  # Wait for the scheduler's decision: PodGroupInitiallyScheduled is False, the gang was not placed.
+  - name: decided
+    try:
+    - assert:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: gang-domain
+          status:
+            (conditions[?type == 'PodGroupInitiallyScheduled'].status): ['False']
+  # Give the scheduler time to retry, so that "still Pending" is not just the first instant.
+  - name: settle
+    try:
+    - sleep:
+        duration: 8s
+  # Assert the pods are still Pending: the gang was not placed.
+  - name: stays-pending
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'gang-domain') && status.phase == 'Pending'])): 1
+  # Check how many candidate placements the scheduler generated since the baseline.
+  - name: placements-generated
+    use:
+      template: ../../templates/scheduler-metrics-delta.yaml
+      with:
+        bindings:
+        - name: series
+          value: '^scheduler_generated_placements_total'
+        - name: mode
+          value: at-least
+        - name: value
+          value: 1
+  # Check the placements come in pairs per attempt (nvl-a and nvl-c): the unlabelled node adds none.
+  - name: unlabelled-node-adds-no-placement
+    use:
+      template: ../../templates/scheduler-metrics-delta.yaml
+      with:
+        bindings:
+        - name: series
+          value: '^scheduler_generated_placements_total'
+        - name: mode
+          value: multiple-of
+        - name: value
+          value: 2

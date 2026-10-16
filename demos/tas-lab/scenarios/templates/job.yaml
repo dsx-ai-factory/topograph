@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A Job of $pods pods submitted to the queue $stack. $annotations is the pod annotation map, e.g.
+# {kueue.x-k8s.io/podset-required-topology: <node label>}; a map key cannot be templated, so the
+# whole map is passed. Needs the bindings: job, stack, pods, annotations. Each pod requests just
+# over half of the smallest worker's CPU, so one node holds one pod.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: job
+spec:
+  bindings:
+  - name: nodes
+    value: (x_k8s_list($client, 'v1', 'Node', '').items)
+  - name: workers
+    value: ($nodes[?metadata.labels."tas-lab" == 'worker'])
+  # Allocatable CPU of each worker in millicores ("7" or "7500m").
+  - name: millis
+    value: ($workers[*].status.allocatable.cpu | map(&multiply(to_number(trim(@, 'm')), (ends_with(@, 'm') && `1` || `1000`)), @))
+  - name: cpu_request
+    value: (join('', [to_string(add(divide(min($millis), `2`), `1`)), 'm']))
+  try:
+  - apply:
+      resource:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: ($job)
+          labels:
+            kueue.x-k8s.io/queue-name: ($stack)
+        spec:
+          parallelism: ($pods)
+          completions: ($pods)
+          template:
+            metadata:
+              annotations: ($annotations)
+            spec:
+              restartPolicy: Never
+              containers:
+              - name: pause
+                image: registry.k8s.io/pause:3.10
+                resources:
+                  requests:
+                    cpu: ($cpu_request)
+                    memory: 64Mi

@@ -1,0 +1,110 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: a-required-rack-refused
+spec:
+  description: |
+    Given Topograph's fabricLabels parameter mapping rack = tier-0 (leaf switch) and block = tier-1 (spine), and a Topology over those aliases only (block > rack > hostname).
+    When a 2-pod Job asks for required rack locality.
+    Then Kueue does not admit it: a rack is one node. The default fabric.topograph.run/tier-N labels are gone, replaced by the aliases.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-multitier.yaml (the k8s engine writes the alias keys, fabricLabels); the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-multitier.yaml
+        - name: params
+          value: '{"fabricLabels":["cloud.provider.com/topology-rack","cloud.provider.com/topology-block"]}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker
+            labels:
+              cloud.provider.com/topology-rack: leaf-1
+              cloud.provider.com/topology-block: spine-1
+    cleanup:
+    - script:
+        env:
+        - name: KUBE_CONTEXT
+          value: chainsaw
+        content: |
+          bash -c 'for key in cloud.provider.com/topology-rack cloud.provider.com/topology-block example.com/leaf; do kubectl label nodes -l tas-lab=worker "$key-" >/dev/null 2>&1 || true; done'
+  # Assert all four workers carry the rack alias label.
+  - name: all-nodes-have-the-rack-alias
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length($workers[?contains(keys(metadata.labels), 'cloud.provider.com/topology-rack')])): 4
+  # Assert the default fabric.topograph.run/tier-0 label is gone: the aliases replaced it.
+  - name: default-tier-labels-gone
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length($workers[?contains(keys(metadata.labels), 'fabric.topograph.run/tier-0')])): 0
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: cloud.provider.com/topology-block
+            - nodeLabel: cloud.provider.com/topology-rack
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 2 pods that asks Kueue for required topology on cloud.provider.com/topology-rack.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 2
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: cloud.provider.com/topology-rack
+  # Assert Kueue did not admit the Job, and says why: "fit only 1 out of 2".
+  - name: refused
+    use:
+      template: ../../templates/refused.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: message
+          value: fit only 1 out of 2

@@ -1,0 +1,152 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: on-subdomain
+spec:
+  description: |
+    Given tas-lab-subdomain.yaml (one accelerator domain with a sub-domain per rack, two nodes each) and a 2-pod gang, one pod per node, constrained to one accelerator.topograph.run/sub-domain.
+    When the gang is submitted.
+    Then it is placed: both pods are Running in one sub-domain.
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-subdomain.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-subdomain.yaml
+        - name: params
+          value: '{}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker
+            labels:
+              accelerator.topograph.run/sub-domain: nvl-a.rack-a
+  # Record the scheduler's placement metrics before the workload is submitted.
+  - name: metrics-baseline
+    use:
+      template: ../../templates/scheduler-metrics-snapshot.yaml
+  # Create the gang: a Workload and PodGroup (minCount 2, topology constraint accelerator.topograph.run/sub-domain) and the Job whose pods, one per node, join it.
+  - name: gang
+    try:
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: Workload
+          metadata:
+            name: on-subdomain
+          spec:
+            podGroupTemplates:
+            - name: on-subdomain
+              schedulingPolicy:
+                gang:
+                  minCount: 2
+              schedulingConstraints:
+                topology:
+                - key: accelerator.topograph.run/sub-domain
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: on-subdomain
+          spec:
+            workloadRef:
+              workloadName: on-subdomain
+              templateName: on-subdomain
+            schedulingPolicy:
+              gang:
+                minCount: 2
+            schedulingConstraints:
+              topology:
+              - key: accelerator.topograph.run/sub-domain
+    - apply:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: on-subdomain
+          spec:
+            parallelism: 2
+            completions: 2
+            template:
+              metadata:
+                labels:
+                  lab: on-subdomain
+              spec:
+                affinity:
+                  podAntiAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          lab: on-subdomain
+                schedulingGroup:
+                  podGroupName: on-subdomain
+                restartPolicy: Never
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: 100m
+  # Assert all pods of the gang are Running.
+  - name: running
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'on-subdomain') && status.phase == 'Running'])): 2
+  # Assert the scheduler placed the gang (PodGroupInitiallyScheduled is True).
+  - name: decided
+    try:
+    - assert:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: on-subdomain
+          status:
+            (conditions[?type == 'PodGroupInitiallyScheduled'].status): ['True']
+  # Assert the pods ran in one sub-domain.
+  - name: in-1-subdomain
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    - name: pods
+      value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'on-subdomain')])
+    - name: values
+      value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."accelerator.topograph.run/sub-domain")
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(keys(object_from_lists($values, $values)))): 1
+  # Check the scheduler generated one candidate placement per sub-domain value.
+  - name: placements-generated
+    use:
+      template: ../../templates/scheduler-metrics-delta.yaml
+      with:
+        bindings:
+        - name: series
+          value: '^scheduler_generated_placements_total'
+        - name: mode
+          value: exactly
+        - name: value
+          value: 2

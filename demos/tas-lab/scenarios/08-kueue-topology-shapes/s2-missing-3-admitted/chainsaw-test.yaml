@@ -1,0 +1,90 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: s2-missing-3-admitted
+spec:
+  description: |
+    Given the same nodomain model and Topology.
+    When a 3-pod Job asks for preferred tier-1 locality.
+    Then Kueue admits it, all pods are Running, and none runs on the unlabelled tas-lab-worker3.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-nodomain.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-nodomain.yaml
+        - name: params
+          value: '{}'
+
+  # Assert only three workers carry a domain label (tas-lab-worker3 has none).
+  - name: three-nodes-have-a-domain
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length($workers[?contains(keys(metadata.labels), 'accelerator.topograph.run/domain')])): 3
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 3 pods that asks Kueue for preferred topology on fabric.topograph.run/tier-1.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 3
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-preferred-topology: fabric.topograph.run/tier-1
+  # Assert Kueue admitted the Job and all of its pods are Ready.
+  - name: admitted-and-running
+    use:
+      template: ../../templates/admitted.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: pods
+          value: 3
+  # Assert no pod ran on the unlabelled tas-lab-worker3.
+  - name: not-on-unlabelled-node
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?spec.nodeName == 'tas-lab-worker3'])): 0

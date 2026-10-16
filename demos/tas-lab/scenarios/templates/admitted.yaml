@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Kueue admitted the Job $job and all of its $pods pods are Ready (not only assigned to nodes).
+# Needs the bindings: job, pods.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: admitted
+spec:
+  try:
+  - assert:
+      resource:
+        apiVersion: kueue.x-k8s.io/v1beta2
+        kind: Workload
+        metadata:
+          (ownerReferences[?name == $job] | length(@)): 1
+        status:
+          (conditions[?type == 'Admitted'].status): ['True']
+  - assert:
+      resource:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: ($job)
+        status:
+          ready: ($pods)

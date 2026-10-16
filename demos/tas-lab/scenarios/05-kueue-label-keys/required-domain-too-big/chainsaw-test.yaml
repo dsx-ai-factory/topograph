@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: required-domain-too-big
+spec:
+  description: |
+    Given the same four-level Topology, where the largest accelerator domain holds two nodes.
+    When a 3-pod Job asks for required accelerator-domain locality.
+    Then Kueue does not admit the Job.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Make sure the workers carry the multi-tier labels (four leaves, two spines, three domains).
+  - name: labels
+    use:
+      template: ../../templates/multitier-labels.yaml
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 3 pods that asks Kueue for required topology on accelerator.topograph.run/domain.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 3
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: accelerator.topograph.run/domain
+  # Assert Kueue did not admit the Job, and says why: "fit only 2 out of 3".
+  - name: refused
+    use:
+      template: ../../templates/refused.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: message
+          value: fit only 2 out of 3

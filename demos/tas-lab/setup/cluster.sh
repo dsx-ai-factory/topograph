@@ -4,9 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Setup step 1: create the TAS lab kind cluster (Kubernetes version from versions.env, both scheduling
-# gates on), the
-# namespace the scenarios use, and the RBAC that lets lib/capture-metrics.sh scrape the
-# scheduler. The nodes carry no topology labels yet; Topograph adds them in step 2.
+# gates on), and the RBAC that lets lib/capture-metrics.sh scrape the scheduler. The nodes carry no
+# topology labels yet; Topograph adds them in step 2.
 
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
@@ -20,7 +19,6 @@ kind create cluster --config "$lab_dir/setup/kind-config.yaml" --image "$KIND_NO
 wait_for_api
 kubectl wait --for=condition=Ready node --all --timeout=180s
 kubectl label node tas-lab-worker tas-lab-worker2 tas-lab-worker3 tas-lab-worker4 tas-lab=worker --overwrite
-kubectl apply -f "$lab_dir/setup/namespace.yaml"
 kubectl apply -f "$lab_dir/setup/metrics-rbac.yaml"
 
 step "Feature gates on the control plane"

@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The pods of the Job $job ran on nodes that carry $count distinct values of accelerator.topograph.run/domain
+# (accelerator domain). Needs the bindings: job, count. A label key cannot
+# be a variable inside a JMESPath path, so there is one template per label.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: spread-domain
+spec:
+  bindings:
+  - name: nodes
+    value: (x_k8s_list($client, 'v1', 'Node', '').items)
+  - name: workers
+    value: ($nodes[?metadata.labels."tas-lab" == 'worker'])
+  try:
+  - assert:
+      bindings:
+      - name: pods
+        value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?metadata.labels."job-name" == $job])
+      - name: values
+        value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."accelerator.topograph.run/domain")
+      resource:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: ($job)
+        (length(keys(object_from_lists($values, $values)))): ($count)

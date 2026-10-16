@@ -1,0 +1,49 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Makes Topograph label the workers from the model $model (a file in tests/models, e.g.
+# tas-lab-nodomain.yaml) with the k8s engine parameters $params (a JSON object as a string, '{}' for
+# none, e.g. '{"fabricLabels":["example.com/rack"]}'). Needs the bindings: model, params. When the
+# test ends, the default model (tas-lab.yaml) is generated again, so a test never leaves its labels
+# behind. Generation is skipped when the nodes already carry the labels of the same request (see
+# generate_labels in lib/common.sh), so a test that starts from the default model does not pay for it. The test then asserts the labels it relies on, which also waits for them to settle.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: topograph-labels
+spec:
+  try:
+  - script:
+      env:
+      - name: KUBE_CONTEXT
+        value: chainsaw
+      - name: MODEL
+        value: ($model)
+      - name: PARAMS
+        value: ($params)
+      # See templates/multitier-labels.yaml for how the lab directory is found.
+      content: |
+        bash -c '
+        lab="${TAS_LAB_DIR:-}"
+        if [[ -z "$lab" ]]; then
+            lab="$PWD"
+            until [[ -f "$lab/versions.env" || "$lab" == / ]]; do lab="$(dirname "$lab")"; done
+        fi
+        [[ -f "$lab/lib/common.sh" ]] || { echo "cannot find the TAS lab directory; run scenarios/run.sh or set TAS_LAB_DIR" >&2; exit 1; }
+        source "$lab/lib/common.sh"
+        generate_labels "$MODEL" "$PARAMS"'
+  cleanup:
+  - script:
+      env:
+      - name: KUBE_CONTEXT
+        value: chainsaw
+      content: |
+        bash -c '
+        lab="${TAS_LAB_DIR:-}"
+        if [[ -z "$lab" ]]; then
+            lab="$PWD"
+            until [[ -f "$lab/versions.env" || "$lab" == / ]]; do lab="$(dirname "$lab")"; done
+        fi
+        [[ -f "$lab/lib/common.sh" ]] || { echo "cannot find the TAS lab directory; run scenarios/run.sh or set TAS_LAB_DIR" >&2; exit 1; }
+        source "$lab/lib/common.sh"
+        generate_labels'

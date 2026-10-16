@@ -1,0 +1,124 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: subdomain-too-big
+spec:
+  description: |
+    Given tas-lab-subdomain.yaml, where a sub-domain holds two nodes, and a 3-pod gang, one pod per node, constrained to one sub-domain.
+    When the gang is submitted.
+    Then it is not placed: all three pods stay Pending.
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-subdomain.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-subdomain.yaml
+        - name: params
+          value: '{}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker
+            labels:
+              accelerator.topograph.run/sub-domain: nvl-a.rack-a
+  # Create the gang: a Workload and PodGroup (minCount 3, topology constraint accelerator.topograph.run/sub-domain) and the Job whose pods, one per node, join it.
+  - name: gang
+    try:
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: Workload
+          metadata:
+            name: subdomain-too-big
+          spec:
+            podGroupTemplates:
+            - name: subdomain-too-big
+              schedulingPolicy:
+                gang:
+                  minCount: 3
+              schedulingConstraints:
+                topology:
+                - key: accelerator.topograph.run/sub-domain
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: subdomain-too-big
+          spec:
+            workloadRef:
+              workloadName: subdomain-too-big
+              templateName: subdomain-too-big
+            schedulingPolicy:
+              gang:
+                minCount: 3
+            schedulingConstraints:
+              topology:
+              - key: accelerator.topograph.run/sub-domain
+    - apply:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: subdomain-too-big
+          spec:
+            parallelism: 3
+            completions: 3
+            template:
+              metadata:
+                labels:
+                  lab: subdomain-too-big
+              spec:
+                affinity:
+                  podAntiAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                    - topologyKey: kubernetes.io/hostname
+                      labelSelector:
+                        matchLabels:
+                          lab: subdomain-too-big
+                schedulingGroup:
+                  podGroupName: subdomain-too-big
+                restartPolicy: Never
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: 100m
+  # Wait for the scheduler's decision: PodGroupInitiallyScheduled is False, the gang was not placed.
+  - name: decided
+    try:
+    - assert:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: subdomain-too-big
+          status:
+            (conditions[?type == 'PodGroupInitiallyScheduled'].status): ['False']
+  # Give the scheduler time to retry, so that "still Pending" is not just the first instant.
+  - name: settle
+    try:
+    - sleep:
+        duration: 8s
+  # Assert the pods are still Pending: the gang was not placed.
+  - name: stays-pending
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'subdomain-too-big') && status.phase == 'Pending'])): 3

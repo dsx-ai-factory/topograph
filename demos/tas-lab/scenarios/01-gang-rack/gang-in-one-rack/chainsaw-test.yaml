@@ -1,0 +1,146 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gang-in-one-rack
+spec:
+  description: |
+    Given the default model: four workers, two per rack (fabric.topograph.run/tier-0).
+    When a 4-pod gang whose PodGroup has a tier-0 topology constraint is submitted.
+    Then all four pods are Running and share one tier-0 value, that is one rack.
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab.yaml
+        - name: params
+          value: '{}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker
+            labels:
+              fabric.topograph.run/tier-0: rack-a
+  # Record the scheduler's placement metrics before the workload is submitted.
+  - name: metrics-baseline
+    use:
+      template: ../../templates/scheduler-metrics-snapshot.yaml
+  # Create the gang: a Workload and PodGroup (minCount 4, topology constraint fabric.topograph.run/tier-0) and the Job whose pods join it.
+  - name: gang
+    try:
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: Workload
+          metadata:
+            name: gang-rack
+          spec:
+            podGroupTemplates:
+            - name: gang-rack
+              schedulingPolicy:
+                gang:
+                  minCount: 4
+              schedulingConstraints:
+                topology:
+                - key: fabric.topograph.run/tier-0
+    - apply:
+        resource:
+          apiVersion: scheduling.k8s.io/v1beta1
+          kind: PodGroup
+          metadata:
+            name: gang-rack
+          spec:
+            workloadRef:
+              workloadName: gang-rack
+              templateName: gang-rack
+            schedulingPolicy:
+              gang:
+                minCount: 4
+            schedulingConstraints:
+              topology:
+              - key: fabric.topograph.run/tier-0
+    - apply:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: gang-rack
+          spec:
+            parallelism: 4
+            completions: 4
+            template:
+              metadata:
+                labels:
+                  lab: gang-rack
+              spec:
+                schedulingGroup:
+                  podGroupName: gang-rack
+                restartPolicy: Never
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: 100m
+  # Assert all pods of the gang are Running.
+  - name: running
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'gang-rack') && status.phase == 'Running'])): 4
+  # Assert the pods ran in one rack (one tier-0 value).
+  - name: in-1-rack
+    bindings:
+    - name: workers
+      value: (x_k8s_list($client, 'v1', 'Node', '').items[?metadata.labels."tas-lab" == 'worker'])
+    - name: pods
+      value: (x_k8s_list($client, 'v1', 'Pod', $namespace).items[?starts_with(metadata.name, 'gang-rack')])
+    - name: values
+      value: ($workers[?contains($pods[*].spec.nodeName, metadata.name)].metadata.labels."fabric.topograph.run/tier-0")
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ($namespace)
+          (length(keys(object_from_lists($values, $values)))): 1
+  # Check the scheduler generated one candidate placement per tier-0 value (two racks).
+  - name: placements-generated
+    use:
+      template: ../../templates/scheduler-metrics-delta.yaml
+      with:
+        bindings:
+        - name: series
+          value: '^scheduler_generated_placements_total'
+        - name: mode
+          value: exactly
+        - name: value
+          value: 2
+  # Check how many of those placements the scheduler found feasible.
+  - name: feasible-evaluations
+    use:
+      template: ../../templates/scheduler-metrics-delta.yaml
+      with:
+        bindings:
+        - name: series
+          value: 'evaluations_total.*result="feasible"'
+        - name: mode
+          value: exactly
+        - name: value
+          value: 2

@@ -3,17 +3,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Snapshots the scheduler placement metrics, runs a command, snapshots again and prints the diff.
+# Reads the kube-scheduler's placement metrics for the scenario tests, which take a baseline before
+# a workload is submitted and compare after it (scenarios/templates/scheduler-metrics-*.yaml):
 #
-#   lib/capture-metrics.sh kubectl apply -f gang.yaml
-# `kubectl` here targets the lab context, as in the other scripts.
+#   lib/capture-metrics.sh --snapshot <file>              write the current series to <file>
+#   lib/capture-metrics.sh --delta <file> <series-regex>  print how much the matching series changed since <file>
 #
-# The per-series change (one "series delta" line each, histogram buckets left out) is printed and,
-# with METRICS_OUT set, also written to that file for validate.sh scripts.
-# The scheduler pod is scraped over its secure port (10259) through a port-forward on a free local
-# port, which is checked before the token is sent.
-# With WAIT_FOR_SCRIPT set, that executable is polled (up to WAIT_TIMEOUT seconds, default 60)
-# after the command, so the second snapshot follows the scheduling attempt and not a fixed delay.
+# --delta reads counters, so it prints whole numbers and fails if a series went down (a scheduler restart).
+# The series are scheduler_generated_placements_total, scheduler_placement_evaluations_total and
+# scheduler_placement_evaluation_duration_seconds. `kubectl` here targets the lab context
+# (KUBE_CONTEXT, default kind-tas-lab). The scheduler pod is scraped over its secure port (10259)
+# through a port-forward on a free local port, which is checked before the token is sent.
 
 set -euo pipefail
 
@@ -22,6 +22,13 @@ kubectl() { command kubectl --context "$ctx" "$@"; }
 pattern='^(scheduler_generated_placements_total|scheduler_placement_evaluations_total|scheduler_placement_evaluation_duration_seconds)'
 out="$(mktemp -d)"
 trap '[[ -z "${pf:-}" ]] || kill "$pf" 2>/dev/null || true; rm -rf "$out"' EXIT
+
+usage() { echo "usage: $0 --snapshot <file> | --delta <file> <series-regex>" >&2; exit 2; }
+case "${1:-}" in
+--snapshot) [[ $# -eq 2 ]] || usage ;;
+--delta) [[ $# -eq 3 ]] || usage ;;
+*) usage ;;
+esac
 
 pod="$(kubectl -n kube-system get pod -l component=kube-scheduler -o name | head -1)"
 # A free local port (":10259" lets kubectl pick), so another listener can never receive the token.
@@ -38,27 +45,29 @@ done
 [[ -n "$port" ]] || { echo "port-forward to $pod failed:" >&2; cat "$pf_log" >&2; exit 1; }
 token="$(kubectl -n kube-system create token metrics-reader)"
 
-snap() {
-    # A series only exists after its first observation, so an empty snapshot is normal.
-    curl -sk -H "Authorization: Bearer $token" "https://127.0.0.1:$port/metrics" | { grep -E "$pattern" || true; } | sort >"$out/$1"
+snap() { # <file>
+    # A series only exists after its first observation, so an empty snapshot is normal; an HTTP error
+    # (-f) is not, and fails the pipeline instead of leaving an empty file that reads as valid metrics.
+    curl -sfk -H "Authorization: Bearer $token" "https://127.0.0.1:$port/metrics" | { grep -E "$pattern" || true; } | sort >"$1"
 }
 
-snap before
-"$@"
-if [[ -n "${WAIT_FOR_SCRIPT:-}" ]]; then
-    deadline=$((SECONDS + ${WAIT_TIMEOUT:-60}))
-    until "$WAIT_FOR_SCRIPT" 2>/dev/null; do
-        (( SECONDS < deadline )) || { echo "warning: $WAIT_FOR_SCRIPT did not succeed in time" >&2; break; }
-        sleep 1
-    done
+if [[ "$1" == --snapshot ]]; then
+    snap "$2"
+else
+    [[ -f "$2" ]] || { echo "no snapshot $2; take one with --snapshot first" >&2; exit 1; }
+    snap "$out/after"
+    # The series name and labels are everything before the last field, so a label value with a space
+    # stays in the key. The regex comes in through the environment, so awk does not process its
+    # backslash escapes. Histogram buckets and _sum series (elapsed seconds, not counts) are left out. Counters only go up: a series that
+    # fell or vanished means the scheduler restarted since the snapshot, and the change is unreadable.
+    SERIES="$3" awk '
+        function key(line, v) { return substr(line, 1, length(line) - length(v) - 1) }
+        FILENAME == ARGV[1] { b[key($0, $NF)] = $NF; next }
+        { k = key($0, $NF); seen[k] = 1 }
+        k !~ /_bucket/ && k !~ /_sum[{]/ && k !~ /_sum$/ && k ~ ENVIRON["SERIES"] { d = $NF - (b[k] + 0); if (d < 0) reset = 1; s += d }
+        END {
+            for (k in b) if (!(k in seen) && k !~ /_bucket/ && k !~ /_sum[{]/ && k !~ /_sum$/ && k ~ ENVIRON["SERIES"]) reset = 1
+            if (reset) { print "a matching series went down or vanished: the scheduler restarted since the snapshot" > "/dev/stderr"; exit 1 }
+            printf "%.0f\n", s
+        }' "$2" "$out/after"
 fi
-sleep "${SETTLE_SECONDS:-5}"
-snap after
-
-# Changed series only; histogram buckets are left out as noise.
-summary="$out/summary"
-awk 'FILENAME == ARGV[1] { b[$1] = $2; next } { d = $2 - (b[$1] + 0); if (d != 0 && $1 !~ /_bucket/) print $1, d }' \
-    "$out/before" "$out/after" >"$summary"
-echo "--- scheduler metric changes ---"
-if [[ -s "$summary" ]]; then sed 's/{profile="default-scheduler"/{/;s/^/  /' "$summary"; else echo "  (none)"; fi
-if [[ -n "${METRICS_OUT:-}" ]]; then cp "$summary" "$METRICS_OUT"; fi

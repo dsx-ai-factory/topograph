@@ -1,0 +1,49 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A LeaderWorkerSet named spread-demo of 2 groups of 2 pods, submitted to the Kueue queue $stack.
+# $annotations is the pod annotation map (required topology, optionally topology spreading). Needs
+# the bindings: stack, annotations. Each pod requests an eighth of the smallest worker's CPU, so
+# both groups fit on one node when nothing keeps them apart.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: lws
+spec:
+  bindings:
+  - name: nodes
+    value: (x_k8s_list($client, 'v1', 'Node', '').items)
+  - name: workers
+    value: ($nodes[?metadata.labels."tas-lab" == 'worker'])
+  # Allocatable CPU of each worker in millicores ("7" or "7500m").
+  - name: millis
+    value: ($workers[*].status.allocatable.cpu | map(&multiply(to_number(trim(@, 'm')), (ends_with(@, 'm') && `1` || `1000`)), @))
+  - name: cpu_request
+    value: (join('', [to_string(max([divide(min($millis), `8`), `1`])), 'm']))
+  try:
+  - apply:
+      resource:
+        apiVersion: leaderworkerset.x-k8s.io/v1
+        kind: LeaderWorkerSet
+        metadata:
+          name: spread-demo
+          labels:
+            app: spread-demo
+            kueue.x-k8s.io/queue-name: ($stack)
+        spec:
+          replicas: 2
+          leaderWorkerTemplate:
+            size: 2
+            workerTemplate:
+              metadata:
+                labels:
+                  app: spread-demo
+                annotations: ($annotations)
+              spec:
+                containers:
+                - name: pause
+                  image: registry.k8s.io/pause:3.10
+                  resources:
+                    requests:
+                      cpu: ($cpu_request)
+                      memory: 64Mi

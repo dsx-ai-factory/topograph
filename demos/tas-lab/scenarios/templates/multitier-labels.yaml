@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Makes sure the workers carry the labels of tests/models/tas-lab-multitier.yaml (four leaves, two
+# spines and three NVLink domains), then asserts them. The lab's ensure_multitier_labels switches
+# the model only when the labels differ (about a second when they already match), so every case
+# works on its own and in any order.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: StepTemplate
+metadata:
+  name: multitier-labels
+spec:
+  try:
+  - script:
+      env:
+      - name: KUBE_CONTEXT
+        value: chainsaw
+      # Chainsaw runs a script in the test's own directory, so ../.. would tie it to how deep the test
+      # sits. scenarios/run.sh passes the absolute lab directory in TAS_LAB_DIR; when chainsaw is run
+      # directly, walk up from here to the directory that holds versions.env.
+      content: |
+        bash -c '
+        lab="${TAS_LAB_DIR:-}"
+        if [[ -z "$lab" ]]; then
+            lab="$PWD"
+            until [[ -f "$lab/versions.env" || "$lab" == / ]]; do lab="$(dirname "$lab")"; done
+        fi
+        [[ -f "$lab/lib/common.sh" ]] || { echo "cannot find the TAS lab directory; run scenarios/run.sh or set TAS_LAB_DIR" >&2; exit 1; }
+        source "$lab/lib/common.sh"
+        ensure_multitier_labels >/dev/null'
+  - assert:
+      resource:
+        apiVersion: v1
+        kind: Node
+        metadata:
+          name: tas-lab-worker
+          labels:
+            fabric.topograph.run/tier-0: leaf-1
+            fabric.topograph.run/tier-1: spine-1
+            accelerator.topograph.run/domain: nvl-a
+  - assert:
+      resource:
+        apiVersion: v1
+        kind: Node
+        metadata:
+          name: tas-lab-worker2
+          labels:
+            fabric.topograph.run/tier-0: leaf-2
+            fabric.topograph.run/tier-1: spine-1
+            accelerator.topograph.run/domain: nvl-a
+  - assert:
+      resource:
+        apiVersion: v1
+        kind: Node
+        metadata:
+          name: tas-lab-worker3
+          labels:
+            fabric.topograph.run/tier-0: leaf-3
+            fabric.topograph.run/tier-1: spine-2
+            accelerator.topograph.run/domain: nvl-b
+  - assert:
+      resource:
+        apiVersion: v1
+        kind: Node
+        metadata:
+          name: tas-lab-worker4
+          labels:
+            fabric.topograph.run/tier-0: leaf-4
+            fabric.topograph.run/tier-1: spine-2
+            accelerator.topograph.run/domain: nvl-c

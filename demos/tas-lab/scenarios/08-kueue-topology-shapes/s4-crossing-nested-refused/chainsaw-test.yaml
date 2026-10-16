@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: s4-crossing-nested-refused
+spec:
+  description: |
+    Given tas-lab-crossing.yaml, where accelerator domain nvl-a holds three nodes but crosses spines (two under spine-1, one under spine-2), and a Topology that nests the domain below tier-1.
+    When a 3-pod Job asks for required accelerator-domain locality.
+    Then Kueue does not admit it: below tier-1 the domain has at most two nodes, so it is not found.
+  bindings:
+  # Unique per test, so a slow cleanup can never collide with the next case.
+  - name: stack
+    value: (join('-', ['cs', $namespace]))
+  steps:
+  # Have Topograph label the workers from tests/models/tas-lab-crossing.yaml; the default model is restored when the test ends.
+  - name: topograph-labels
+    use:
+      template: ../../templates/topograph-labels.yaml
+      with:
+        bindings:
+        - name: model
+          value: tas-lab-crossing.yaml
+        - name: params
+          value: '{}'
+  # Wait for the labels the test relies on to show up on a node.
+  - name: labels-settled
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: tas-lab-worker3
+            labels:
+              accelerator.topograph.run/domain: nvl-a
+              fabric.topograph.run/tier-1: spine-2
+  # Create the Kueue Topology (the levels under test), ResourceFlavor, ClusterQueue and LocalQueue.
+  - name: stack
+    use:
+      template: ../../templates/stack.yaml
+      with:
+        bindings:
+        - name: stack
+          value: ($stack)
+        - name: levels
+          value:
+            - nodeLabel: fabric.topograph.run/tier-1
+            - nodeLabel: accelerator.topograph.run/domain
+            - nodeLabel: fabric.topograph.run/tier-0
+            - nodeLabel: kubernetes.io/hostname
+  # Submit a Job of 3 pods that asks Kueue for required topology on accelerator.topograph.run/domain.
+  - name: submit
+    use:
+      template: ../../templates/job.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: stack
+          value: ($stack)
+        - name: pods
+          value: 3
+        - name: annotations
+          value:
+            kueue.x-k8s.io/podset-required-topology: accelerator.topograph.run/domain
+  # Assert Kueue did not admit the Job, and says why: "fit only 2 out of 3".
+  - name: refused
+    use:
+      template: ../../templates/refused.yaml
+      with:
+        bindings:
+        - name: job
+          value: job
+        - name: message
+          value: fit only 2 out of 3
