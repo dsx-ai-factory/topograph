@@ -514,4 +514,4 @@ tests:
 
 ### Chart README
 
-For installation, prerequisites, values reference, and configuration examples, see [`charts/topograph/README.md`](../../charts/topograph/README.md) — also surfaced via `helm show readme topograph/topograph`.
+For installation, prerequisites, values reference, and configuration examples, see [`charts/topograph/README.md`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/README.md) — also surfaced via `helm show readme topograph/topograph`.
