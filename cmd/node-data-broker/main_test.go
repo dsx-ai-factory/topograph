@@ -18,9 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
+	provider_test "github.com/dsx-ai-factory/topograph/pkg/providers/test"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
@@ -296,4 +298,20 @@ func TestGetAnnotationsNscaleDispatchCanceledContext(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("getAnnotations did not return after context cancellation")
 	}
+}
+
+func TestApplyTestProviderSkipsNodeUpdate(t *testing.T) {
+	clientset := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}})
+	broker := &nodeBroker{
+		clientset: clientset,
+		nodeName:  "node-1",
+		config:    nodeDataBrokerConfig{Provider: topology.Provider{Name: provider_test.NAME}},
+	}
+
+	annotations, err := broker.getAnnotations(context.TODO())
+	require.NoError(t, err)
+	require.Empty(t, annotations)
+
+	require.NoError(t, broker.apply(context.TODO()))
+	require.Empty(t, clientset.Actions())
 }
