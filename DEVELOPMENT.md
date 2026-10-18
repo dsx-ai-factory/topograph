@@ -182,8 +182,19 @@ identical to the local `make` targets:
 - `.github/workflows/k8s-test.yaml` — Kubernetes integration tests (kind +
   KWOK) on `pull-request/*` branches
 - `.github/workflows/slinky-test.yaml` — Slinky engine integration tests
-- `.github/workflows/docker.yml` — container image build (manual trigger)
-- `.github/workflows/helm-release.yaml` — Helm chart release (manual trigger)
+- `.github/workflows/docker.yml` — multi-platform container image build and
+  publish to `nvcr.io/dsx-ai-factory-staging/topograph/topograph` on release tags (`vX.Y.Z`)
+  or manual triggers. Requires the GitHub Actions secret `NGC_API_KEY` with
+  permission to push images to the NGC `dsx-ai-factory-staging/topograph` team.
+- `.github/workflows/helm-release.yaml` — manual Helm chart publication to
+  `https://helm.ngc.nvidia.com/dsx-ai-factory-staging/topograph` using the pinned
+  `helm cm-push` plugin. Requires `NGC_API_KEY` with chart write access to
+  the NGC `dsx-ai-factory-staging/topograph` team and an existing `topograph` chart record
+  in NGC (see the [NGC chart publishing guide](https://docs.nvidia.com/ngc/latest/ngc-private-registry-user-guide.html)).
+  Generates a checksum and GitHub build provenance before publishing the chart;
+  the checksum is not uploaded to the Helm repository. The separate
+  `.github/workflows/release.yml` workflow continues to publish official
+  tag-driven releases and chart checksums through GitHub Pages and GitHub Releases.
 
 `make qualify` and `make chart-test` (when charts changed) passing locally
 is a strong signal, not a guarantee of an identical CI run — in particular,
