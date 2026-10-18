@@ -23,6 +23,8 @@ For **Multi-Node NVLink (MNNVL) Kubernetes clusters** (e.g. GB200 NVL72), do not
 
 All three variants are single-region only (multi-region requests return a `400 Bad Request` error). No CSP credentials are required.
 
+Nodes are matched by the host name in each HCA's node description (for example `node-01 mlx5_0`). When that name and the cluster node name differ only by domain, as when Kubernetes registers nodes by FQDN (`node-01.example.com`) while the HCA reports the short name, the short names (up to the first `.`) are compared instead. A short name shared by more than one cluster node is skipped with a warning; IP-address node names are compared as-is.
+
 ## Output
 
 All three variants produce the same fabric topology representation, and are in turn consumed by whichever engine you configure. The simulation variant has no accelerator-domain data:

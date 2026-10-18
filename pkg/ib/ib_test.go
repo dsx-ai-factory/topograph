@@ -18,8 +18,11 @@ package ib
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -315,4 +318,65 @@ func TestGenerateTopologyConfigInvalid(t *testing.T) {
 
 	expected := ""
 	require.Equal(t, expected, string(data))
+}
+
+func TestResolveNodeNames(t *testing.T) {
+	nodes := map[string]bool{
+		"node-1.example.com": true,
+		"node-2":             true,
+		"node-3.rack-a.lab":  true,
+		"node-3.rack-b.lab":  true,
+		"10.0.0.4":           true,
+	}
+	hca := map[string]string{
+		"H-1": "node-1",             // short HCA name, FQDN node
+		"H-2": "node-2",             // exact match
+		"H-3": "node-2.example.com", // FQDN HCA name, short node
+		"H-4": "node-3",             // ambiguous: two nodes share the short name
+		"H-5": "10",                 // IP addresses are never shortened
+		"H-6": "other",              // not in the cluster
+	}
+
+	expected := map[string]string{
+		"H-1": "node-1.example.com",
+		"H-2": "node-2",
+		"H-3": "node-2",
+		"H-4": "node-3",
+		"H-5": "10",
+		"H-6": "other",
+	}
+	require.Equal(t, expected, resolveNodeNames(hca, nodes))
+}
+
+func TestGenerateTopologyConfigFQDNNodes(t *testing.T) {
+	data, err := os.ReadFile("../../tests/output/ibnetdiscover/example.out")
+	require.NoError(t, err)
+
+	instances := map[string]string{}
+	expected := map[string]*topology.Vertex{}
+	for i := 1; i <= 18; i++ {
+		name := fmt.Sprintf("b05-p1-dgx-05-c%02d.example.com", i)
+		instances[name] = name
+		expected[name] = &topology.Vertex{ID: name, Name: name}
+	}
+
+	forest, hca, err := GenerateTopologyConfig(data, []topology.ComputeInstances{{Region: "local", Instances: instances}})
+	require.NoError(t, err)
+	require.Contains(t, slices.Collect(maps.Values(hca)), "b05-p1-dgx-05-c01.example.com")
+
+	var leaf *topology.Vertex
+	var find func(v *topology.Vertex)
+	find = func(v *topology.Vertex) {
+		if v.ID == "S-2c5eab0300c26040" {
+			leaf = v
+		}
+		for _, child := range v.Vertices {
+			find(child)
+		}
+	}
+	for _, v := range forest {
+		find(v)
+	}
+	require.NotNil(t, leaf)
+	require.Equal(t, expected, leaf.Vertices)
 }
