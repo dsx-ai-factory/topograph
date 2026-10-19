@@ -59,7 +59,7 @@ The bundled test hooks probe `/healthz` and `/metrics` inside the cluster and ex
 
 Engine-specific verification (seeing the actual topology output) differs — see each engine's section below.
 
-## Engine: `k8s` <a name="engine-k8s"></a>
+## Engine: `k8s`
 
 Engine-specific install flag:
 
@@ -79,7 +79,7 @@ If labels are missing, inspect the Topograph logs:
 kubectl logs -n topograph -l app.kubernetes.io/name=topograph
 ```
 
-## Engine: `nfd` <a name="engine-nfd"></a>
+## Engine: `nfd`
 
 Engine-specific install flag:
 
@@ -101,7 +101,7 @@ kubectl get nodefeaturegroups.nfd.k8s-sigs.io -n node-feature-discovery
 Use this engine only for consumers that understand NFD groups. For native
 Kubernetes pod affinity and topology keys, use `engine: k8s`.
 
-## Engine: `slinky` <a name="engine-slinky"></a>
+## Engine: `slinky`
 
 Engine-specific install flags point the `slinky` engine at the Slinky deployment:
 
