@@ -59,8 +59,8 @@ sub-domains; scenarios 04 and 08), [`tas-lab-nodomain.yaml`](../../tests/models/
 (multitier with no domain on one node; scenarios 02 and 08) and
 [`tas-lab-crossing.yaml`](../../tests/models/tas-lab-crossing.yaml) (a domain that spans two
 spines; scenario 08). Scenarios switch between them themselves. The test provider only reads
-models embedded in the Topograph binary, which is why `setup/topograph.sh` builds the image from
-this checkout.
+models embedded in the Topograph binary, so the image that `setup/topograph.sh` pulls
+(`TOPOGRAPH_IMG_URL` and `TOPOGRAPH_IMG_TAG` in `versions.env`) must contain these models.
 
 Each case is a [Chainsaw](https://kyverno.github.io/chainsaw/) test: it makes sure Topograph's labels
 are in place, creates what it needs in a namespace of its own, asserts the outcome and removes
@@ -68,9 +68,9 @@ everything it created. You can run any scenario at any time after setup.
 
 ## Setup
 
-Prerequisites: `kind`, `kubectl`, `helm`, `curl`, `make`, `python3`, and a
-container engine reachable as `docker` (podman's Docker shim works). The container engine needs a few GB free: the Topograph
-build pulls a Go image and every kind node imports the Topograph image.
+Prerequisites: `kind`, `kubectl`, `helm`, `curl`, `python3`, and a
+container engine reachable as `docker` (podman's Docker shim works). The container engine needs a few GB free: it pulls the Topograph
+image and every kind node imports it.
 
 ```bash
 cd demos/tas-lab
@@ -318,4 +318,4 @@ the `ResourceFlavor` and queues over each Topology.
 
 This deletes the kind cluster (Topograph and Kueue go with it) and the scratch files the
 scenarios write under `${TMPDIR:-/tmp}/tas-lab-<uid>`. The Topograph image stays in the local image
-store; remove it with `docker rmi ghcr.io/dsx-ai-factory/topograph:tas-lab`.
+store; remove it with `docker rmi "$TOPOGRAPH_IMG_URL:$TOPOGRAPH_IMG_TAG"` (values in `versions.env`).
