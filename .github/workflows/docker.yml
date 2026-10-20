@@ -31,26 +31,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate manual branch
-        if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'
-        env:
-          BRANCH_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "${BRANCH_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Branch ${BRANCH_NAME} conflicts with the official release tag namespace."
-            echo "::error::Publish official releases by pushing the matching Git tag instead."
-            exit 1
-          fi
-
-      - name: Validate release tag
-        if: github.ref_type == 'tag'
+      - name: Validate release version
+        if: github.ref_type == 'tag' || startsWith(github.ref_name, 'v')
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
           if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Release tag must match vX.Y.Z; got ${RELEASE_TAG}"
+            echo "::error::Release version must match vX.Y.Z; got ${RELEASE_TAG}"
             exit 1
           fi
 

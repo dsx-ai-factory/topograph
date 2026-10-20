@@ -12,9 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Firebird obtains one fresh access token per topology generation request and reuses it across all pages, assuming it remains valid for the request duration. Tokens are no longer cached across requests, and HTTP 401 does not trigger reauthentication.
 
-- Manual Helm chart publishing now targets the NGC `dsx-ai-factory-staging/topograph` team instead of GitHub Pages.
-- Container image publishing now targets `nvcr.io/dsx-ai-factory-staging/topograph/topograph` in NGC using the `NGC_API_KEY` GitHub Actions secret.
-- **BREAKING:** The Go module and canonical repository moved from `github.com/NVIDIA/topograph` to `github.com/dsx-ai-factory/topograph`. Repository links, published container and Helm chart locations, build metadata, and examples now use the `dsx-ai-factory` organization.
+- Manual Helm chart publishing now targets the NGC OCI repository `nvcr.io/nvidia/topograph/topograph` instead of GitHub Pages. SHA-256 checksum files are attached to the chart manifest digest as OCI referrers.
+- Container image publishing now targets `nvcr.io/nvidia/topograph/topograph`.
+- **BREAKING:** The Go module and canonical repository moved from `github.com/NVIDIA/topograph` to `github.com/dsx-ai-factory/topograph`.
 - **BREAKING:** `topograph` and `node-observer` binaries now use [pflag](https://github.com/spf13/pflag) for flag parsing, matching `node-data-broker`. Single-dash long flags (`-version`, `-logtostderr`, `-vmodule`, etc.) now require a double dash (`--version`, `--logtostderr`, `--vmodule`). This affects the use of all [klog](https://github.com/kubernetes/klog) flags
 - **BREAKING:** `kwok-nodes` now uses [pflag](https://github.com/spf13/pflag) for flag parsing. Single-dash long flags (`-model`, `-output`, etc.) now require a double dash (`--model`, `--output`); the short forms `-m`, `-o`, `-g`, and `-p` are newly added aliases for `--model`, `--output`, `--gpus`, and `--pods` respectively.
 - Go toolchain upgraded from **1.26.6** to **1.27.3** across the module, container build, and CI workflows; the CI linter is upgraded to `golangci-lint` **v2.14.0** for Go 1.27 compatibility.
@@ -38,10 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Firebird provider (`firebird`) discovers arbitrary-depth fabric paths from `GET /topology/nodes`, with token pagination, client-credentials authentication through `POST /auth/token` over a required HTTPS API URL, with one access token per topology generation request, leaf-first network paths, switch names taken directly from `networkPath`, `pageSize` and `pageToken` pagination query parameters, requested-node filtering, and structured diagnostics for Firebird HTTP 400, 401, 403, 404, and 429 errors.
 
 - `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node filtering and no fabric access.
-- SHA-256 checksum files published beside Helm chart packages and included
-  with their corresponding GitHub release assets.
-- Tag-driven official releases that publish the Helm chart, checksum, build
-  provenance, and GitHub release from the canonical release commit.
+- SHA-256 checksum files published as OCI referrers alongside Helm chart packages.
+- Releases use a dedicated `vX.Y.Z` branch with final chart and changelog
+  metadata. The image and chart complete NVIDIA internal security review before
+  the approved artifacts are promoted unchanged to the public NGC repositories.
 - Signed SLSA build provenance for published container images and Helm chart
   packages. Release workflows bind each artifact to its source commit and
   workflow using GitHub artifact attestations; container provenance is also

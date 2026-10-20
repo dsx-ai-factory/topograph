@@ -225,19 +225,35 @@ pushes for each PR; the first three also run on `main`:
 
 Release and maintenance workflows:
 
-- `.github/workflows/docker.yml`: on a `v*` tag push or manual dispatch,
-  builds the `linux/amd64` and `linux/arm64` image, pushes it to GHCR, and
+- `.github/workflows/docker.yml`: on manual dispatch, builds the
+  `linux/amd64` and `linux/arm64` image, uploads it to NVIDIA staging, and
   attests its provenance
-- `.github/workflows/release.yml`: on a `v*` tag push, or a manual re-run
-  for an existing tag, checks the tag against `charts/topograph/Chart.yaml`
-  and `CHANGELOG.md`, packages and attests the Helm chart, updates the Helm
-  repository, and creates the GitHub release
 - `.github/workflows/publish-fern-docs.yml`: on a `vX.Y.Z` tag push or
   manual dispatch, publishes the versioned docs site
-- `.github/workflows/helm-release.yaml`: manual Helm chart publication to
-  `gh-pages`
+- `.github/workflows/helm-release.yaml`: manual Helm chart publication to NGC OCI,
+  with the `.tgz.sha256` file attached to the chart manifest digest using ORAS
 - `.github/workflows/scorecard.yaml`: OpenSSF Scorecard analysis on pushes
   to `main`, weekly, and on demand
+
+The release workflow publishes
+to `nvcr.io/1070195845945670/topograph/topograph`, using chart versions such as
+`1.0.0` as tags (container release tags use the `v1.0.0` form).
+After authenticating Helm and ORAS to `nvcr.io`, retrieve a chart and its checksum:
+
+```bash
+chart_ref=nvcr.io/1070195845945670/topograph/topograph
+chart_digest=$(oras resolve "${chart_ref}:1.0.0")
+helm pull "oci://${chart_ref}@${chart_digest}"
+checksum_digest=$(oras discover --format json \
+  --artifact-type application/vnd.topograph.checksum.v1 \
+  "${chart_ref}@${chart_digest}" | jq -er '.referrers[0].digest')
+oras pull "${chart_ref}@${checksum_digest}"
+sha256sum --check topograph-1.0.0.tgz.sha256
+```
+
+The `.sha256` file is an OCI referrer retrieved with ORAS; `helm pull` downloads
+the chart itself. Publication uses the existing `NGC_API_KEY` Actions secret and
+requires push access to this OCI repository and its referrers.
 
 Every `actions/setup-go` step reads the Go version from `go.mod`, so a
 toolchain bump there also moves the CI jobs that use it. The container

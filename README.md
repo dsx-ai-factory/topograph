@@ -37,7 +37,7 @@ Topograph is a component that discovers the physical network topology of a clust
 Requires Kubernetes 1.27 or later, Helm 3.10+ or 4.x, `kubectl` with permission to install a chart and create a namespace, and credentials for whichever provider matches your environment.
 
 ```bash
-helm repo add topograph https://dsx-ai-factory.github.io/topograph
+helm repo add topograph https://helm.ngc.nvidia.com/nvidia/topograph
 helm repo update
 
 helm install topograph topograph/topograph \
@@ -149,7 +149,7 @@ Topograph sits between topology sources and schedulers, and replaces neither.
 | Artifact | Where it comes from |
 |---|---|
 | Container image | `nvcr.io/nvidia/topograph/topograph` |
-| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://dsx-ai-factory.github.io/topograph` |
+| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://helm.ngc.nvidia.com/nvidia/topograph` |
 | `.deb` package | `make deb`, written to `bin/` |
 | `.rpm` package | `make rpm`, written to `bin/` |
 

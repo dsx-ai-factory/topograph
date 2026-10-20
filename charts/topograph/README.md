@@ -15,7 +15,7 @@ Topograph discovers the physical network topology of a cluster (NVLink domains, 
 From the Helm chart repository:
 
 ```bash
-helm repo add topograph https://dsx-ai-factory.github.io/topograph
+helm repo add topograph https://helm.ngc.nvidia.com/nvidia/topograph
 helm repo update
 helm install topograph \
   topograph/topograph \

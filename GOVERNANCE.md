@@ -41,9 +41,11 @@ flowchart LR
 | Vote on governance decisions | — | — | ✅ | tie-break only |
 | Cast deciding vote on ties | — | — | — | ✅ |
 | Final authority on decisions that affect IP | — | — | — | ✅ (for NVIDIA) |
-| Cut releases | — | — | ✅ | ✅ |
+| Cut releases | — | — | NVIDIA release manager only | NVIDIA release manager only |
 
 _* Project Leadership is an NVIDIA appointment, not a contributor ladder role. Current Project Leaders are listed in [MAINTAINERS.md](./MAINTAINERS.md)._
+
+For each release, the active maintainers nominate one active NVIDIA maintainer as release manager under [RELEASE.md](./RELEASE.md). Only the nominated release manager may cut that release. The role requires current NVIDIA employment and authorized access to NVIDIA's internal security review and release systems. Every release must complete NVIDIA's internal security review and approval process before public artifact publication. External maintainers cannot serve as release manager, but contributors and maintainers from any organization can help prepare release changes, review pull requests, and test publicly available candidates. If a replacement is needed, the maintainers nominate another eligible NVIDIA maintainer before publication continues.
 
 A reviewer approval means technical acceptance. The code is correct, the approach is sound, and it meets the quality standards of the project. The maintainer who merges the PR verifies that every commit has DCO sign-off, required CI checks are passing, required approvals are present, and branch protection permits the merge. The maintainer does not review the code again. The two acts answer different questions, and two different people perform them.
 
@@ -146,7 +148,8 @@ Topograph separates decisions into two layers. The layer a decision belongs to d
 
 - Reviewing, approving, and merging pull requests
 - Triaging, labeling, and closing issues
-- Cutting a release under [RELEASE.md](./RELEASE.md), including which ready work lands in a given release
+- Preparing a release, including which ready work lands in a given release
+- Cutting a release under [RELEASE.md](./RELEASE.md), restricted to the nominated NVIDIA release manager after the required internal security review and approval
 - Bug fixes, dependency version bumps, documentation, tests, and CI changes
 - Adding a parameter, label value, or configuration field that leaves every existing contract intact
 

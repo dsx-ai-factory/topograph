@@ -9,7 +9,7 @@ concurrency:
 permissions: {}
 
 env:
-  HELM_REPOSITORY: https://helm.ngc.nvidia.com/1070195845945670/topograph
+  HELM_REPOSITORY: nvcr.io/1070195845945670/topograph
 
 jobs:
   release:
@@ -37,8 +37,10 @@ jobs:
           helm lint charts/topograph
           helm package charts/topograph --destination packaged
 
-      - name: Install Helm push plugin
-        run: helm plugin install https://github.com/chartmuseum/helm-push --version v0.10.4
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1.2.4
+        with:
+          version: 1.3.0
 
       - name: Generate SHA-256 checksum
         run: |
@@ -54,16 +56,45 @@ jobs:
         with:
           subject-path: packaged/topograph-*.tgz
 
-      - name: Publish Helm chart to NGC
+      - name: Log into NGC OCI registry
         env:
-          HELM_REPO_USERNAME: $oauthtoken
-          HELM_REPO_PASSWORD: ${{ secrets.NGC_API_KEY }}
+          HELM_REGISTRY_CONFIG: ${{ runner.temp }}/helm-release-registry.json
+          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
         run: |
           set -euo pipefail
-          if [[ -z "${HELM_REPO_PASSWORD}" ]]; then
+          if [[ -z "${NGC_API_KEY}" ]]; then
             echo "::error::The NGC_API_KEY secret is required to publish Helm charts."
             exit 1
           fi
-          for chart in packaged/topograph-*.tgz; do
-            helm cm-push "${chart}" "${HELM_REPOSITORY}"
+          printf '%s' "${NGC_API_KEY}" | helm registry login "${HELM_REPOSITORY%%/*}" \
+            --username '$oauthtoken' --password-stdin
+
+      - name: Publish Helm chart and checksum to NGC OCI registry
+        env:
+          HELM_REGISTRY_CONFIG: ${{ runner.temp }}/helm-release-registry.json
+        run: |
+          set -euo pipefail
+          cd packaged
+          for chart in topograph-*.tgz; do
+            sha256sum --check "${chart}.sha256"
+            if ! output=$(helm push "${chart}" "oci://${HELM_REPOSITORY}" 2>&1); then
+              printf '%s\n' "${output}"
+              exit 1
+            fi
+            printf '%s\n' "${output}"
+            digest=$(awk '$1 == "Digest:" {print $2}' <<< "${output}")
+            if [[ ! "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Helm did not return a valid chart manifest digest."
+              exit 1
+            fi
+            oras attach --registry-config "${HELM_REGISTRY_CONFIG}" \
+              --distribution-spec v1.1-referrers-api \
+              --artifact-type application/vnd.topograph.checksum.v1 \
+              "${HELM_REPOSITORY}/topograph@${digest}" "${chart}.sha256:text/plain"
           done
+
+      - name: Remove registry credentials
+        if: always()
+        env:
+          HELM_REGISTRY_CONFIG: ${{ runner.temp }}/helm-release-registry.json
+        run: rm -f "${HELM_REGISTRY_CONFIG}"

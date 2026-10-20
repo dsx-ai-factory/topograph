@@ -28,7 +28,7 @@ produced.
 Base install command (pick the engine-specific flags from the two sections below):
 
 ```bash
-helm repo add topograph https://dsx-ai-factory.github.io/topograph
+helm repo add topograph https://helm.ngc.nvidia.com/nvidia/topograph
 helm repo update
 helm install topograph topograph/topograph \
   --version <chart-version> \
