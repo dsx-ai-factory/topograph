@@ -93,7 +93,7 @@ The test provider is configured through `provider.params` in the `/v1/generate` 
 }
 ```
 
-The `engine` object follows the normal Topograph engine configuration. For example, use `slurm` parameters to request `topology/tree` or `topology/block` output, use `k8s` parameters to write node labels, use `nfd` parameters to publish NFD custom resources, use `slinky` parameters to update a Slinky ConfigMap, or use `graph` to return model-backed instance metadata as JSON.
+The `engine` object follows the normal Topograph engine configuration. For example, use `slurm` parameters to request `topology/tree` or `topology/block` output, use `k8s` parameters to write node labels, use `nfd` parameters to publish NFD custom resources, use `slinky` parameters to update a Slinky ConfigMap, or use `graph` to return per-instance topology (network layers and labels) as JSON.
 
 Names declared in a model's `blocks[].nodes` are treated as hostnames. The test provider generates the corresponding instance IDs by adding the `i-` prefix; for example, hostname `node1` maps from instance ID `i-node1`.
 

@@ -172,7 +172,7 @@ When updates seem slow, this is usually why:
 | `k8s` | Writes node labels directly through the Kubernetes API: `fabric.topograph.run/tier-N` closest-first, `accelerator.topograph.run/domain`, and `accelerator.topograph.run/sub-domain`. The `fabricLabels` parameter overrides the fabric tier keys and `acceleratorLabel` overrides the accelerator domain key; the sub-domain key is always `accelerator.topograph.run/sub-domain`. Returns `OK`. A failed label write surfaces as `502`. |
 | `nfd` | Creates or updates NFD `NodeFeature` and `NodeFeatureGroup` objects in the namespace named by the `NFD_NAMESPACE` environment variable, which is required; the Helm chart sets it from `nfdNamespace` and rejects an `env.NFD_NAMESPACE` override. Returns `OK nodeFeatures=<n> nodeFeatureGroups=<m>`. With `cleanup` enabled it refuses to apply an empty result rather than deleting the existing topology. |
 | `slinky` | Writes the Slurm topology into the ConfigMap named by `topologyConfigmapName` in `namespace`, under the key given by `topologyConfigPath`. `configUpdateMode: none` skips the ConfigMap write. With `useDynamicNodes: true`, it also reconciles the `topology.slinky.slurm.net/spec` annotation on Kubernetes nodes, including when the ConfigMap write is skipped. |
-| `graph` | Returns instance-oriented JSON as the response body, or writes it to `topologyConfigPath` and returns `OK`. |
+| `graph` | Returns per-instance network layers and accelerator labels as JSON in the response body, or writes it to `topologyConfigPath` and returns `OK`. |
 
 An engine that returns `OK` has already applied its side effect. The body is a completion marker, not the topology.
 

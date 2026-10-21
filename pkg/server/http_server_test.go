@@ -192,7 +192,8 @@ BlockSizes=8,16,32
 }
 `
 
-	// graph engine returns compact JSON from instances embedded in the topology graph
+	// graph engine returns compact JSON from instances embedded in the topology graph,
+	// completed with the accelerator domain from the graph
 	graphPayload = `
 {
   "provider": {
@@ -220,6 +221,7 @@ BlockSizes=8,16,32
     {
       "id": "i-I21",
       "labels": {
+        "accelerator.topograph.run/domain": "nvl2",
         "topology.kubernetes.io/region": "none"
       },
       "network_layers": [
@@ -230,6 +232,7 @@ BlockSizes=8,16,32
     {
       "id": "i-I22",
       "labels": {
+        "accelerator.topograph.run/domain": "nvl2",
         "topology.kubernetes.io/region": "none"
       },
       "network_layers": [

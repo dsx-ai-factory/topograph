@@ -60,7 +60,7 @@ Currently supported engines:
 - [Kubernetes](./engines/k8s.md)
 - [Node Feature Discovery](./engines/nfd.md)
 - [SLURM-on-Kubernetes (Slinky)](./engines/slinky.md)
-- [Graph](./engines/graph.md) - returns instance-oriented topology metadata as JSON
+- [Graph](./engines/graph.md) - returns per-instance network layers and accelerator labels as JSON
 
 ### Choosing a Provider
 
