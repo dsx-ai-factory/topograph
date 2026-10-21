@@ -33,6 +33,7 @@ func TestProviders(t *testing.T) {
 		"oci", "oci-imds", "oci-sim",
 		"nebius", "nebius-sim",
 		"netq",
+		"nautobot",
 		"lambdai", "lambdai-sim",
 		"dsx-sim",
 		"nscale", "nscale-sim",

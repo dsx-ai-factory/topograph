@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Nautobot provider (`nautobot`) discovers switch fabric topology through the GraphQL API, with required `endpoint`, compute `deviceRole`, and `switchRoles` parameters, optional `location` and `platform` filters, status filters, and required `creds.token` authentication. Switch queries paginate using the configured `pageSize` (default `100`). Discovery starts at selected switches, collects compute endpoints from cable peers, follows connected switches outside the initial location and platform filters to infer fabric tiers, and groups redundant switches into a scheduler tree. Attached compute endpoints can also be in other locations or use other platforms. Duplicate device IDs and switch names fail with HTTP 502 identifying the conflicts; switch-name errors include both device UUIDs. Devices missing an ID or name are skipped with a warning. Oversized pages log a warning and advance the offset by the actual number of returned devices, including skipped records. Transport failures return HTTP 502 with the underlying error.
 - `workflow-tests.yaml` runs unit tests for the scripts inside GitHub workflows.
 
 ### Changed
