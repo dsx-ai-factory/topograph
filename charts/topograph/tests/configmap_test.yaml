@@ -5,6 +5,28 @@ release:
   name: chart-ci
   namespace: topograph
 tests:
+  - it: preserves an empty metadata section for application validation
+    set:
+      config.nodeMetadata: {}
+    asserts:
+      - matchRegex:
+          path: data["topograph-config.yaml"]
+          pattern: 'nodeMetadata:\s+\{\}'
+
+  - it: omits an explicitly null metadata section
+    set:
+      config.nodeMetadata: null
+    asserts:
+      - notMatchRegex:
+          path: data["topograph-config.yaml"]
+          pattern: "nodeMetadata:"
+
+  - it: omits metadata source configuration by default
+    asserts:
+      - notMatchRegex:
+          path: data["topograph-config.yaml"]
+          pattern: "nodeMetadata:"
+
   - it: renders the topograph config with the service port and SSL disabled
     asserts:
       - isKind:

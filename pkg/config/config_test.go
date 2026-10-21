@@ -19,12 +19,56 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/agrea/ptr"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dsx-ai-factory/topograph/internal/k8s"
 )
+
+func TestNodeMetadataConfig(t *testing.T) {
+	const instance = "  instanceID:\n    type: annotation\n    key: example.com/id\n"
+	const region = "  region:\n    type: label\n    key: topology.kubernetes.io/region\n"
+	for _, tc := range []struct{ name, section, wantError string }{
+		{"defaults", "", ""},
+		{"null section", "nodeMetadata: null\n", ""},
+		{"mixed", "nodeMetadata:\n" + instance + region, ""},
+		{"empty section", "nodeMetadata: {}\n", "nodeMetadata.instanceID is required"},
+		{"missing instance", "nodeMetadata:\n" + region, "nodeMetadata.instanceID is required"},
+		{"missing region", "nodeMetadata:\n" + instance, "nodeMetadata.region is required"},
+		{"null instance", "nodeMetadata:\n  instanceID: null\n" + region, "nodeMetadata.instanceID is required"},
+		{"null region", "nodeMetadata:\n" + instance + "  region: null\n", "nodeMetadata.region is required"},
+		{"empty instance", "nodeMetadata:\n  instanceID: {}\n" + region, "nodeMetadata.instanceID.type"},
+		{"empty region", "nodeMetadata:\n" + instance + "  region: {}\n", "nodeMetadata.region.type"},
+		{"invalid type", "nodeMetadata:\n" + instance + "  region:\n    type: field\n    key: region\n", "nodeMetadata.region.type"},
+		{"missing instance key", "nodeMetadata:\n  instanceID:\n    type: label\n" + region, "nodeMetadata.instanceID.key"},
+		{"missing region key", "nodeMetadata:\n" + instance + "  region:\n    type: label\n", "nodeMetadata.region.key"},
+		{"blank instance key", "nodeMetadata:\n  instanceID:\n    type: label\n    key: '  '\n" + region, "nodeMetadata.instanceID.key"},
+		{"blank region key", "nodeMetadata:\n" + instance + "  region:\n    type: annotation\n    key: '  '\n", "nodeMetadata.region.key"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte("http:\n  port: 49021\nrequestAggregationDelay: 15s\n"+tc.section), 0600))
+			cfg, err := NewFromFile(path)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+			if tc.name == "mixed" {
+				require.Equal(t, &k8s.NodeMetadata{
+					InstanceID: &k8s.MetadataSource{Type: "annotation", Key: "example.com/id"},
+					Region:     &k8s.MetadataSource{Type: "label", Key: "topology.kubernetes.io/region"},
+				}, cfg.NodeMetadata)
+			} else {
+				require.Nil(t, cfg.NodeMetadata)
+			}
+		})
+	}
+}
 
 const (
 	credentials = `

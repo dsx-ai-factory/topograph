@@ -1,0 +1,39 @@
+suite: existing node metadata without a broker
+release:
+  name: chart-ci
+  namespace: topograph
+tests:
+  - it: configures mixed metadata sources without a broker or readiness gate
+    templates:
+      - templates/configmap.yml
+      - templates/nodeDataBroker/daemonset.yaml
+      - templates/nodeObserver/deployment.yaml
+    set:
+      nodeDataBroker.enabled: false
+      nodeObserver.env.TEST: value
+      config.nodeMetadata:
+        instanceID:
+          type: annotation
+          key: example.com/id
+        region:
+          type: label
+          key: topology.kubernetes.io/region
+    asserts:
+      - matchRegex:
+          path: data["topograph-config.yaml"]
+          pattern: "nodeMetadata:\\n  instanceID:\\n    key: example.com/id\\n    type: annotation\\n  region:\\n    key: topology.kubernetes.io/region\\n    type: label"
+        template: templates/configmap.yml
+      - hasDocuments:
+          count: 0
+        template: templates/nodeDataBroker/daemonset.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_DATA_BROKER_NAME
+        template: templates/nodeObserver/deployment.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_DATA_BROKER_NAMESPACE
+        template: templates/nodeObserver/deployment.yaml
+

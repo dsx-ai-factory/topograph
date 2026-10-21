@@ -77,6 +77,31 @@ func TestGetComputeInstances(t *testing.T) {
 	}
 }
 
+func TestCustomNodeMetadataWithoutBroker(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name:   "worker",
+		Labels: map[string]string{"example.com/id": "i-worker", "topology.kubernetes.io/region": "region-a"},
+	}}
+	client := fake.NewClientset(node)
+	params, err := getParameters(nil)
+	require.NoError(t, err)
+	eng := &K8sEngine{client: client, params: params}
+	ctx := internalk8s.WithNodeMetadata(context.Background(), &internalk8s.NodeMetadata{
+		InstanceID: &internalk8s.MetadataSource{Type: "label", Key: "example.com/id"},
+		Region:     &internalk8s.MetadataSource{Type: "label", Key: "topology.kubernetes.io/region"},
+	})
+	instances, httpErr := eng.ResolveComputeInstances(ctx, nil, nil)
+	require.Nil(t, httpErr)
+	require.Equal(t, []topology.ComputeInstances{{Region: "region-a", Instances: map[string]string{"i-worker": "worker"}}}, instances)
+	require.NoError(t, eng.AddNodeLabels(ctx, "worker", map[string]string{topology.FabricTierKey(0): "leaf"}))
+	stored, err := client.CoreV1().Nodes().Get(context.Background(), "worker", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Empty(t, stored.Annotations)
+	require.Equal(t, "i-worker", stored.Labels["example.com/id"])
+	require.Equal(t, "region-a", stored.Labels["topology.kubernetes.io/region"])
+	require.Equal(t, "leaf", stored.Labels[topology.FabricTierKey(0)])
+}
+
 func TestAddNodeLabelsReusesListedNodesAndPatchesOnlyChanges(t *testing.T) {
 	changedNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "changed",

@@ -43,6 +43,8 @@ func NodeListOptions(params map[string]any) (*metav1.ListOptions, error) {
 	return &metav1.ListOptions{LabelSelector: labels.Set(config.NodeSelector).String()}, nil
 }
 
+// GetNodes lists Nodes and resolves request-specific identity sources into their
+// in-memory canonical annotations. The Kubernetes objects remain unchanged.
 func GetNodes(ctx context.Context, client kubernetes.Interface, opt *metav1.ListOptions) (*corev1.NodeList, error) {
 	if opt == nil {
 		opt = &metav1.ListOptions{}
@@ -53,7 +55,7 @@ func GetNodes(ctx context.Context, client kubernetes.Interface, opt *metav1.List
 		return nil, fmt.Errorf("failed to list node in the cluster: %v", err)
 	}
 
-	return nodes, nil
+	return resolveNodeMetadata(ctx, nodes), nil
 }
 
 func GetPodsByLabels(ctx context.Context, client kubernetes.Interface, namespace string, l map[string]string) (*corev1.PodList, error) {
@@ -131,9 +133,9 @@ func ExecInPod(ctx context.Context, client kubernetes.Interface, config *rest.Co
 	return &stdout, nil
 }
 
-// GetComputeInstances builds a ComputeInstances list from the node annotations
-// written by the node-data-broker (instance ID and region). Nodes missing either
-// annotation are skipped with a warning.
+// GetComputeInstances builds a ComputeInstances list from the identity
+// annotations returned by GetNodes (broker defaults or configured metadata
+// sources). Nodes missing either annotation are skipped with a warning.
 func GetComputeInstances(nodes *corev1.NodeList) []topology.ComputeInstances {
 	regions := make(map[string]map[string]string)
 	regionNames := []string{}

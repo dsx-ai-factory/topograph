@@ -25,10 +25,12 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/internal/files"
+	"github.com/dsx-ai-factory/topograph/internal/k8s"
 	"github.com/dsx-ai-factory/topograph/pkg/registry"
 )
 
 type Config struct {
+	NodeMetadata            *k8s.NodeMetadata `yaml:"nodeMetadata,omitempty"`
 	HTTP                    Endpoint          `yaml:"http"`
 	RequestAggregationDelay time.Duration     `yaml:"requestAggregationDelay"`
 	Provider                string            `yaml:"provider,omitempty"`
@@ -75,6 +77,9 @@ func NewFromFile(fname string) (*Config, error) {
 }
 
 func (cfg *Config) validate() error {
+	if err := cfg.NodeMetadata.Validate(); err != nil {
+		return err
+	}
 	if cfg.PageSize != nil && *cfg.PageSize <= 0 {
 		klog.Warningf("pageSize %d is invalid; using the provider default", *cfg.PageSize)
 		cfg.PageSize = nil

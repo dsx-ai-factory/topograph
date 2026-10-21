@@ -92,6 +92,19 @@ lifecycle: {}
 
 config:
   requestAggregationDelay: 15s
+  # Optional existing node metadata sources. Omit nodeMetadata or set it to null
+  # to use the annotations topograph.run/instance and topograph.run/region.
+  # When set, both instanceID and region are required, each with a non-empty
+  # type (label or annotation) and key; missing/empty values do not fall
+  # back to the default annotation. Disable nodeDataBroker.enabled only when
+  # all required metadata and discovery functions are supplied elsewhere.
+  # nodeMetadata:
+  #   instanceID:
+  #     type: annotation
+  #     key: example.com/instance-id
+  #   region:
+  #     type: label
+  #     key: topology.kubernetes.io/region
   # Optional secret with API credentials
   # credentialsSecret:
 

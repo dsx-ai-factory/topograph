@@ -277,6 +277,9 @@ canonical graph and the engine decides the key. The default keys, the optional
 `fabricLabels` and `acceleratorLabel` overrides, and the value semantics are all in
 [docs/reference/node-labels.md](docs/reference/node-labels.md).
 
+Before changing Kubernetes node identity resolution, read the configurable instance
+ID and region source contract in [docs/api.md](docs/api.md#node-instance-id-and-region-sources).
+
 ## 4. Pull Request Guidelines
 
 Branch naming, the Conventional Commits format, DCO sign-off and how to repair a

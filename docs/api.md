@@ -54,6 +54,46 @@ ssl:
 #  PATH:
 ```
 
+### Node instance ID and region sources
+
+By default, Kubernetes node identity comes from the `topograph.run/instance` and
+`topograph.run/region` annotations written by the Node Data Broker. To reuse
+existing node metadata, set `nodeMetadata` in the Topograph configuration file:
+
+```yaml
+nodeMetadata:
+  instanceID:
+    type: annotation
+    key: example.com/instance-id
+  region:
+    type: label
+    key: topology.kubernetes.io/region
+```
+
+Each field independently selects a `label` or `annotation` and a valid Kubernetes
+metadata key. Omit `nodeMetadata` or set it to `null` to retain both default
+annotation sources. When `nodeMetadata` is non-null, both `instanceID` and `region`
+are required, each with non-empty `type` and `key`. Empty sections (`{}`), missing
+or null sources, unsupported source types, and invalid metadata keys fail startup.
+Configured values are trimmed of surrounding whitespace. Missing or empty values
+are logged and treated as unavailable, without falling back to the default
+annotation; nodes without the required identity are excluded from automatic
+instance resolution.
+
+Source selection applies to Kubernetes node reads throughout provider discovery
+and engine translation. It does not change explicitly supplied request node
+mappings, broker output keys, or non-Kubernetes discovery. The selected values are
+used in memory; Topograph does not copy them into annotations on the cluster's
+Nodes. Source values are read on each topology generation; changing them alone
+does not trigger the node observer. After changing source values, submit a new
+topology request to `/v1/generate` to refresh the topology.
+
+With Helm, place the same section under `config.nodeMetadata`. Set
+`nodeDataBroker.enabled: false` when existing sources also cover any other
+metadata or node-local discovery required by your provider. The node observer
+then skips broker readiness checks. Restart the Topograph deployment after
+changing its configuration.
+
 ## API
 
 Topograph exposes five endpoints for interacting with the service. Below are the details of each endpoint:

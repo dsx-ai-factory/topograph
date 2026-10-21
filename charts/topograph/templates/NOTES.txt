@@ -38,6 +38,9 @@
 {{- if not .Values.nodeDataBroker.enabled }}
 
   NOTE: node-data-broker is disabled; the node-observer broker readiness gate is also disabled.
+        Node identity must be supplied by existing metadata. Configure both
+        sources through config.nodeMetadata; otherwise the default Topograph
+        instance and region annotations are required.
 {{- else }}
 
   NOTE: node-data-broker applies node annotations once when each broker pod starts.

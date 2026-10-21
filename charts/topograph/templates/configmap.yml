@@ -11,6 +11,10 @@ data:
       port: {{ .Values.service.port }}
       ssl: false
     requestAggregationDelay: {{ .Values.config.requestAggregationDelay }}
+    {{- if ne .Values.config.nodeMetadata nil }}
+    nodeMetadata:
+      {{- toYaml .Values.config.nodeMetadata | nindent 6 }}
+    {{- end }}
     {{- if .Values.config.credentialsSecret }}
     credentialsPath: /etc/topograph/credentials/credentials.yaml
     {{- end }}

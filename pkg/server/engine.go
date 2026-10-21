@@ -25,6 +25,7 @@ import (
 
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/internal/httpreq"
+	"github.com/dsx-ai-factory/topograph/internal/k8s"
 	"github.com/dsx-ai-factory/topograph/pkg/engines"
 	"github.com/dsx-ai-factory/topograph/pkg/metrics"
 	"github.com/dsx-ai-factory/topograph/pkg/providers"
@@ -90,7 +91,7 @@ func processTopologyRequest(tr *topology.Request) ([]byte, *httperr.Error) {
 		return nil, err
 	}
 
-	ctx := context.Background()
+	ctx := k8s.WithNodeMetadata(context.Background(), srv.cfg.NodeMetadata)
 
 	eng, err := engLoader(ctx, tr.Engine.Params)
 	if err != nil {

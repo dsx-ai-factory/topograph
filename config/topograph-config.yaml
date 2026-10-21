@@ -13,6 +13,17 @@ requestAggregationDelay: 15s
 # number of results per API call (optional); non-positive values use the provider default
 pageSize: 100
 
+# Optional existing Kubernetes node identity sources. Omit nodeMetadata or set
+# it to null to use topograph.run/instance and topograph.run/region annotations.
+# When set, both instanceID and region must specify a non-empty type and key.
+# nodeMetadata:
+#   instanceID:
+#     type: annotation
+#     key: example.com/instance-id
+#   region:
+#     type: label
+#     key: topology.kubernetes.io/region
+
 # ssl credentials for when http.ssl = true
 ssl:
   cert: /etc/topograph/ssl/server-cert.pem

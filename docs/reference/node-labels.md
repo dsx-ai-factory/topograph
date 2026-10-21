@@ -158,6 +158,13 @@ Topograph sets the following annotations on nodes as internal bookkeeping metada
 | `topograph.run/region` | The provider region associated with this node |
 | `topograph.run/cluster-id` | The cluster identifier (where reported by the provider) |
 
+The instance ID and region annotations are the default input sources. Operators
+can select existing node labels or annotations for both fields
+using [`nodeMetadata`](../api.md#node-instance-id-and-region-sources). Both sources
+are required when this section is non-null. This changes
+where Topograph reads identity; the Node Data Broker continues to write the
+default keys when deployed. Custom source values are never copied back to Nodes.
+
 Additional annotations are set on topology ConfigMaps (used by the Slinky engine):
 
 | Annotation key | Semantics |

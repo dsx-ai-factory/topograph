@@ -206,7 +206,41 @@ and `patch` access to Nodes for the Kubernetes engine; it no longer requires
 Node `update`. Deployments using `rbac.create: false` must grant the same
 permissions to the configured ServiceAccount.
 
+### Reusing existing node identity metadata
+
+Use `config.nodeMetadata` to read instance ID and region from existing node labels
+or annotations. For example:
+
+```yaml
+config:
+  nodeMetadata:
+    instanceID:
+      type: annotation
+      key: example.com/instance-id
+    region:
+      type: label
+      key: topology.kubernetes.io/region
+nodeDataBroker:
+  enabled: false
+```
+
+Disable the broker only when your environment also supplies any other metadata
+or discovery it provides for the selected provider. With the broker disabled,
+the observer does not wait for its DaemonSet. Omit `config.nodeMetadata` or set it
+to `null` to retain both default Topograph annotations. Otherwise, both `instanceID`
+and `region` must specify a non-empty `type` and `key`. Configured sources are
+authoritative: missing or empty values do not fall back to those annotations. See the
+[configuration reference](../api.md#node-instance-id-and-region-sources) for
+validation and update behavior. Restart Topograph after changing the configuration.
+
+The `infiniband-k8s` provider requires broker pods to run `ibnetdiscover`, so keep
+`nodeDataBroker.enabled: true` for that provider even with custom identity sources.
+
 ## Exposing the Topograph API
+
+The API ConfigMap also carries `config.nodeMetadata`, used by provider and engine
+node reads regardless of whether the API is exposed through a Service, Ingress,
+or Gateway API route. Source selection is described above.
 
 The Topograph API server listens on port `49021` by default. The Helm chart always creates a Kubernetes `Service`; how that Service is exposed depends on your deployment topology and access requirements.
 
