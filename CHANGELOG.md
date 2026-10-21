@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **BREAKING:** The Go module and canonical repository moved from `github.com/NVIDIA/topograph` to `github.com/dsx-ai-factory/topograph`. Repository links, published container and Helm chart locations, build metadata, and examples now use the `dsx-ai-factory` organization.
 - **BREAKING:** `topograph` and `node-observer` binaries now use [pflag](https://github.com/spf13/pflag) for flag parsing, matching `node-data-broker`. Single-dash long flags (`-version`, `-logtostderr`, `-vmodule`, etc.) now require a double dash (`--version`, `--logtostderr`, `--vmodule`). This affects the use of all [klog](https://github.com/kubernetes/klog) flags
 - **BREAKING:** `kwok-nodes` now uses [pflag](https://github.com/spf13/pflag) for flag parsing. Single-dash long flags (`-model`, `-output`, etc.) now require a double dash (`--model`, `--output`); the short forms `-m`, `-o`, `-g`, and `-p` are newly added aliases for `--model`, `--output`, `--gpus`, and `--pods` respectively.
-- Go toolchain upgraded from **1.26.6** to **1.27.2** across the module, container build, and CI workflows; the CI linter is upgraded to `golangci-lint` **v2.14.0** for Go 1.27 compatibility.
+- Go toolchain upgraded from **1.26.6** to **1.27.3** across the module, container build, and CI workflows; the CI linter is upgraded to `golangci-lint` **v2.14.0** for Go 1.27 compatibility.
 - Updated `golang.org/x/net` from **v0.59.0** to **v0.60.0**.
 - The `nscale` provider's Slurm auto-discovery runs `pdsh` across the current Slurm node list and queries each node's own Instance Metadata Service (IMDS) for its server ID (`serverID`) and region, merging the results into the instance-to-node and node-to-region maps.
 - The `nscale` provider's Radar API topology response field is now read as `server_id` instead of `instance_id`, matching the IMDS `serverID` field it is merged with.
@@ -60,6 +60,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Main Topograph API server ClusterRole rules are gated by the selected engine and provider: `nodes`, `pods`, `daemonsets`, and `configmaps` permissions render only when the engine or provider reaches the Kubernetes API, and the ClusterRole and ClusterRoleBinding are omitted entirely for non-Kubernetes combinations such as the `test` provider with the `slurm` engine.
 - Node RBAC permissions in the main Topograph API server ClusterRole are collapsed into a single rule following least privilege: the Kubernetes engine receives Node `[get, list, patch]`, the dynamic Slinky engine (`useDynamicNodes: true`) receives Node `[list, patch]`, and other node-consuming configurations receive Node `[list]` without unnecessary `patch`, `get`, or `update` access.
+- Go toolchain bumped to **1.27.3** (`go.mod`, `Dockerfile`, CI) to address a reachable stdlib vulnerability reported by `govulncheck`.
 
 ---
 
