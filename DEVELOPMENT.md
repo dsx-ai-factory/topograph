@@ -232,11 +232,13 @@ versions pinned in `workflow-lint.yaml`. actionlint picks up
 turns off actionlint's shellcheck and pyflakes integrations, so pass the
 same flags to get the same result. zizmor runs its online audits (action
 references and known advisories) only when it has a GitHub token, as it
-does in CI; without one it checks offline findings only:
+does in CI; without one it checks offline findings only. CI also passes
+`--no-exit-codes`, because the findings accepted in `workflow-lint.yaml`
+would otherwise fail the run:
 
 ```bash
 actionlint -shellcheck= -pyflakes=
-GH_TOKEN="$(gh auth token)" zizmor .
+GH_TOKEN="$(gh auth token)" zizmor --no-exit-codes .
 ```
 
 `make qualify` and `make chart-test` (when charts changed) passing locally
