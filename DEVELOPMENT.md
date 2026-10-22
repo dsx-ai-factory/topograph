@@ -230,11 +230,13 @@ To lint workflow changes before pushing, run
 versions pinned in `workflow-lint.yaml`. actionlint picks up
 `.github/actionlint.yaml`, which lists the self-hosted runner labels. CI
 turns off actionlint's shellcheck and pyflakes integrations, so pass the
-same flags to get the same result:
+same flags to get the same result. zizmor runs its online audits (action
+references and known advisories) only when it has a GitHub token, as it
+does in CI; without one it checks offline findings only:
 
 ```bash
 actionlint -shellcheck= -pyflakes=
-zizmor .
+GH_TOKEN="$(gh auth token)" zizmor .
 ```
 
 `make qualify` and `make chart-test` (when charts changed) passing locally
