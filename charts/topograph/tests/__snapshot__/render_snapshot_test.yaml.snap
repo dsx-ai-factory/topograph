@@ -486,6 +486,7 @@ renders default values.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -498,6 +499,13 @@ renders default values.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -529,6 +537,7 @@ renders default values.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -542,6 +551,13 @@ renders default values.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1067,6 +1083,7 @@ renders values.k8s.gateway-api-example.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -1079,6 +1096,13 @@ renders values.k8s.gateway-api-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1110,6 +1134,7 @@ renders values.k8s.gateway-api-example.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -1123,6 +1148,13 @@ renders values.k8s.gateway-api-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1662,6 +1694,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -1674,6 +1707,13 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1705,6 +1745,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -1718,6 +1759,13 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -2243,6 +2291,7 @@ renders values.k8s.gcp-service-account-example.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -2255,6 +2304,13 @@ renders values.k8s.gcp-service-account-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -2286,6 +2342,7 @@ renders values.k8s.gcp-service-account-example.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -2299,6 +2356,13 @@ renders values.k8s.gcp-service-account-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -2850,6 +2914,7 @@ renders values.k8s.ib-example.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -2862,6 +2927,13 @@ renders values.k8s.ib-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -2893,6 +2965,7 @@ renders values.k8s.ib-example.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -2906,6 +2979,13 @@ renders values.k8s.ib-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -3448,6 +3528,7 @@ renders values.slinky.block-example.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -3460,6 +3541,13 @@ renders values.slinky.block-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -3491,6 +3579,7 @@ renders values.slinky.block-example.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -3504,6 +3593,13 @@ renders values.slinky.block-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -4061,6 +4157,7 @@ renders values.slinky.partition-example.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -4073,6 +4170,13 @@ renders values.slinky.partition-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -4104,6 +4208,7 @@ renders values.slinky.partition-example.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -4117,6 +4222,13 @@ renders values.slinky.partition-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -4648,6 +4760,7 @@ renders values.slinky.tree-example.yaml:
       name: chart-ci-topograph-test-healthz
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -4660,6 +4773,13 @@ renders values.slinky.tree-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: healthz
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -4691,6 +4811,7 @@ renders values.slinky.tree-example.yaml:
       name: chart-ci-topograph-test-metrics
       namespace: topograph
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -4704,6 +4825,13 @@ renders values.slinky.tree-example.yaml:
           image: ghcr.io/dsx-ai-factory/topograph:v0.0.0
           imagePullPolicy: IfNotPresent
           name: metrics
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

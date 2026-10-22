@@ -326,6 +326,20 @@ tests:
   image:
     repository: ""
     tag: ""
+  # Resources for each test pod's container. The probes run a single busybox
+  # wget against the Service, so the small requests are enough and the limits
+  # leave ample headroom. Setting both lets `helm test` pods be admitted in
+  # namespaces whose ResourceQuota requires requests and limits. If a namespace
+  # LimitRange sets a minimum or a maxLimitRequestRatio, adjust these values to
+  # fit it. The test pods also set automountServiceAccountToken: false, as they
+  # never call the Kubernetes API.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
 
 # Node Observer watches configured node/pod changes and Topograph API readiness,
 # then triggers topology regeneration.

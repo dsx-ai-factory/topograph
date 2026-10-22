@@ -259,7 +259,8 @@
             "repository": { "type": "string" },
             "tag": { "type": "string" }
           }
-        }
+        },
+        "resources": { "type": "object" }
       }
     },
     "nodeObserver": {

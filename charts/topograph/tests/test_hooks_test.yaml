@@ -26,6 +26,45 @@ tests:
           path: metadata.annotations["helm.sh/hook"]
           value: test
 
+  - it: disables service account token automount on both probe pods
+    asserts:
+      - equal:
+          path: spec.automountServiceAccountToken
+          value: false
+
+  - it: sets the default container resources on both probe pods
+    asserts:
+      - equal:
+          path: spec.containers[0].resources
+          value:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
+
+  - it: renders tests.resources overrides on both probe pods
+    set:
+      tests:
+        resources:
+          limits:
+            cpu: 250m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 32Mi
+    asserts:
+      - equal:
+          path: spec.containers[0].resources
+          value:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 32Mi
+
   - it: are omitted when tests.enabled is false
     set:
       tests:

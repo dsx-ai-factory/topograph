@@ -104,6 +104,19 @@ The chart ships two `helm test` hook pods:
 
 Both test pods are removed automatically on success (`helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`). On failure the pod persists so operators can inspect logs; the next `helm test` invocation replaces it.
 
+The test pods set `automountServiceAccountToken: false`, since they never call the Kubernetes API, and carry small CPU and memory requests and limits so they are admitted in namespaces whose `ResourceQuota` requires them. If a namespace `LimitRange` sets a minimum or a `maxLimitRequestRatio`, adjust the values to fit it. Override the defaults through `tests.resources`:
+
+```yaml
+tests:
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
+```
+
 ### Air-gapped environments
 
 By default, the test pods reuse the main topograph image. Topograph's default image is Alpine-based and ships with busybox `wget`, which the test probes use — so `helm test` works without pulling any additional image, including in air-gapped environments where only mirrored images are reachable.

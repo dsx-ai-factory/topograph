@@ -530,6 +530,8 @@ Phase:          Succeeded
 
 Both pods clean themselves up on success (`helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`). On failure the pods persist so operators can inspect logs via `kubectl logs -n <ns> <pod-name>`; the next `helm test` invocation replaces the prior pods.
 
+The test pods do not mount a service account token (`automountServiceAccountToken: false`) and set small CPU and memory requests and limits (requests `10m` / `16Mi`, limits `100m` / `128Mi`), so the pods are admitted in namespaces whose `ResourceQuota` requires requests and limits. If a namespace `LimitRange` sets a minimum or a `maxLimitRequestRatio`, adjust the values to fit it. Override the defaults with `tests.resources`.
+
 **Air-gapped environments.** The test pods reuse the main topograph image by default — they invoke `busybox wget` from the Alpine-based `ghcr.io/dsx-ai-factory/topograph` image already pulled by the Deployment. No additional image pull is required by `helm test`, so the suite works in environments where only mirrored images are reachable. If your mirrored image lacks `busybox wget`, override the test image:
 
 ```yaml
