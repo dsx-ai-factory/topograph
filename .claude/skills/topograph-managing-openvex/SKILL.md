@@ -38,8 +38,9 @@ never to a GitHub issue or pull request. For this skill that means:
 - **A `not_affected` statement about a published third-party CVE is fine to
   commit.** That is what `.openvex.json` is for, and its `impact_statement`
   is public by design.
-- **If triage concludes Topograph IS affected** (the vulnerable code is
-  reachable with attacker-influenced input), stop. Do not write an `affected`
+- **If triage concludes Topograph IS affected, or cannot rule it out** (the
+  vulnerable code is reachable, and attacker-influenced input or the
+  vulnerable configuration may reach it; Step 4), stop. Do not write an `affected`
   statement, a `vex-state.yaml` entry, an issue, or a PR description that says
   so. Surface it privately to a maintainer, who routes it through PSIRT. A
   plain dependency bump can still land as a routine bump; explaining why it
@@ -135,13 +136,42 @@ reachability question. Use the same version CI pins:
 go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 -show verbose ./...
 ```
 
-Its verbose output separates three cases, which map to justifications:
+Its verbose output separates three cases:
 
-| govulncheck says | Justification |
+| govulncheck says | Next step |
 | --- | --- |
-| Module required, vulnerable package never imported | `vulnerable_code_not_present` |
-| Package imported, vulnerable symbol never called | `vulnerable_code_not_in_execute_path` |
-| Vulnerable symbol called | Affected. See the security policy section. |
+| Module required, vulnerable package never imported | `not_affected`, justification `vulnerable_code_not_present` |
+| Package imported, vulnerable symbol never called | `not_affected`, justification `vulnerable_code_not_in_execute_path` |
+| Vulnerable symbol called | No verdict yet. Assess the input and the configuration first (below). |
+
+A call that is reachable is not yet a vulnerability: the advisory's trigger has
+to hold too. That usually means attacker-influenced input reaching the
+vulnerable symbol, or Topograph running with the configuration the advisory
+requires. Print the call paths and follow each one back to where its input
+comes from:
+
+```bash
+go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 -show traces ./...
+```
+
+Then decide, conservatively:
+
+- **Attacker-influenced input or the vulnerable configuration can reach it, or
+  you cannot rule that out:** treat it as potentially affected. Stop and route
+  it privately (security policy, above). No statement of any kind.
+- **Every path's input is demonstrably outside an attacker's control** (for
+  example, it is only ever a constant, or the operator's own configuration
+  file): a `not_affected` candidate with justification
+  `vulnerable_code_cannot_be_controlled_by_adversary`. The `impact_statement`
+  names each call path, where its input comes from, and why an attacker cannot
+  influence it.
+- **The advisory needs a configuration Topograph never uses** (a feature,
+  mode, or option it never enables): a `not_affected` candidate. Use
+  `vulnerable_code_not_in_execute_path` when that configuration is what keeps
+  the code from running, or `inline_mitigations_already_exist` when a control
+  in Topograph blocks the trigger. Cite the code that fixes the configuration.
+
+"Probably not exploitable" is the first case, not the second or third.
 
 To check the shipped binaries rather than the source tree, build them and use
 binary mode on each of the four:
@@ -269,20 +299,23 @@ On every change to the document, bump `version` (integer, monotonic) and set
 
 ## Step 8: verify by measuring, never by reading
 
-A wrong ID, a wrong product, a qualifier for the other platform, or a status
-typo all produce a document that reads correctly and suppresses nothing. The
-only check is to scan the same image with the document as it was before your
-edit and as it is after, and compare what each one suppressed. Comparing
-against a scan with no document at all would also count every older statement,
-so the difference would not isolate your change.
+A wrong ID, a wrong product, a qualifier for one platform, or a status typo all
+produce a document that reads correctly and suppresses nothing. The only check
+is to scan the same images with the document as it was before your edit and as
+it is after, and compare what each one suppressed. Comparing against a scan
+with no document at all would also count every older statement, so the
+difference would not isolate your change.
 
-Build the image the way CI does, with a `topograph:` name so the product
-matches:
+Build both platforms the way CI does, named `topograph` so the product matches.
+Building the non-native platform needs QEMU (binfmt) or buildx, as in CI:
 
 ```bash
-docker build --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 \
-  --tag topograph:local .
-docker save topograph:local -o topograph-amd64.tar
+for arch in amd64 arm64; do
+  docker build --platform "linux/$arch" \
+    --build-arg TARGETOS=linux --build-arg TARGETARCH="$arch" \
+    --tag "topograph:local-$arch" .
+  docker save "topograph:local-$arch" -o "topograph-$arch.tar"
+done
 
 # Use the grype-version pinned in the workflow's scan step.
 grype --version
@@ -291,40 +324,56 @@ grype --version
 # edit, `git show HEAD:.openvex.json` is the same thing.
 git show "$(git merge-base HEAD origin/main)":.openvex.json > openvex-base.json
 
-scan() {
-  grype docker-archive:topograph-amd64.tar -c .grype.yaml --only-fixed \
-    --vex "$1" -o json > "$2"
+scan() {  # scan <arch> <vex document> <output>
+  grype "docker-archive:topograph-$1.tar" -c .grype.yaml --only-fixed \
+    --vex "$2" -o json > "$3"
 }
-scan openvex-base.json before.json
-scan .openvex.json after.json
+for arch in amd64 arm64; do
+  scan "$arch" openvex-base.json "before-$arch.json"
+  scan "$arch" .openvex.json "after-$arch.json"
+done
 
-# Rows each document suppressed, as "<id> <package>@<version>".
+# Rows each document suppressed, as "<id> <purl without qualifiers>".
 VEXED='[.ignoredMatches[]?
         | select((.appliedIgnoreRules // []) | any(.namespace == "vex"))
-        | "\(.vulnerability.id) \(.artifact.name)@\(.artifact.version)"]
+        | "\(.vulnerability.id) \(.artifact.purl | sub("[?#].*$"; ""))"]
        | unique[]'
-diff <(jq -r "$VEXED" before.json) <(jq -r "$VEXED" after.json)
+for arch in amd64 arm64; do
+  echo "== $arch"
+  diff <(jq -r "$VEXED" "before-$arch.json") <(jq -r "$VEXED" "after-$arch.json")
+done
 
-# The new statement's ID must no longer be reported at all.
+# The packages the new statement names must no longer be reported for its ID.
 ID='<vulnerability.name of the new statement>'
-jq --arg id "$ID" '[.matches[] | select(.vulnerability.id == $id)] | length' after.json
+jq -r --arg id "$ID" '.statements[]
+  | select(.vulnerability.name == $id)
+  | .products[].subcomponents[]
+  | (.["@id"] // .identifiers.purl)' .openvex.json | sort -u > scoped.txt
+for arch in amd64 arm64; do
+  echo "== $arch"
+  jq -r --arg id "$ID" '.matches[]
+    | select(.vulnerability.id == $id)
+    | .artifact.purl | sub("[?#].*$"; "")' "after-$arch.json" \
+    | sort -u | comm -12 scoped.txt -
+done
 ```
 
-Read the result:
+Read the result, per platform:
 
 - `diff` prints a `>` line for every row the edit newly suppresses. There must
-  be one for each package the new statement's subcomponents name, carrying the
-  statement's ID, and nothing else. One statement can cover several rows, for
-  example the same CVE in two Alpine packages, so predict the rows first.
+  be one for each subcomponent the new statement names, carrying its ID, and
+  nothing else. One statement can cover several rows, for example the same CVE
+  in two Alpine packages, so predict the rows first.
 - A `<` line is a row that is no longer suppressed. That is expected only for a
   statement you deliberately removed or whose subcomponent version you changed;
   anything else means the edit broke an existing statement.
-- The final count must be `0`.
+- The last loop must print nothing under either header. It checks only the
+  packages the statement names: the same ID in a package the statement does
+  not name stays in `.matches[]` on purpose, as a finding to triage on its own.
 
 If no `>` line appears, the statement matched nothing: suspect the ID, then the
-subcomponent purl, then the product. Repeat for arm64 (`--platform
-linux/arm64`, `TARGETARCH=arm64`) whenever the finding is an Alpine package. Do
-not merge a statement that has not produced its rows.
+subcomponent purl, then the product. Do not merge a statement that has not
+produced its rows on every platform whose image contains the package.
 
 `GRYPE_DB_VALIDATE_AGE=false` lets Grype run against an old local database
 when its update host is unreachable, for example in a sandbox. It is local only
@@ -335,33 +384,56 @@ under-report.
 
 Statements stop applying silently: a package is upgraded (the versioned
 subcomponent no longer matches), an advisory is withdrawn, a component leaves
-the image. Every edit to `.openvex.json` includes this audit, on a fresh scan of
-both platforms:
+the image. Every edit to `.openvex.json` includes this audit. It works per
+statement and per subcomponent, not per ID, because two statements can share
+an ID (one live, one stale), and it reads the VEX-applied rows of both platform
+scans from Step 8 before calling anything stale:
 
 ```bash
-jq -r '[.ignoredMatches[]?
-        | select((.appliedIgnoreRules // []) | any(.namespace == "vex"))
-        | .vulnerability.id] | unique[]' after.json | sort > applied.txt
-jq -r '.statements[].vulnerability.name' .openvex.json | sort -u > declared.txt
-comm -23 declared.txt applied.txt   # stale candidates
+jq -r -n \
+  --slurpfile amd64 after-amd64.json \
+  --slurpfile arm64 after-arm64.json \
+  --slurpfile vex .openvex.json '
+  # "<id> <purl without qualifiers>" for every row a VEX statement suppressed,
+  # keyed by the primary ID and by each related ID.
+  def applied($scan):
+    [$scan[0].ignoredMatches[]?
+     | select((.appliedIgnoreRules // []) | any(.namespace == "vex"))
+     | (.artifact.purl | sub("[?#].*$"; "")) as $purl
+     | (.vulnerability.id, .relatedVulnerabilities[]?.id)
+     | "\(.) \($purl)"]
+    | unique;
+  applied($amd64) as $a | applied($arm64) as $b
+  | $vex[0].statements | to_entries[]
+  | .key as $i | .value.vulnerability.name as $id
+  | .value.products[].subcomponents[]
+  | (.["@id"] // .identifiers.purl) as $purl
+  | "\($id) \($purl)" as $k
+  | [ (if any($a[]; . == $k) then "amd64" else empty end),
+      (if any($b[]; . == $k) then "arm64" else empty end) ] as $on
+  | "\(if $on == [] then "STALE" else "live" end)\tstatement \($i)\t\($id)\t\($purl)\t\($on | join(","))"
+'
 ```
 
-Classify each candidate before acting:
+Each output line is one subcomponent of one statement, with the platforms on
+which it suppressed a row. A `live` line on only one platform is expected when
+the package exists on only that platform. Classify every `STALE` line, using
+both platforms' scans:
 
-1. **Gone** (no hit for the ID or its aliases anywhere in the scan JSON): the
+1. **Gone** (no hit for the ID or its aliases anywhere in either scan): the
    package moved past the fix or the advisory was withdrawn. Delete the
-   statement.
+   subcomponent, and the statement once it has none left.
 2. **Present under a newer version** (in `.matches[]` again): the versioned
    subcomponent expired as designed. Reassess from Step 3; do not just bump the
    version in the purl.
 3. **Present but hidden by `--only-fixed`** (in `.ignoredMatches[]` with no
-   `vex` rule): the statement applies to nothing today. Delete it; if a fix
+   `vex` rule): the subcomponent applies to nothing today. Delete it; if a fix
    appears, the finding should resurface and be fixed, not pre-suppressed.
 4. **Present under a different primary ID**: not stale, a name mismatch. Fix
    `vulnerability.name` (Step 5).
 
-Deleting a statement must leave the count of VEX-suppressed rows for the
-remaining statements unchanged.
+Deleting a stale subcomponent or statement must leave every `live` line
+unchanged.
 
 ## Step 10: keep document-level fields as identifiers
 
