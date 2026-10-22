@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Working state for the `topograph-managing-openvex` skill. Read at the start
+# of every invocation, updated at the end of every invocation.
+#
+# This file holds unfinished work, not history. It exists so that nothing
+# narrative ever has to live in `.openvex.json`, whose document-level fields
+# are identifiers and which will be signed and published with the image
+# (dsx-ai-factory/topograph#595). It only works if entries leave: deleting a
+# resolved entry is the job, not an optional tidy-up.
+#
+# This file is tracked and public. Never record a finding that affects
+# Topograph here; see the skill's security policy section and SECURITY.md.
+#
+# THE RULE: every entry says what would invalidate it. An entry that cannot
+# state that is not state; it belongs in a PR description or nowhere.
+#
+# Every entry carries `id`, `opened` (YYYY-MM-DD), and `what`, plus the field
+# its kind requires:
+#
+#   deferred_verifications
+#     A check that could not complete in the session that wrote it, because it
+#     needs a later CI run, a merge, or a release. `resolves_when` names the
+#     OUTCOME that settles it, never the event that merely makes it runnable:
+#     "the next scheduled run on main shows the finding under VEX-applied
+#     ignores on both platforms" is an outcome; "the PR merged" is not.
+#     DELETE once the check has run and passed. A failed check is not a
+#     resolution; it is the finding to triage next.
+#
+#   known_negatives
+#     Work already done that came back negative (for example, no fixed version
+#     upstream yet), recorded so nobody repeats it. `invalidated_by` names the
+#     upstream event that makes it worth rechecking.
+#     DELETE when `invalidated_by` fires. Do not rewrite it as history.
+#
+#   deliberate_exclusions
+#     A decision not to act, recorded so the next session does not silently
+#     reverse it. `invalidated_by` names the condition under which the
+#     decision should be made afresh.
+#     DELETE when that condition changes.
+
+deferred_verifications: []
+
+known_negatives: []
+
+deliberate_exclusions: []

@@ -1,0 +1,325 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Container image vulnerability scan. Builds the Topograph image from source
+# for each released platform, scans it with Grype, and uploads the results to
+# Security > Code scanning. Nothing is pushed and no registry credentials are
+# used, so the scan works before any image tag has been published.
+#
+# Both platforms are scanned because the runtime stage installs rdma-core with
+# apk, and the resolved package set can differ between architectures. arm64 is
+# built under QEMU on the amd64 pool, the same way docker.yml builds the
+# release image, which keeps the job on a runner label this repository already
+# uses.
+#
+# The scan is non-blocking: `fail-build` is false, so findings are reported but
+# never fail the job. It stays that way until a first baseline has been
+# triaged; making it a gate is a maintainer decision. The job still fails if
+# the build fails or Grype itself errors, for example on an unreadable VEX
+# document.
+#
+# Grype's output, findings included, also appears in the job log, which is
+# public. That is deliberate and matches NVIDIA/aicr and NVIDIA/nodewright: the
+# findings are published third-party CVEs in a public image, which anyone can
+# reproduce by scanning it. What stays private is triage. A conclusion that
+# Topograph is actually affected goes to NVIDIA PSIRT (see SECURITY.md), never
+# into an `affected` statement, the triage skill's vex-state.yaml, an issue, or
+# a PR description.
+#
+# `only-fixed` means a finding with no upstream fix is not reported at all, so
+# an empty Security tab is not the same as "no exposure". `severity-cutoff:
+# high` sets Grype's `--fail-on high`. While `fail-build` is false, a HIGH or
+# CRITICAL finding adds a warning annotation to the run instead of failing it;
+# setting `fail-build: true` turns the same threshold into a gate. It does not
+# filter the upload: every fixable finding is uploaded, graded by its own
+# severity.
+#
+# Suppressions:
+#
+# - A CVE that does not affect Topograph gets a `not_affected` statement in
+#   `.openvex.json`. Grype applies it at scan time through the `vex:` input
+#   below, so a suppressed finding never becomes an alert. Do not dismiss
+#   alerts in the Security tab instead: a dismissal is invisible to the VEX
+#   document, which is meant to be published with the image later.
+# - `.grype.yaml` `ignore` is for accepted risk only (affected, tolerated for
+#   now). See that file's header.
+#
+# A statement looks like this. Products are the bare image PURL
+# `pkg:oci/topograph`, with no tag, digest, or qualifiers, so one statement
+# covers every build. Each product narrows to the affected package with a
+# versioned `subcomponents` purl, so the statement stops applying when that
+# package is upgraded. Subcomponent purls carry no qualifiers, so one statement
+# covers both platforms. The validate job below enforces all three rules. The
+# triage procedure is the
+# `topograph-managing-openvex` skill under .claude/skills/.
+#
+#   {
+#     "vulnerability": { "name": "CVE-YYYY-NNNNN" },
+#     "products": [
+#       {
+#         "@id": "pkg:oci/topograph",
+#         "identifiers": { "purl": "pkg:oci/topograph" },
+#         "subcomponents": [ { "@id": "pkg:golang/example.com/module@v1.2.3" } ]
+#       }
+#     ],
+#     "status": "not_affected",
+#     "justification": "vulnerable_code_not_in_execute_path",
+#     "impact_statement": "Why Topograph never reaches the vulnerable code."
+#   }
+#
+# `justification` is one of the five OpenVEX v0.2.0 labels. When adding or
+# changing a statement, also bump the document `version` and `timestamp`.
+
+name: Image Vulnerability Scan
+
+on:
+  schedule:
+    # Wednesdays at 06:00 UTC, clear of the Monday Scorecard run.
+    - cron: '0 6 * * 3'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - Dockerfile
+      - go.mod
+      - go.sum
+      - .openvex.json
+      - .grype.yaml
+      - .github/workflows/vuln-scan-images.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-inputs:
+    name: Validate scan inputs
+    # Forks do not have the self-hosted runner pool; without this guard the
+    # job would queue there until it timed out.
+    if: github.repository == 'dsx-ai-factory/topograph'
+    runs-on: linux-amd64-cpu8
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The source-mode rules of NVIDIA/aicr's OpenVEX guard (document fields,
+      # status and justification enums, the not_affected and affected
+      # requirements, and the 256-byte bound on document-level strings), plus
+      # the product and subcomponent rules documented above. Fails closed: a
+      # file that is not exactly one JSON document is rejected. An empty
+      # `statements` array is valid; it asserts no exceptions, not the absence
+      # of vulnerabilities.
+      - name: Validate .openvex.json
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null || { echo "::error::jq is not installed on this runner"; exit 1; }
+          problems="$(jq -r --slurp '
+            def statuses: ["not_affected", "affected", "fixed", "under_investigation"];
+            def justifications: [
+              "component_not_present",
+              "vulnerable_code_not_present",
+              "vulnerable_code_not_in_execute_path",
+              "vulnerable_code_cannot_be_controlled_by_adversary",
+              "inline_mitigations_already_exist"
+            ];
+            def filled: type == "string" and test("[^[:space:]]");
+            def listing: if type == "array" then . else [] end;
+            def field($k): if type == "object" then .[$k] else null end;
+            def one_of($allowed): type == "string" and IN($allowed[]);
+            def rfc3339:
+              type == "string"
+              and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$");
+            # Every identifier that is present must pass the check, and at
+            # least one must be present.
+            def identified(check):
+              field("@id") as $id | (field("identifiers") | field("purl")) as $purl
+              | type == "object"
+                and ($id == null or ($id | check))
+                and ($purl == null or ($purl | check))
+                and ($id != null or $purl != null);
+            def product_ok: identified(. == "pkg:oci/topograph");
+            # A versioned purl with no qualifiers or subpath. Qualifiers are
+            # rejected because Grype honours them: an `arch=` qualifier makes
+            # a statement apply to the scan of one platform and silently not
+            # the other. (No apostrophes in here: this is a single-quoted
+            # shell string.)
+            def versioned: type == "string" and test("^pkg:[^@?#]+@[^@?#]+$");
+            def subcomponents_ok:
+              field("subcomponents") as $subs
+              | ($subs | type) == "array" and ($subs | length) > 0
+                and ($subs | all(identified(versioned)));
+            def statement($i):
+              if type != "object" then "statement \($i) must be a JSON object"
+              else
+                .status as $status | .justification as $justification
+                | (if (field("vulnerability") | field("name") | filled) then empty
+                   else "statement \($i) must set vulnerability.name" end),
+                  (if (.products | type) == "array" and (.products | length) > 0 then empty
+                   else "statement \($i) must list at least one product" end),
+                  (if .products | listing | all(product_ok) then empty
+                   else "statement \($i) has a product other than pkg:oci/topograph" end),
+                  (if .products | listing | all(subcomponents_ok) then empty
+                   else "statement \($i) needs subcomponents whose purls all carry a version and no qualifiers" end),
+                  (if $status | one_of(statuses) then empty
+                   else "statement \($i) status \($status | tojson) is not one of \(statuses | join(", "))" end),
+                  (if $status == "not_affected"
+                      and (($justification | filled) | not)
+                      and ((.impact_statement | filled) | not)
+                   then "statement \($i) is not_affected and needs a justification or an impact_statement"
+                   else empty end),
+                  (if $justification == null or ($justification | one_of(justifications)) then empty
+                   else "statement \($i) justification \($justification | tojson) is not one of \(justifications | join(", "))" end),
+                  (if $status == "affected" and ((.action_statement | filled) | not)
+                   then "statement \($i) is affected and needs an action_statement"
+                   else empty end),
+                  (("timestamp", "last_updated") as $k
+                   | if has($k) and (.[$k] | rfc3339 | not)
+                     then "statement \($i) \($k) must be an RFC 3339 date-time"
+                     else empty end)
+              end;
+            def document:
+              if type != "object" then "the document must be a JSON object"
+              else
+                (if .["@context"] == "https://openvex.dev/ns/v0.2.0" then empty
+                 else "@context must be https://openvex.dev/ns/v0.2.0" end),
+                (if (.["@id"] | filled) then empty else "@id must be a non-empty string" end),
+                (if (.author | filled) then empty else "author must be a non-empty string" end),
+                (if .timestamp | rfc3339 then empty
+                 else "timestamp must be an RFC 3339 date-time" end),
+                (if has("last_updated") and (.last_updated | rfc3339 | not)
+                 then "last_updated must be an RFC 3339 date-time" else empty end),
+                (if (.version | type) == "number" then empty else "version must be a number" end),
+                (if (.statements | type) == "array" then empty else "statements must be an array" end),
+                (to_entries[]
+                 | select((.value | type) == "string" and (.value | utf8bytelength) > 256)
+                 | "document field \(.key) is \(.value | utf8bytelength) bytes, over the 256-byte bound for a document-level identifier"),
+                (.statements | listing | to_entries[] | .key as $i | .value | statement($i))
+              end;
+            if length != 1 then "the file must hold exactly one JSON document, found \(length)"
+            else .[0] | document
+            end
+          ' .openvex.json)" || {
+            echo "::error file=.openvex.json::could not be checked; is it valid JSON?"
+            exit 1
+          }
+          if [[ -n "${problems}" ]]; then
+            while IFS= read -r problem; do
+              echo "::error file=.openvex.json::${problem}"
+            done <<<"${problems}"
+            exit 1
+          fi
+          echo ".openvex.json is a valid OpenVEX v0.2.0 document"
+
+      # Needs mikefarah yq (the `tag` operator); the nv-gha-runners image
+      # installs it, and this step fails rather than guessing if it is absent.
+      - name: Validate .grype.yaml
+        run: |
+          set -euo pipefail
+          command -v yq >/dev/null || { echo "::error::yq is not installed on this runner"; exit 1; }
+          if ! yq --version | grep -q mikefarah; then
+            echo "::error::yq on this runner is not mikefarah/yq: $(yq --version)"
+            exit 1
+          fi
+          if ! yq -e '.ignore | tag == "!!seq"' .grype.yaml >/dev/null; then
+            echo "::error file=.grype.yaml::must parse as YAML and set ignore to a list"
+            exit 1
+          fi
+          echo ".grype.yaml parses"
+
+  scan:
+    name: Scan (linux/${{ matrix.arch }})
+    needs: validate-inputs
+    if: github.repository == 'dsx-ai-factory/topograph'
+    runs-on: linux-amd64-cpu16
+    # The arm64 build compiles Go under QEMU, which takes far longer than the
+    # native amd64 build.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # Let the SARIF upload read this workflow run. GitHub documents it as
+      # needed only for private repositories, so declare it rather than depend
+      # on this one staying public (as scorecard.yaml does).
+      actions: read
+      # Upload the SARIF result to the code scanning dashboard.
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # Runner-provided registry mirror configuration, as in docker.yml.
+          buildkitd-config: /etc/buildkit/buildkitd.toml
+
+      # Export to a local archive instead of loading into the shared daemon or
+      # pushing. The `topograph:scan` name is what Grype matches the
+      # `pkg:oci/topograph` VEX products against.
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: false
+          provenance: false
+          sbom: false
+          tags: topograph:scan
+          outputs: type=docker,dest=${{ runner.temp }}/topograph-${{ matrix.arch }}.tar
+
+      - name: Scan image
+        id: scan
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: docker-archive:${{ runner.temp }}/topograph-${{ matrix.arch }}.tar
+          # Pinned so results only change when the vulnerability database
+          # does. This is the action's own default for v7.4.2; Dependabot does
+          # not update it, so revisit it whenever scan-action is bumped.
+          grype-version: v0.118.0
+          output-format: sarif
+          only-fixed: true
+          severity-cutoff: high
+          # Non-blocking until a baseline is triaged; see the header.
+          fail-build: false
+          config: .grype.yaml
+          vex: .openvex.json
+
+      # One category per platform: code scanning keys an analysis on its
+      # category, so two uploads sharing one would replace each other.
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: grype-linux-${{ matrix.arch }}

@@ -74,6 +74,7 @@ demos/                # Interactive Kubernetes/KWOK deployment demos
 tests/models/         # YAML simulation fixtures
 config/               # Sample topograph-config.yaml
 scripts/              # Build scripts (deb, rpm, SSL, clean)
+.claude/skills/       # Agent skills; topograph-managing-openvex triages image scan findings into .openvex.json
 localdev/             # Developer-local workspace, not tracked; personal scratch files
 ```
 

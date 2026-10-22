@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Grype configuration for .github/workflows/vuln-scan-images.yaml.
+#
+# `ignore` is for accepted-risk exceptions only: a finding that does affect
+# Topograph and is tolerated for now, for example because no fixed version
+# exists upstream yet. It is never the place to say "this CVE does not apply to
+# us". That claim is a `not_affected` statement in `.openvex.json`, which is
+# structured, carries its justification, and can later be published with the
+# image; an entry here is invisible to everyone who scans the image themselves.
+# The expected statement shape is documented in the workflow's header comment.
+#
+# Every entry MUST record why the risk is accepted, the reachable path, the
+# fixed version being waited on, and a review date, and MUST be deleted as soon
+# as a fixed version can be taken. The workflow scans with `only-fixed`, so a
+# finding with no available fix is not reported there at all; do not add an
+# entry speculatively.
+#
+# To scan locally with the same settings as CI, give the image the repository
+# name `topograph`. Grype derives the VEX product from that name, so the
+# `pkg:oci/topograph` statements apply only to an image called `topograph`; any
+# other name silently applies none of them.
+#
+#   docker build --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 \
+#     --tag topograph:local .
+#   grype -c .grype.yaml --vex .openvex.json --only-fixed docker:topograph:local
+ignore: []
