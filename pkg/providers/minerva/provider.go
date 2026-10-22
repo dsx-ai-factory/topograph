@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/mitchellh/mapstructure"
 
@@ -89,6 +90,11 @@ func getParams(params map[string]any) (*ProviderParams, error) {
 	}
 	if len(p.ApiURL) == 0 {
 		return nil, fmt.Errorf("%s not provided", paramKeyApiURL)
+	}
+	// The API key travels in a request header, so refuse to send it in clear text.
+	u, err := url.Parse(p.ApiURL)
+	if err != nil || u.Scheme != "https" || len(u.Host) == 0 {
+		return nil, fmt.Errorf("%s must be an https URL", paramKeyApiURL)
 	}
 
 	return p, nil

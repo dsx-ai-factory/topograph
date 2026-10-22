@@ -8,11 +8,13 @@ package minerva
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/topograph/pkg/engines/slurm"
@@ -43,7 +45,7 @@ func TestLoader(t *testing.T) {
 			name: "Case 2: missing apiKey",
 			config: providers.Config{
 				Params: map[string]any{
-					"apiUrl": "url",
+					"apiUrl": "https://minerva.example.com/minerva/api",
 				},
 			},
 			err: "missing 'apiKey'",
@@ -52,7 +54,7 @@ func TestLoader(t *testing.T) {
 			name: "Case 2b: empty apiKey",
 			config: providers.Config{
 				Params: map[string]any{
-					"apiUrl": "url",
+					"apiUrl": "https://minerva.example.com/minerva/api",
 				},
 				Creds: map[string]any{
 					"apiKey": "",
@@ -61,10 +63,42 @@ func TestLoader(t *testing.T) {
 			err: "'apiKey' must not be empty",
 		},
 		{
+			name: "Case 2c: http apiUrl",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": "http://minerva.example.com/minerva/api"},
+				Creds:  map[string]any{"apiKey": "key"},
+			},
+			err: "apiUrl must be an https URL",
+		},
+		{
+			name: "Case 2d: apiUrl without scheme or host",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": "url"},
+				Creds:  map[string]any{"apiKey": "key"},
+			},
+			err: "apiUrl must be an https URL",
+		},
+		{
+			name: "Case 2e: creds of the wrong type",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": "https://minerva.example.com/minerva/api"},
+				Creds:  map[string]any{"apiKey": map[string]any{"nested": "key"}},
+			},
+			err: "failed to decode creds",
+		},
+		{
+			name: "Case 2f: apiUrl of the wrong type",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": map[string]any{"nested": "url"}},
+				Creds:  map[string]any{"apiKey": "key"},
+			},
+			err: "apiUrl must be an https URL",
+		},
+		{
 			name: "Case 3: valid input",
 			config: providers.Config{
 				Params: map[string]any{
-					"apiUrl": "url",
+					"apiUrl": "https://minerva.example.com/minerva/api",
 				},
 				Creds: map[string]any{
 					"apiKey": "key",
@@ -77,7 +111,8 @@ func TestLoader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Loader(ctx, tc.config)
 			if len(tc.err) != 0 {
-				require.EqualError(t, err, tc.err)
+				require.NotNil(t, err)
+				require.Contains(t, err.Error(), tc.err)
 			} else {
 				require.Nil(t, err)
 			}
@@ -93,12 +128,14 @@ func TestGenerateTopologyConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/"+ExportTopologyURL, r.URL.Path)
-		require.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
+		// this runs on the server's goroutine, so it reports with assert, not require
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/"+ExportTopologyURL, r.URL.Path)
+		assert.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
 
 		var body ExportTopologyRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-		require.Equal(t, 50, body.Limit)
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, 50, body.Limit)
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(fixture)
@@ -137,6 +174,34 @@ func TestGenerateTopologyConfig(t *testing.T) {
 	cancel()
 	_, httpErr = p.GenerateTopologyConfig(ctx, nil, cis)
 	require.NotNil(t, httpErr)
+}
+
+// TestExportTopologyRequest verifies that without a page size the request body
+// is an empty object, which exports the entire fabric, and that the JSON
+// content type is set.
+func TestExportTopologyRequest(t *testing.T) {
+	fixture, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
+	require.NoError(t, err)
+
+	var body []byte
+	var contentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		contentType = r.Header.Get("Content-Type")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	p := &Provider{
+		params: &ProviderParams{ApiURL: srv.URL},
+		creds:  &Credentials{ApiKey: "test-key"},
+	}
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
+	_, httpErr := p.GenerateTopologyConfig(context.Background(), nil, cis)
+	require.Nil(t, httpErr)
+	require.JSONEq(t, `{}`, string(body))
+	require.Equal(t, "application/json", contentType)
 }
 
 // TestGenerateOutputWithSlurmEngine feeds the graph produced by the Minerva

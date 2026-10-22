@@ -386,3 +386,68 @@ func TestGetNextBackoff(t *testing.T) {
 		})
 	}
 }
+
+func TestDoRequestWithRedirects(t *testing.T) {
+	newServers := func(t *testing.T, status int) (redirecting *httptest.Server, targetKey *string, targetCalled *bool) {
+		key, called := new(string), new(bool)
+		target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*called = true
+			*key = r.Header.Get("X-Api-Key")
+			_, _ = w.Write([]byte("target"))
+		}))
+		t.Cleanup(target.Close)
+
+		redirecting = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, target.URL, status)
+		}))
+		t.Cleanup(redirecting.Close)
+		return redirecting, key, called
+	}
+	request := func(url string) RequestFunc {
+		return GetRequestFunc(context.Background(), http.MethodPost, map[string]string{"X-Api-Key": "secret"}, nil, []byte(`{}`), url)
+	}
+
+	for _, status := range []int{
+		http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
+	} {
+		t.Run(http.StatusText(status)+" is refused when redirects are not allowed", func(t *testing.T) {
+			srv, targetKey, targetCalled := newServers(t, status)
+
+			_, body, httpErr := DoRequestWithRedirects(request(srv.URL), false, false)
+			require.Nil(t, body)
+			require.NotNil(t, httpErr)
+			require.Equal(t, http.StatusBadGateway, httpErr.Code())
+			require.Contains(t, httpErr.Error(), "refusing to follow a redirect")
+			require.False(t, *targetCalled, "the redirect target must not be contacted")
+			require.Empty(t, *targetKey)
+		})
+	}
+
+	t.Run("redirects are followed when allowed", func(t *testing.T) {
+		srv, targetKey, _ := newServers(t, http.StatusTemporaryRedirect)
+
+		_, body, httpErr := DoRequestWithRedirects(request(srv.URL), false, true)
+		require.Nil(t, httpErr)
+		require.Equal(t, "target", string(body))
+		require.Equal(t, "secret", *targetKey)
+	})
+
+	t.Run("DoRequest follows redirects", func(t *testing.T) {
+		srv, _, _ := newServers(t, http.StatusTemporaryRedirect)
+
+		_, body, httpErr := DoRequest(request(srv.URL), false)
+		require.Nil(t, httpErr)
+		require.Equal(t, "target", string(body))
+	})
+
+	t.Run("a direct answer is unaffected when redirects are not allowed", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("direct"))
+		}))
+		defer srv.Close()
+
+		_, body, httpErr := DoRequestWithRedirects(request(srv.URL), false, false)
+		require.Nil(t, httpErr)
+		require.Equal(t, "direct", string(body))
+	})
+}
