@@ -343,7 +343,10 @@ for arch in amd64 arm64; do
   diff <(jq -r "$VEXED" "before-$arch.json") <(jq -r "$VEXED" "after-$arch.json")
 done
 
-# The packages the new statement names must no longer be reported for its ID.
+# What the new statement must do on each platform. A statement may list one
+# subcomponent per platform-specific version (Step 6), so the expected rows
+# come from what each platform's base scan still reported for this ID, not
+# from the statement alone.
 ID='<vulnerability.name of the new statement>'
 jq -r --arg id "$ID" '.statements[]
   | select(.vulnerability.name == $id)
@@ -351,29 +354,46 @@ jq -r --arg id "$ID" '.statements[]
   | (.["@id"] // .identifiers.purl)' .openvex.json | sort -u > scoped.txt
 for arch in amd64 arm64; do
   echo "== $arch"
-  jq -r --arg id "$ID" '.matches[]
-    | select(.vulnerability.id == $id)
+  # Subcomponents present on this platform: reported for this ID before the edit.
+  jq -r --arg id "$ID" '.matches[] | select(.vulnerability.id == $id)
+    | .artifact.purl | sub("[?#].*$"; "")' "before-$arch.json" \
+    | sort -u | comm -12 scoped.txt - > "expected-$arch.txt"
+  # Rows of this ID that the edit newly suppressed.
+  comm -13 <(jq -r "$VEXED" "before-$arch.json") <(jq -r "$VEXED" "after-$arch.json") \
+    | awk -v id="$ID" '$1 == id { print $2 }' | sort -u > "added-$arch.txt"
+  echo "expected:";                  sed 's/^/  /' "expected-$arch.txt"
+  echo "missing (must be empty):";    comm -23 "expected-$arch.txt" "added-$arch.txt"
+  echo "unexpected (must be empty):"; comm -13 "expected-$arch.txt" "added-$arch.txt"
+  echo "still reported (must be empty):"
+  jq -r --arg id "$ID" '.matches[] | select(.vulnerability.id == $id)
     | .artifact.purl | sub("[?#].*$"; "")' "after-$arch.json" \
-    | sort -u | comm -12 scoped.txt -
+    | sort -u | comm -12 "expected-$arch.txt" -
 done
 ```
 
 Read the result, per platform:
 
-- `diff` prints a `>` line for every row the edit newly suppresses. There must
-  be one for each subcomponent the new statement names, carrying its ID, and
-  nothing else. One statement can cover several rows, for example the same CVE
-  in two Alpine packages, so predict the rows first.
-- A `<` line is a row that is no longer suppressed. That is expected only for a
-  statement you deliberately removed or whose subcomponent version you changed;
-  anything else means the edit broke an existing statement.
-- The last loop must print nothing under either header. It checks only the
-  packages the statement names: the same ID in a package the statement does
-  not name stays in `.matches[]` on purpose, as a finding to triage on its own.
+- `diff` prints a `>` line for every row the edit newly suppresses and a `<`
+  line for every row it stopped suppressing. Every `>` line should carry the new
+  statement's ID; the second loop checks which ones. A `<` line is expected
+  only for a statement you deliberately removed or whose subcomponent version
+  you changed; anything else means the edit broke an existing statement.
+- `expected` lists the statement's subcomponents that this platform's image
+  actually contains and still reported for the ID before the edit. It can
+  differ between platforms: a statement with one subcomponent per version
+  expects only the matching version on each platform, and nothing for a
+  version that platform does not ship. One statement can also cover several
+  rows, for example the same CVE in two Alpine packages.
+- `missing`, `unexpected`, and `still reported` must all be empty on both
+  platforms. The checks cover only the packages the statement names: the same
+  ID in a package the statement does not name stays in `.matches[]` on purpose,
+  as a finding to triage on its own.
 
-If no `>` line appears, the statement matched nothing: suspect the ID, then the
-subcomponent purl, then the product. Do not merge a statement that has not
-produced its rows on every platform whose image contains the package.
+If `expected` is empty on both platforms, the statement names no package and
+version either scan reports for this ID: suspect the subcomponent version, then
+the ID. If `missing` is not empty, the statement did not apply: suspect the ID,
+then the subcomponent purl, then the product. Do not merge a statement until
+every platform's checks come back empty.
 
 `GRYPE_DB_VALIDATE_AGE=false` lets Grype run against an old local database
 when its update host is unreachable, for example in a sandbox. It is local only
