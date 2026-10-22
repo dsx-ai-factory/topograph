@@ -1,0 +1,172 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Helm chart security scan. Renders charts/topograph with the default values
+# and once per example values file, then scans the rendered manifests with
+# Checkov for Kubernetes security misconfigurations and uploads the results to
+# the repository code scanning dashboard.
+#
+# The chart branches heavily on values (provider, engine, Ingress versus
+# Gateway API, the Node Data Broker), so the default values alone would miss
+# most of what users deploy. Checkov's helm framework renders only the default
+# values, which is why this workflow renders each variant itself and scans
+# with the kubernetes framework. Skips and their justifications live in
+# .checkov.yaml.
+
+name: Chart Scan
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - "charts/**"
+      - ".checkov.yaml"
+      - ".github/workflows/chart-scan.yaml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checkov:
+    name: Checkov
+    # Upstream only: keep scan results off forks' Security tabs, and do not
+    # run on forks that enable Actions.
+    if: github.repository == 'dsx-ai-factory/topograph'
+    # A light job (Helm plus one container action), so it runs on a
+    # GitHub-hosted runner, like scorecard.yaml. Docker, needed by the Checkov
+    # container action, is preinstalled there; setup-helm installs Helm.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Clone the repository, and let the SARIF upload read this workflow run.
+      # GitHub documents both as needed only for private repositories, so
+      # declare them rather than depend on this one staying public.
+      contents: read
+      actions: read
+      # Upload the SARIF result to the code scanning dashboard.
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          # Keep in step with chart-test.yaml.
+          version: v4.1.1
+
+      # One output directory per values file, named after it ("values" for
+      # the defaults), so every finding names the variant it came from. Each
+      # example is layered over values.yaml, as `helm install -f` would. The
+      # chart gates its optional templates on values, not on cluster
+      # capabilities, so no render needs --api-versions.
+      #
+      # No example enables the Ingress, NetworkPolicy, ServiceMonitor, Node
+      # Data Broker ValidatingAdmissionPolicy, or broker ConfigMap mounts, so
+      # a final scan-only render, opt-in-features, switches them all on.
+      # Ingress and Gateway API are mutually exclusive; the gateway-api example
+      # already renders the HTTPRoute.
+      #
+      # The helm test hook pods under templates/tests/ are kept in the scan;
+      # `helm test` creates them in the release namespace like any other pod.
+      - name: Render chart variants
+        run: |
+          set -euo pipefail
+          chart=charts/topograph
+          out=rendered-chart
+
+          render() {
+            local name=$1
+            shift
+            echo "::group::Render ${name}"
+            helm template topograph "${chart}" --namespace topograph \
+              "$@" --output-dir "${out}/${name}"
+            echo "::endgroup::"
+          }
+
+          render values
+
+          # values.*.yaml matches every example file but not values.yaml.
+          shopt -s nullglob
+          examples=("${chart}"/values.*.yaml)
+          if [ "${#examples[@]}" -eq 0 ]; then
+            echo "::error::no example values files (values.*.yaml) found in ${chart}"
+            exit 1
+          fi
+          for file in "${examples[@]}"; do
+            render "$(basename "${file}" .yaml)" --values "${file}"
+          done
+
+          # Placeholder values; only the rendered objects matter here.
+          render opt-in-features --values - <<'VALUES'
+          ingress:
+            enabled: true
+          networkPolicy:
+            enabled: true
+            metricsScraperNamespace: monitoring
+            extraEgress:
+              - to:
+                  - ipBlock:
+                      cidr: 10.96.0.1/32
+                ports:
+                  - protocol: TCP
+                    port: 443
+          serviceMonitor:
+            enabled: true
+          nodeDataBroker:
+            validatingAdmissionPolicy:
+              enabled: true
+            configMapMounts:
+              - name: scan-example
+                mountPath: /etc/scan-example/example.conf
+                subPath: example.conf
+                data:
+                  example.conf: example
+          VALUES
+
+      - name: Scan rendered manifests
+        # The action SHA also pins the Checkov version (by image tag): its
+        # action.yml runs docker://ghcr.io/bridgecrewio/checkov:3.3.30.
+        uses: bridgecrewio/checkov-action@c3e106d5f8f4253a6de5110efb41a080f83db294 # v12.3135.0
+        with:
+          # Absolute path inside the action container, where the workspace is
+          # mounted. A relative path makes Checkov prefix the SARIF file paths
+          # with the directory twice, so they would not resolve in the checkout.
+          directory: /github/workspace/rendered-chart
+          framework: kubernetes
+          config_file: .checkov.yaml
+          output_format: cli,sarif
+          output_file_path: console,results.sarif
+          # Non-blocking while the hardening gaps that stay failing in
+          # .checkov.yaml are tracked as follow-up issues; whether findings
+          # then block merges is a maintainer decision (#600).
+          soft_fail: true
+
+      - name: Upload results to code scanning
+        if: ${{ !cancelled() && hashFiles('results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: results.sarif
+          category: checkov-helm-chart

@@ -13,3 +13,6 @@
 # Chainsaw CLI downloaded by demos/tas-lab/setup/chainsaw.sh
 /demos/tas-lab/.bin/
 .vscode
+# Rendered chart and Checkov SARIF from the chart scan (.github/workflows/chart-scan.yaml)
+/rendered-chart/
+/results.sarif

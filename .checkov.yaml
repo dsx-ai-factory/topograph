@@ -1,0 +1,101 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Checkov configuration and reviewed baseline for the Helm chart scan in
+# .github/workflows/chart-scan.yaml, which renders charts/topograph with the
+# default values and with every example values file, then scans the rendered
+# manifests.
+#
+# Rules for this file:
+#   - Every skip carries a written justification. No blanket skips.
+#   - A check is skipped only when it does not apply to this chart or flags an
+#     accepted design need. A finding that points at a real hardening gap stays
+#     failing (the scan is soft fail) and becomes a follow-up issue instead.
+#   - Checkov cannot scope a skip to one resource without an inline annotation
+#     in the chart, so a check that fails for both reasons is not skipped.
+#     CKV_K8S_38 (service account token automount) is the main example: the
+#     API server, Node Observer, and Node Data Broker call the Kubernetes API
+#     and need the token, but the helm test pods do not.
+#
+# The scan is non-blocking while the hardening gaps that stay failing here are
+# tracked as follow-up issues; whether findings then block merges is a
+# maintainer decision (#600). Soft fail is set in the workflow, not here, so a
+# local run still exits non-zero on findings. Reproduce the CI scan by running
+# each render in the workflow's "Render chart variants" step, which has the
+# form:
+#   helm template topograph charts/topograph --namespace topograph \
+#     [--values charts/topograph/values.<example>.yaml] \
+#     --output-dir rendered-chart/<values file name>
+# then:
+#   checkov --config-file .checkov.yaml --directory "$PWD/rendered-chart"
+# An absolute --directory keeps the SARIF paths relative to the repository
+# root; a relative one is prefixed twice.
+
+framework:
+  - kubernetes
+
+# Print only failed checks, without code blocks, to the console. The matrix
+# produces thousands of results; the SARIF upload carries the failures with
+# their locations either way.
+compact: true
+quiet: true
+
+skip-check:
+  # Image Pull Policy should be Always. Every image is referenced by a release
+  # tag (image.tag defaults to the chart appVersion), and release tags are not
+  # rewritten, so IfNotPresent cannot run a stale image. Always would add a
+  # registry round trip to every pod start, including each Node Data Broker
+  # pod on every node, and break restarts in air-gapped clusters that mirror
+  # the image once. image.pullPolicy remains configurable.
+  - CKV_K8S_15
+  # Image should use digest. The chart references images by tag by design so
+  # that one chart version tracks its matching release image. Operators who
+  # require digest pinning can set image.tag (and tests.image.tag) to a
+  # "<tag>@sha256:<digest>" reference.
+  - CKV_K8S_43
+  # Minimize the admission of pods which lack an associated NetworkPolicy. The
+  # chart ships a NetworkPolicy covering every component, opt in through
+  # networkPolicy.enabled. It is off by default because the ingress
+  # controller, Gateway, and egress endpoints it must allow are
+  # cluster-specific (see networkPolicy in charts/topograph/values.yaml), so
+  # enabling it unconditionally would break working installs. With the policy
+  # enabled (the workflow's opt-in-features render), every pod passes this
+  # check.
+  - CKV2_K8S_6
+
+skip-path:
+  # The Node Data Broker DaemonSet in the InfiniBand examples. These values
+  # deliberately run the broker privileged as root so ibnetdiscover can reach
+  # the host InfiniBand devices and read /sys/class, as the example files
+  # explain. That opt-out fails these checks by design:
+  #   CKV_K8S_16  Container should not be privileged
+  #   CKV_K8S_20  Containers should not run with allowPrivilegeEscalation
+  #   CKV_K8S_22  Use read-only filesystem for containers where possible
+  #   CKV_K8S_23  Minimize the admission of root containers
+  #   CKV_K8S_28  Minimize the admission of containers with the NET_RAW capability
+  #   CKV_K8S_37  Minimize the admission of containers with capabilities assigned
+  #   CKV_K8S_40  Containers should run as a high UID to avoid host conflict
+  # skip-path excludes these two rendered files from EVERY Checkov check, not
+  # only the seven above. Skipping the seven checks globally instead would
+  # hide a privilege regression in the API server or Node Observer, which is
+  # what this scan exists to catch. The trade-off is acceptable because the
+  # same DaemonSet template is still scanned against every check with its
+  # hardened defaults in the other variants. A Checkov baseline file could
+  # scope the exception to these seven checks on these two resources if the
+  # maintainers prefer; that is not done here. A new privileged example values
+  # file is not covered by these patterns and surfaces as findings until it
+  # is reviewed and added.
+  - values\.k8s\.ib-example/topograph/templates/nodeDataBroker/daemonset\.yaml$
+  - values\.slinky\.ib\.block-example/topograph/templates/nodeDataBroker/daemonset\.yaml$
