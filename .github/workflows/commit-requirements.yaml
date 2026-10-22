@@ -1,0 +1,371 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Commit Requirements
+
+# Every commit must be signed off (`git commit -s`) and carry a verified
+# cryptographic signature (`git commit -S`), as CONTRIBUTING.md "Sign your
+# work" describes. The probot DCO app already checks the sign-off. Nothing
+# checked the signature before this workflow: `main-enforced` has no "Require
+# signed commits" rule, and even with one, that rule only sees what lands on
+# main. A squash merge lands a single commit GitHub signs itself, so the
+# contributor's own commits would still go unchecked. This job checks them on
+# the pull request and posts one comment listing the unsigned ones and how to
+# fix them.
+#
+# It reports; it does not yet gate. It is not a required status check, so a
+# red run is visible without blocking the merge button. Maintainers promote it
+# once the open pull requests have caught up, in two steps on the
+# `main-enforced` ruleset:
+#   1. add `Commit requirements` (this job's name) to the required status
+#      checks, next to `DCO`;
+#   2. enable "Require signed commits".
+# Before step 1, note that a pull request opened with GITHUB_TOKEN never
+# triggers this check, because events caused by GITHUB_TOKEN do not start
+# workflows. A required check that never reports would block such a pull
+# request, so automation that opens pull requests should use a GitHub App
+# token, or a maintainer closes and reopens the pull request to trigger it.
+# The job name is deliberately generic so that turning the sign-off check on
+# below does not rename the required check.
+#
+# pull_request_target is required to comment on pull requests from forks, which
+# is where most violations come from. It is safe here for the usual reason: the
+# job never checks out or executes the contributor's code, it only reads commit
+# metadata through the API.
+#
+# Runner: GitHub-hosted ubuntu-latest, as scorecard.yaml uses, rather than the
+# self-hosted runners most workflows here use. Any GitHub user can trigger this
+# job by opening a pull request, and it only calls the API, so it has no reason
+# to run on, or queue for, the project's own machines. The repository guard
+# keeps copies of this workflow in forks from running and commenting on the
+# forks' own pull requests.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-requirements:
+    name: Commit requirements
+    if: github.repository == 'dsx-ai-factory/topograph'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # Create and update the single report comment on the pull request.
+      pull-requests: write
+    steps:
+      - name: Check commits and report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // Sign-off is off here because the probot DCO app already reports
+            // a required `DCO` check on every pull request; a second sign-off
+            // failure from this job would be duplicate noise. The logic is kept
+            // so it can be switched on if that app is ever retired.
+            const CHECK_SIGN_OFF = false;
+
+            const MARKER = '<!-- commit-requirements -->';
+            const CONTRIBUTING = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md#sign-your-work`;
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+
+            // Wording follows what this run actually checks, so nobody is told
+            // their sign-off is missing when the sign-off check is off.
+            const REQUIRED = CHECK_SIGN_OFF ? 'signed off and signed' : 'signed';
+            const CHECK_NAME = CHECK_SIGN_OFF ? 'sign-off and signature check' : 'signature check';
+
+            // The commits endpoint tops out here. Reporting success on a
+            // truncated list would clear a pull request nobody fully checked.
+            const LIST_COMMITS_CAP = 250;
+
+            // Read the pull request on both sides of the commit list, and give up
+            // if the head moved in between. `context.payload.pull_request` is a
+            // snapshot from when the event fired and a run can sit in the queue
+            // for hours, so nothing here may be paired with it: a force-push
+            // during the read window would otherwise judge one head's commits
+            // against another head's commit count. The push that moved the head
+            // queued its own run, which sees a stable head and reports for it.
+            const headBefore = (
+              await github.rest.pulls.get({ owner, repo, pull_number: number })
+            ).data.head.sha;
+
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner, repo, pull_number: number, per_page: 100,
+            });
+
+            const { data: pull } = await github.rest.pulls.get({
+              owner, repo, pull_number: number,
+            });
+
+            if (pull.head.sha !== headBefore) {
+              core.info(
+                `Head moved while the commits were being read (${headBefore} to ${pull.head.sha}). A later run covers the current head.`,
+              );
+              return;
+            }
+
+            const expectedCommits = pull.commits;
+            const shortfall =
+              typeof expectedCommits === 'number' && commits.length < expectedCommits;
+            const truncated = shortfall && commits.length >= LIST_COMMITS_CAP;
+
+            // Short of the cap the endpoint hands back every commit the head has,
+            // so a shortfall there is the pull request's own `commits` count
+            // lagging the ref, not commits withheld from the list. Note it and
+            // check what we were given: the list is complete for this head, and
+            // returning early here would pass a violation through unreported.
+            if (shortfall && !truncated) {
+              core.info(
+                `Pull request reports ${expectedCommits} commits but the endpoint listed ${commits.length}, short of the ${LIST_COMMITS_CAP} cap. Treating the count as stale and checking the commits the endpoint returned.`,
+              );
+            }
+
+            // Bots are exempt from sign-off only, never from the signature check.
+            // A bot cannot run `git commit -s`, so Dependabot and Renovate commits
+            // carry no `Signed-off-by` by design. Exempting bots from signing as
+            // well would open a bypass: GitHub resolves the API's `author` from
+            // the commit's email address, and a bot's
+            // `ID+name[bot]@users.noreply.github.com` address can be set with
+            // `git config` like any other, so an unsigned commit can claim to be
+            // a bot. GitHub signs the commits it creates itself, through its web
+            // UI or its API, so Dependabot commits and bot commits made through
+            // the API pass the signature check without any exemption. A bot that
+            // pushes commits with plain git has to sign them like anyone else.
+            const isBot = (c) => c.author?.type === 'Bot';
+
+            // Merge commits are exempt from sign-off, not from signing. GitHub's
+            // "Update branch" and merge buttons author them with no `Signed-off-by`
+            // and give the clicker no way to add one, and a merge introduces no new
+            // authorship for the DCO to certify. They are still GitHub-signed, so
+            // the signature requirement below still applies to them.
+            const isMerge = (c) => (c.parents?.length ?? 0) > 1;
+
+            // Only the trailer block counts, matching `git interpret-trailers`:
+            // the last paragraph, and never a single-paragraph message. Scanning
+            // every line would accept a `Signed-off-by:` quoted in prose while git
+            // itself sees no trailer at all.
+            //
+            // Presence only, deliberately not matched against the commit author's
+            // email. GitHub hands out `NNN+user@users.noreply.github.com` aliases,
+            // so a contributor who signs off with their real address trips an
+            // author/trailer mismatch through no fault of their own. Flagging that
+            // is noise, and a check people learn to ignore enforces nothing.
+            const hasSignOff = (message) => {
+              const paragraphs = (message ?? '')
+                .replace(/\r/g, '')
+                .split(/\n[ \t]*\n/)
+                .filter((p) => p.trim().length > 0);
+              if (paragraphs.length < 2) return false;
+              // Anchored at column 0 and the paragraph is not trimmed: git does not
+              // treat an indented line as a trailer, so neither may this.
+              return paragraphs[paragraphs.length - 1]
+                .split('\n')
+                .some((line) => /^Signed-off-by:\s*.+<.+>\s*$/i.test(line));
+            };
+
+            // Commit subjects are contributor-controlled and land in a Markdown
+            // table posted by this workflow. Escape what would break the table
+            // or render as HTML, and defuse @-mentions so a subject cannot make
+            // the bot ping arbitrary users.
+            const cell = (s) =>
+              String(s)
+                .trim()
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\|/g, '\\|')
+                .replace(/@/g, '@&#8203;');
+
+            const violations = [];
+            for (const c of commits) {
+              const problems = [];
+
+              if (CHECK_SIGN_OFF && !isBot(c) && !isMerge(c) && !hasSignOff(c.commit.message)) {
+                problems.push('no `Signed-off-by` trailer (`git commit -s`)');
+              }
+
+              if (c.commit.verification?.verified !== true) {
+                const reason = c.commit.verification?.reason ?? 'unknown';
+                problems.push(`signature not verified: \`${reason}\` (\`git commit -S\`)`);
+              }
+
+              if (problems.length > 0) {
+                violations.push({
+                  sha: c.sha,
+                  subject: (c.commit.message ?? '').split('\n')[0],
+                  problems,
+                });
+              }
+            }
+
+            // Match the author as well as the marker. MARKER is an HTML comment, so
+            // anyone can paste it into a comment of their own; keying on the body
+            // alone would make a later run edit that comment instead of this
+            // workflow's, and the job holds `pull-requests: write`.
+            const existing = (
+              await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: number, per_page: 100,
+              })
+            ).find(
+              (comment) =>
+                comment.user?.login === 'github-actions[bot]' && comment.body?.includes(MARKER),
+            );
+
+            const upsert = async (body) => {
+              const full = `${MARKER}\n${body}`;
+              if (existing) {
+                // Every later run on a clean pull request would otherwise rewrite
+                // the same success note and bump its "edited" time.
+                if (existing.body === full) return;
+                await github.rest.issues.updateComment({
+                  owner, repo, comment_id: existing.id, body: full,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: number, body: full,
+                });
+              }
+            };
+
+            const NOT_REQUIRED_YET =
+              'This check is not yet a required status check, so it does not block the merge on its own, but every commit is still expected to be signed before a maintainer merges.';
+
+            if (truncated) {
+              await upsert([
+                '### ⚠️ Could not check every commit',
+                '',
+                `GitHub returned ${commits.length} of this pull request's ${expectedCommits} commits, so the ${CHECK_NAME} is incomplete and is not reporting a pass.`,
+                '',
+                `The pull request commits endpoint returns at most ${LIST_COMMITS_CAP} commits. Splitting this into smaller pull requests, or rebasing to reduce the commit count, lets the check cover everything.`,
+                '',
+                `The requirements themselves are unchanged and are described in [CONTRIBUTING.md](${CONTRIBUTING}).`,
+              ].join('\n'));
+              core.setFailed(
+                `Commit list truncated: got ${commits.length} of ${expectedCommits} commits.`,
+              );
+              return;
+            }
+
+            if (violations.length === 0) {
+              core.info(`All ${commits.length} commit(s) are ${REQUIRED}.`);
+              if (existing) {
+                await upsert(`✅ Every commit on this pull request is now ${REQUIRED}. Thanks!`);
+              }
+              return;
+            }
+
+            // The head ref is attacker-chosen and lands in bash blocks a maintainer
+            // is invited to copy-paste. `git check-ref-format` permits `;`, `$(...)`,
+            // backticks, `&&` and `|` in a branch name, so this must be quoted.
+            const shellQuote = (v) => "'" + String(v).replace(/'/g, "'\\''") + "'";
+            const headRef = shellQuote(context.payload.pull_request.head.ref);
+
+            const rows = violations
+              .map((v) => `| \`${v.sha.slice(0, 8)}\` | ${cell(v.subject)} | ${v.problems.join('<br>')} |`)
+              .join('\n');
+
+            const scope = CHECK_SIGN_OFF
+              ? ''
+              : ' This check covers the signature; the `DCO` check covers the sign-off.';
+
+            await upsert([
+              CHECK_SIGN_OFF
+                ? '### ❌ Some commits are missing a sign-off or a signature'
+                : '### ❌ Some commits are not signed',
+              '',
+              'Every commit in this repository must be **signed off** (`-s`, the [DCO](https://developercertificate.org/) certification that you wrote the patch) **and cryptographically signed** (`-S`, proving the commit came from you). They are independent; you need both, on every commit.' + scope,
+              '',
+              '| Commit | Subject | Problem |',
+              '| --- | --- | --- |',
+              rows,
+              '',
+              '<details>',
+              '<summary>How to fix</summary>',
+              '',
+              'One-time setup, so `-S` is automatic from here on:',
+              '',
+              '```bash',
+              '# Commit identity, used in the Signed-off-by trailer.',
+              '# Use an address GitHub has verified on your account.',
+              'git config user.name "Your Name"',
+              'git config user.email "your.email@example.com"',
+              '',
+              '# Signing key, registered on GitHub as a signing key. For SSH:',
+              'git config gpg.format ssh',
+              'git config user.signingkey ~/.ssh/id_ed25519.pub',
+              '# For GPG instead, skip gpg.format and use your key ID:',
+              '# git config user.signingkey <key-id>',
+              '',
+              '# Sign every commit from now on',
+              'git config commit.gpgsign true',
+              '```',
+              '',
+              'The key must also be registered with GitHub: see [generating a GPG or SSH signing key](https://docs.github.com/en/authentication/managing-commit-signature-verification).',
+              '',
+              'To fix the most recent commit:',
+              '',
+              '```bash',
+              'git commit --amend -s -S --no-edit',
+              'git push --force-with-lease origin ' + headRef,
+              '```',
+              '',
+              `To fix every commit on the branch at once. Below, \`origin/main\` means ${owner}/${repo}'s \`main\`, fetched first with \`git fetch origin\`. On a fork, where \`origin\` is your fork, run \`git fetch upstream\` and use \`upstream/main\` instead (add the remote once with \`git remote add upstream https://github.com/${owner}/${repo}.git\` if it is missing).`,
+              '',
+              'Fetch the base and check for merge commits first, because a plain rebase drops them:',
+              '',
+              '```bash',
+              'git fetch origin   # on a fork: git fetch upstream, and use upstream/main below',
+              'git log --oneline --merges origin/main..HEAD   # empty output means linear',
+              '',
+              '# Linear branch:',
+              "git rebase --keep-base --exec 'git commit --amend -s -S --no-edit' origin/main",
+              '',
+              '# Branch with merge commits, preserving them:',
+              "git rebase --keep-base --rebase-merges --exec 'git commit --amend -s -S --no-edit' origin/main",
+              '```',
+              '',
+              '`--rebase-merges` recreates each merge rather than copying it: conflicts resolved in the original merge must be resolved again, and any other manual change made in a merge commit is lost.',
+              '',
+              '`--keep-base` (Git 2.24 or later) re-signs the commits where they are instead of moving them onto the latest `main`, so the rewrite should change nothing but the signatures. Confirm that before pushing; this must print nothing:',
+              '',
+              '```bash',
+              'git diff @{u} HEAD',
+              '```',
+              '',
+              'For a per-commit view that includes merge commits, use `git range-diff --diff-merges=remerge @{u}...HEAD` (Git 2.48 or later); without `--diff-merges`, `git range-diff` skips merges.',
+              '',
+              'Then push:',
+              '',
+              '```bash',
+              'git push --force-with-lease origin ' + headRef,
+              '```',
+              '',
+              'Re-signing rewrites every commit, which outdates inline review comments. If the PR is already under review, leave a note saying you force-pushed.',
+              '',
+              '</details>',
+              '',
+              `Full details are in [CONTRIBUTING.md](${CONTRIBUTING}). ${NOT_REQUIRED_YET}`,
+            ].join('\n'));
+
+            core.setFailed(
+              `${violations.length} of ${commits.length} commit(s) are not ${REQUIRED}.`,
+            );

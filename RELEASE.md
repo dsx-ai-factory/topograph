@@ -85,7 +85,7 @@ Prepare every release candidate on the release branch.
    version. Omit the `v` prefix and include the candidate number, such as
    `1.2.0-rc.1`. Leave `appVersion` unchanged for now.
 
-   Run the [quality gates](#quality-gates), commit with DCO sign-off, and open a
+   Run the [quality gates](#quality-gates), commit with DCO sign-off and a signature (`git commit -s -S`), and open a
    pull request targeting `release-1.2`. Merge it after review and required CI
    checks pass.
 
@@ -144,7 +144,8 @@ branch for an official release.
    - Add or update the comparison link for the release.
 
 4. Run the [quality gates](#quality-gates), commit the changes with DCO
-   sign-off, push the preparation branch, and create a pull request targeting
+   sign-off and a signature (`git commit -s -S`), push the preparation branch,
+   and create a pull request targeting
    `release-1.2`.
 
 5. Merge the release pull request after review and required CI checks pass. Do
@@ -242,7 +243,7 @@ All releases must pass:
 - Helm lint and chart tests through `make chart-test`
 - Required GitHub CI checks on the release pull request
 - Review of `CHANGELOG.md` for complete, user-facing release notes
-- DCO sign-off verification for every commit
+- DCO sign-off and verified signature on every commit
 - Successful SLSA provenance generation for every published artifact
 
 ## Release verification
