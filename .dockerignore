@@ -1,0 +1,41 @@
+# Keep .git in the build context: the Makefile reads the tag, branch, or commit
+# from it to stamp the binary version. Only untracked local output and scratch
+# files are listed here, so the build does not see a dirty work tree.
+# tests/ must stay: the binaries embed tests/models.
+
+# Build output from make build and go build ./cmd/... (patterns are relative
+# to the context root, so these do not match cmd/topograph and friends)
+bin/
+topograph
+node-observer
+node-data-broker
+kwok-nodes
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Generated certificates (make ssl) and local development scratch
+ssl/
+localdev/
+
+# deb and rpm packaging output (make deb, make rpm); other files under deb/
+# and rpmbuild/ are tracked
+deb/topograph/DEBIAN/control
+deb/topograph/usr/local/bin/
+deb/topograph/etc/topograph/
+deb/topograph/lib/
+rpmbuild/BUILD/
+rpmbuild/BUILDROOT/
+rpmbuild/RPMS/
+rpmbuild/SOURCES/
+rpmbuild/SPECS/
+rpmbuild/SRPMS/
+
+# Chainsaw CLI downloaded by demos/tas-lab/setup/chainsaw.sh
+demos/tas-lab/.bin/
+
+# Editor and agent scratch
+.vscode/
+.idea/
+.claude/worktrees/

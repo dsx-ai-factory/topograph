@@ -150,10 +150,16 @@ require maintainer coordination first — see
 ## Building Container Images
 
 ```bash
-make image-build     # builds ghcr.io/dsx-ai-factory/topograph:<current-branch> for host OS/arch
+make image-build     # builds ghcr.io/dsx-ai-factory/topograph:<version> for host OS/arch
 make image-push       # image-build, then docker push
 make docker-buildx    # multi-platform build (linux/arm64,linux/amd64) and push via buildx
 ```
+
+`<version>` is `GIT_REF`, the same value stamped into the binaries' `--version`
+output (see the comment above `GIT_REF` in the `Makefile`): the `vX.Y.Z` tag
+at `HEAD` (`vX.Y.Z-dirty` when tracked files are modified), else the current
+branch name, else the short commit SHA, else `unknown` when no git metadata is
+available. Pass `GIT_REF=...` to set it.
 
 Override the target/tag with `IMAGE_REPO` and `IMAGE_TAG`, e.g.:
 
@@ -161,12 +167,25 @@ Override the target/tag with `IMAGE_REPO` and `IMAGE_TAG`, e.g.:
 IMAGE_REPO=ghcr.io/myuser/topograph IMAGE_TAG=dev make image-build
 ```
 
+Release images are published by the Docker workflow. On a release tag
+checkout, `make image-push` and `make docker-buildx` therefore refuse to push a
+default `v*` tag to `ghcr.io/dsx-ai-factory/topograph`; set `IMAGE_TAG`
+explicitly or push to another `IMAGE_REPO`.
+
 ## Packaging (Slurm deb/rpm)
 
 ```bash
-make deb    # ARCH=$(GOARCH) scripts/build-deb.sh <git-ref> <package-revision>
-make rpm    # ARCH=$(GOARCH) scripts/build-rpm.sh <git-ref> <package-revision>
+make deb    # ARCH=$(GOARCH) scripts/build-deb.sh <version> <package-revision>
+make rpm    # ARCH=$(GOARCH) scripts/build-rpm.sh <version> <package-revision>
 ```
+
+The package version is the same `GIT_REF` value as the default image tag,
+normalized
+by `scripts/build-deb.sh` and `scripts/build-rpm.sh` (for example, the leading
+`v` is dropped). When no git metadata is available (for example a source
+tarball) it is `unknown` and `make` prints a warning; build from a tag
+checkout or pass `GIT_REF=vX.Y.Z`. `PACKAGE_REVISION` sets the optional
+package release.
 
 ## CI Parity
 
