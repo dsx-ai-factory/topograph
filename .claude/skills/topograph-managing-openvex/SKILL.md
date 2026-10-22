@@ -271,8 +271,13 @@ On every change to the document, bump `version` (integer, monotonic) and set
 
 A wrong ID, a wrong product, a qualifier for the other platform, or a status
 typo all produce a document that reads correctly and suppresses nothing. The
-only check is a scan with and without the document. Build the image the way CI
-does, with a `topograph:` name so the product matches:
+only check is to scan the same image with the document as it was before your
+edit and as it is after, and compare what each one suppressed. Comparing
+against a scan with no document at all would also count every older statement,
+so the difference would not isolate your change.
+
+Build the image the way CI does, with a `topograph:` name so the product
+matches:
 
 ```bash
 docker build --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 \
@@ -281,24 +286,45 @@ docker save topograph:local -o topograph-amd64.tar
 
 # Use the grype-version pinned in the workflow's scan step.
 grype --version
-COUNT='[.matches[] | select(.vulnerability.severity | ascii_downcase | IN("high","critical"))] | length'
-grype docker-archive:topograph-amd64.tar -c .grype.yaml --only-fixed -o json > before.json
-grype docker-archive:topograph-amd64.tar -c .grype.yaml --only-fixed \
-  --vex .openvex.json -o json > after.json
-echo "before=$(jq "$COUNT" before.json) after=$(jq "$COUNT" after.json)"
 
-# The new ID must appear here, applied by the vex namespace.
-jq -r '.ignoredMatches[]?
-  | select((.appliedIgnoreRules // []) | any(.namespace == "vex"))
-  | "\(.vulnerability.id)\t\(.artifact.name)@\(.artifact.version)"' after.json
+# The document before your edit: the PR base. Before you have committed the
+# edit, `git show HEAD:.openvex.json` is the same thing.
+git show "$(git merge-base HEAD origin/main)":.openvex.json > openvex-base.json
+
+scan() {
+  grype docker-archive:topograph-amd64.tar -c .grype.yaml --only-fixed \
+    --vex "$1" -o json > "$2"
+}
+scan openvex-base.json before.json
+scan .openvex.json after.json
+
+# Rows each document suppressed, as "<id> <package>@<version>".
+VEXED='[.ignoredMatches[]?
+        | select((.appliedIgnoreRules // []) | any(.namespace == "vex"))
+        | "\(.vulnerability.id) \(.artifact.name)@\(.artifact.version)"]
+       | unique[]'
+diff <(jq -r "$VEXED" before.json) <(jq -r "$VEXED" after.json)
+
+# The new statement's ID must no longer be reported at all.
+ID='<vulnerability.name of the new statement>'
+jq --arg id "$ID" '[.matches[] | select(.vulnerability.id == $id)] | length' after.json
 ```
 
-`after` must be lower than `before` by exactly the number of matches the new
-statement covers. One statement can cover several rows, for example the same CVE
-in two Alpine packages, so predict the row count first. If nothing moved,
-suspect the ID, then the subcomponent purl, then the product. Repeat for arm64
-(`--platform linux/arm64`, `TARGETARCH=arm64`) whenever the finding is an
-Alpine package. Do not merge a statement that has not moved the count.
+Read the result:
+
+- `diff` prints a `>` line for every row the edit newly suppresses. There must
+  be one for each package the new statement's subcomponents name, carrying the
+  statement's ID, and nothing else. One statement can cover several rows, for
+  example the same CVE in two Alpine packages, so predict the rows first.
+- A `<` line is a row that is no longer suppressed. That is expected only for a
+  statement you deliberately removed or whose subcomponent version you changed;
+  anything else means the edit broke an existing statement.
+- The final count must be `0`.
+
+If no `>` line appears, the statement matched nothing: suspect the ID, then the
+subcomponent purl, then the product. Repeat for arm64 (`--platform
+linux/arm64`, `TARGETARCH=arm64`) whenever the finding is an Alpine package. Do
+not merge a statement that has not produced its rows.
 
 `GRYPE_DB_VALIDATE_AGE=false` lets Grype run against an old local database
 when its update host is unreachable, for example in a sandbox. It is local only
