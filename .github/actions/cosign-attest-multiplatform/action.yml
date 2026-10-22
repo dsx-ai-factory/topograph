@@ -1,0 +1,265 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Sign a multi-platform image index and attest per-platform evidence to it.
+#
+# Each piece of evidence hangs on the subject it is true about:
+#
+#   Evidence          Subject                   Published by
+#   ----------------  ------------------------  ------------------------------
+#   cosign signature  Index digest              this action
+#   SLSA provenance   Index digest              the caller's actions/attest step
+#   CycloneDX SBOM    Each platform manifest    this action
+#   OpenVEX           Each platform manifest    this action, when the repository
+#                                               has a .openvex.json
+#
+# A signature and a provenance statement describe the artifact as a whole, and
+# the index is what users pull. An SBOM or a VEX document describes exactly one
+# root filesystem, and linux/amd64 and linux/arm64 do not share one, so neither
+# would be true if attached to the index.
+#
+# Every SBOM and VEX document is generated and validated before anything is
+# published, and the index signature is published last, after every
+# attestation. A failure at any point therefore leaves the index unsigned
+# rather than signed with gaps.
+#
+# Requirements on the calling job:
+#   - cosign v3.1.0 or later on PATH (sigstore/cosign-installer). Up to v3.0.6,
+#     `cosign attest` labels every referrer with the predicate type
+#     https://sigstore.dev/cosign/sign/v1, so SBOM and VEX attestations cannot
+#     be told apart in a referrers listing.
+#   - docker with buildx, jq, and coreutils `timeout`.
+#   - A registry login that can push to the image (docker/login-action), and
+#     `id-token: write` for keyless signing.
+#
+# GHCR does not implement the OCI referrers API, so cosign stores each
+# signature and attestation through the referrers tag fallback: an index tagged
+# `sha256-<subject hex>` that lists the bundle manifests. cosign and oras read
+# it transparently; see cleanup-untagged-images.yml for why the retention job
+# keeps them.
+
+name: Cosign attest multi-platform image
+description: >-
+  Sign a multi-platform image index with keyless cosign and attest a CycloneDX
+  SBOM, and the repository's OpenVEX document when present, to each platform
+  manifest.
+
+inputs:
+  image-name:
+    description: Lowercase OCI repository without tag or digest, for example ghcr.io/dsx-ai-factory/topograph.
+    required: true
+  index-digest:
+    description: Digest of the multi-platform image index, sha256:<64 hex>.
+    required: true
+  platforms:
+    description: >-
+      Comma-separated platforms the index must contain, exactly. A platform in
+      the index that is not listed here fails the action, so it cannot be
+      released without an SBOM.
+    required: false
+    default: linux/amd64,linux/arm64
+  syft-version:
+    description: Syft release used to generate the SBOMs.
+    required: false
+    default: v1.54.1
+  openvex-file:
+    description: >-
+      OpenVEX document, relative to the workspace. When the file does not
+      exist the VEX attestation is skipped with a notice.
+    required: false
+    default: .openvex.json
+
+outputs:
+  platform-digests:
+    description: Space-separated <platform>=<digest> pairs that evidence was attested to.
+    value: ${{ steps.platforms.outputs.platform-digests }}
+  openvex-attested:
+    description: '"true" when an OpenVEX attestation was published for every platform, otherwise "false".'
+    value: ${{ steps.evidence.outputs.openvex-attested }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs and tools
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        INDEX_DIGEST: ${{ inputs.index-digest }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! "${IMAGE_NAME}" =~ ^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+$ ]]; then
+          echo "::error::image-name must be a lowercase repository with no tag or digest, got '${IMAGE_NAME}'"
+          exit 1
+        fi
+        if [[ ! "${INDEX_DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+          echo "::error::index-digest must be sha256:<64 hex>, got '${INDEX_DIGEST}'"
+          exit 1
+        fi
+
+        for tool in cosign docker jq timeout; do
+          if ! command -v "${tool}" >/dev/null; then
+            echo "::error::${tool} is not installed on this runner"
+            exit 1
+          fi
+        done
+
+        version="$(cosign version --json 2>/dev/null | jq -r '.gitVersion // empty')"
+        floor="v3.1.0"
+        if [[ -z "${version}" ]] || [[ "$(printf '%s\n%s\n' "${floor}" "${version}" | sort -V | head -n1)" != "${floor}" ]]; then
+          echo "::error::cosign ${version:-<unknown>} is older than ${floor}; see the requirements at the top of this action"
+          exit 1
+        fi
+        echo "Using cosign ${version}"
+
+    - name: Install Syft
+      id: syft
+      uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      with:
+        syft-version: ${{ inputs.syft-version }}
+
+    - name: Resolve platform manifests
+      id: platforms
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        INDEX_DIGEST: ${{ inputs.index-digest }}
+        PLATFORMS: ${{ inputs.platforms }}
+      run: |
+        set -euo pipefail
+        # shellcheck source=.github/actions/oci-platform-digests.sh
+        source "${GITHUB_ACTION_PATH}/../oci-platform-digests.sh"
+
+        resolved="$(resolve_platform_digests "${IMAGE_NAME}" "${INDEX_DIGEST}" "${PLATFORMS}")"
+        pairs=""
+        while read -r platform digest; do
+          echo "${platform} -> ${digest}"
+          pairs+="${platform}=${digest} "
+        done <<<"${resolved}"
+        echo "platform-digests=${pairs% }" >> "${GITHUB_OUTPUT}"
+
+    - name: Generate and validate per-platform evidence
+      id: evidence
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        INDEX_DIGEST: ${{ inputs.index-digest }}
+        PLATFORM_DIGESTS: ${{ steps.platforms.outputs.platform-digests }}
+        OPENVEX_FILE: ${{ inputs.openvex-file }}
+        SYFT: ${{ steps.syft.outputs.cmd }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "${SYFT}" ]]; then
+          echo "::error::the Syft installer did not report a command"
+          exit 1
+        fi
+
+        # Keyed by index digest so two images attested in one job cannot
+        # overwrite each other's evidence.
+        evidence_dir="${RUNNER_TEMP}/cosign-evidence/${INDEX_DIGEST#sha256:}"
+        mkdir -p "${evidence_dir}"
+        echo "evidence-dir=${evidence_dir}" >> "${GITHUB_OUTPUT}"
+
+        vex_source="${GITHUB_WORKSPACE}/${OPENVEX_FILE}"
+        if [[ -f "${vex_source}" ]]; then
+          openvex=true
+        else
+          openvex=false
+          echo "::notice::${OPENVEX_FILE} does not exist; skipping the OpenVEX attestation"
+        fi
+        echo "openvex-attested=${openvex}" >> "${GITHUB_OUTPUT}"
+
+        for pair in ${PLATFORM_DIGESTS}; do
+          platform="${pair%%=*}"
+          digest="${pair#*=}"
+          slug="${platform//\//-}"
+
+          # `registry:` makes Syft read the pushed manifest from the registry.
+          # Without a scheme it tries the local Docker daemon first, which on an
+          # amd64 runner cannot honestly hand back the arm64 root filesystem.
+          # The CycloneDX version is pinned because Syft's default moves with
+          # its releases (1.7 at the time of writing).
+          sbom_file="${evidence_dir}/${slug}.cyclonedx.json"
+          timeout --foreground 600s \
+            "${SYFT}" scan "registry:${IMAGE_NAME}@${digest}" \
+            -o "cyclonedx-json@1.6=${sbom_file}"
+
+          # `cosign attest --type cyclonedx` labels whatever it is given as a
+          # CycloneDX SBOM, so the format is asserted before anything is signed.
+          # The component check ties the SBOM to the manifest it is attested
+          # to; Syft records the scanned manifest digest as the version of the
+          # top-level container component.
+          if ! jq -e --arg digest "${digest}" '
+              .bomFormat == "CycloneDX"
+              and .specVersion == "1.6"
+              and .metadata.component.type == "container"
+              and .metadata.component.version == $digest
+            ' "${sbom_file}" >/dev/null; then
+            echo "::error::${sbom_file} is not a CycloneDX 1.6 SBOM of ${IMAGE_NAME}@${digest}:"
+            jq -c '{bomFormat, specVersion, component: .metadata.component}' "${sbom_file}" || true
+            exit 1
+          fi
+          echo "${platform}: CycloneDX 1.6 SBOM with $(jq '.components | length' "${sbom_file}") components"
+
+          if [[ "${openvex}" == "true" ]]; then
+            "${GITHUB_ACTION_PATH}/bind-openvex.sh" \
+              "${vex_source}" \
+              "${evidence_dir}/${slug}.openvex.json" \
+              "${IMAGE_NAME##*/}" \
+              "${digest}"
+          fi
+        done
+
+    # --new-bundle-format is passed on every call so the on-registry layout
+    # (OCI referrers, not legacy .sig/.att tags) is this repository's decision
+    # rather than an inherited default. cosign v3.1 logs a deprecation notice
+    # for the flag but still honours it. Every call is bounded by `timeout` so
+    # a hung registry or Sigstore request fails the job instead of stalling it.
+    - name: Attest per-platform SBOM and OpenVEX
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        PLATFORM_DIGESTS: ${{ steps.platforms.outputs.platform-digests }}
+        EVIDENCE_DIR: ${{ steps.evidence.outputs.evidence-dir }}
+        OPENVEX: ${{ steps.evidence.outputs.openvex-attested }}
+      run: |
+        set -euo pipefail
+
+        for pair in ${PLATFORM_DIGESTS}; do
+          platform="${pair%%=*}"
+          digest="${pair#*=}"
+          slug="${platform//\//-}"
+
+          timeout --foreground 120s cosign attest \
+            --yes \
+            --new-bundle-format=true \
+            --type cyclonedx \
+            --predicate "${EVIDENCE_DIR}/${slug}.cyclonedx.json" \
+            "${IMAGE_NAME}@${digest}"
+
+          if [[ "${OPENVEX}" == "true" ]]; then
+            timeout --foreground 120s cosign attest \
+              --yes \
+              --new-bundle-format=true \
+              --type openvex \
+              --predicate "${EVIDENCE_DIR}/${slug}.openvex.json" \
+              "${IMAGE_NAME}@${digest}"
+          fi
+        done
+
+    # The index signature is published last, after every attestation, so a
+    # run that fails part way leaves the index unsigned instead of signed with
+    # an SBOM or VEX document missing. A signature from this action is
+    # therefore evidence that the run published everything before it.
+    - name: Sign the index
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        INDEX_DIGEST: ${{ inputs.index-digest }}
+      run: |
+        set -euo pipefail
+        timeout --foreground 120s cosign sign \
+          --yes \
+          --new-bundle-format=true \
+          "${IMAGE_NAME}@${INDEX_DIGEST}"

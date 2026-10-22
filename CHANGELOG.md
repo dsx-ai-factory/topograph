@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The `nscale` provider's Slurm auto-discovery runs `pdsh` across the current Slurm node list and queries each node's own Instance Metadata Service (IMDS) for its server ID (`serverID`) and region, merging the results into the instance-to-node and node-to-region maps.
 - The `nscale` provider's Radar API topology response field is now read as `server_id` instead of `instance_id`, matching the IMDS `serverID` field it is merged with.
 - The `nscale` provider's `region` credential, when set, now restricts Slurm auto-discovery to nodes whose IMDS region (`regionID`) matches it; nodes with a different or missing IMDS region are excluded from the topology query and logged as a warning.
+- The container image index no longer includes BuildKit's unsigned provenance manifests (`unknown/unknown` platform entries): the Docker workflow builds with `provenance: false`. The signed SLSA provenance from GitHub artifact attestations is unchanged and is still verified with `gh attestation verify`, or with `cosign verify-attestation --type slsaprovenance1` on the index digest.
 
 ### Removed
 
@@ -44,6 +45,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   packages. Release workflows bind each artifact to its source commit and
   workflow using GitHub artifact attestations; container provenance is also
   published to GHCR alongside the image.
+- Release container images (`vX.Y.Z` tags and release candidates built from
+  `release-X.Y` branches) are signed with keyless Sigstore cosign, and each
+  platform manifest carries a CycloneDX 1.6 SBOM and the OpenVEX document
+  (`.openvex.json`, when present) as signed attestations. The Docker workflow
+  verifies them before it succeeds. `SECURITY.md` documents the
+  `cosign verify` commands and a policy-controller `ClusterImagePolicy`.
 - Crusoe provider now derives accelerator domains from `nvidia.com/gpu.clique`, so `topology/block` renders one Slurm block per distinct clique value on rack-scale NVLink systems. The domain is the clique verbatim, matching how the InfiniBand and Lambda AI providers publish theirs. That value is the NVL Partition, which can be finer than the physical NVL Domain when one rack is split into several cliques. The InfiniBand partition is deliberately not used as a fallback domain: a partition can span many racks while a clique cannot, so keying blocks on the partition would let Slurm spread one job across racks and fall back to InfiniBand. Nodes without the clique label get no accelerator domain and are scheduled by the switch tree alone, leaving existing GPU classes unchanged.
 - Crusoe provider (`crusoe`) and its simulation variant (`crusoe-sim`) discover the InfiniBand switch fabric on Crusoe Cloud from the `crusoe.ai/ib.partition.id` and `crusoe.ai/pod.id` Node labels the Crusoe control plane publishes. Crusoe compute is virtualized, so a guest VM cannot run `ibnetdiscover` and there is no per-node metadata service for switch identity. Fabric tiers are the rail-optimized pod, the InfiniBand partition, and a synthetic root above them. Nodes without those labels are placed under placeholder tiers beneath the same root, so one Slurm tree spans a heterogeneous cluster. Use it with `topology/tree`.
 - Shared optional provider parameter `imdsUrl` (`providers.GetIMDSURL`, `topology.KeyIMDSURL`) for overriding a provider's default Instance Metadata Service URL. Only the `nscale` provider consumes it so far, falling back to its built-in IMDS URL when unset.

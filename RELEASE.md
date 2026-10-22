@@ -92,7 +92,12 @@ Prepare every release candidate on the release branch.
 3. In GitHub, run the **Docker** workflow against `release-1.2`. The workflow
    publishes the Topograph container image with two tags: the release branch
    name and the short commit SHA. It also generates signed
-   SLSA provenance for the image and publishes it to GHCR.
+   SLSA provenance for the image and publishes it to GHCR, signs the image
+   index with cosign, attests a CycloneDX SBOM to each platform manifest
+   (and the OpenVEX document, when `.openvex.json` exists), and verifies all
+   of it before the run succeeds.
+   Only a dispatch from a `release-X.Y` branch is signed; a dispatch from any
+   other branch publishes the image and its provenance only.
 
 4. Set `appVersion` in `charts/topograph/Chart.yaml` to the short commit SHA
    produced in the previous step. Submit this change through another reviewed
@@ -172,7 +177,9 @@ branch for an official release.
      SHA-256 checksum, publishes both files to the Helm repository, and creates
      the GitHub release with both files attached.
    - **Docker** publishes the multi-architecture container image and its signed
-     SLSA provenance.
+     SLSA provenance, signs the image with cosign, attests a CycloneDX SBOM
+     (and the OpenVEX document, when `.openvex.json` exists) to each platform
+     manifest, and verifies the signature and every attestation.
    - **Publish Fern Docs** publishes the versioned documentation.
 
 8. Complete the [release verification](#release-verification) after all three
@@ -192,7 +199,7 @@ flowchart TD
     A[main] -->|Cut at first RC| B[release-X.Y]
     A --> C[Next-release development]
     B --> D[RC preparation PR<br/>X.Y.0-rc.N]
-    D --> E[Docker workflow<br/>image and provenance]
+    D --> E[Docker workflow<br/>image, provenance,<br/>signature, SBOM, VEX]
     E --> F[Set appVersion<br/>to short SHA]
     F --> G[Release Helm Charts<br/>package and provenance]
     G --> H[Release-candidate<br/>test cycle]
@@ -205,7 +212,7 @@ flowchart TD
     M -->|Approved backports| N[Patch preparation PR]
     N --> O[Tag merged commit<br/>vX.Y.Z]
     L --> P[Release workflow<br/>chart, checksum, provenance]
-    L --> Q[Docker workflow<br/>image and provenance]
+    L --> Q[Docker workflow<br/>image, provenance,<br/>signature, SBOM, VEX]
     L --> R[Publish Fern Docs<br/>versioned documentation]
     O --> P
     O --> Q
@@ -233,6 +240,9 @@ An official release publishes:
   checksum attached
 - Versioned documentation generated from the release tag
 - Signed SLSA build provenance for the container image and Helm chart package
+- A keyless cosign signature on the container image index
+- A CycloneDX SBOM, and the OpenVEX document when `.openvex.json` exists,
+  attested with cosign to each platform manifest of the container image
 
 ## Quality gates
 
@@ -244,6 +254,8 @@ All releases must pass:
 - Review of `CHANGELOG.md` for complete, user-facing release notes
 - DCO sign-off verification for every commit
 - Successful SLSA provenance generation for every published artifact
+- Successful cosign signing and verification of the container image, its
+  SBOMs, and its OpenVEX attestations when `.openvex.json` exists
 
 ## Release verification
 
@@ -269,6 +281,39 @@ gh attestation verify oci://ghcr.io/dsx-ai-factory/topograph:v1.2.0 \
   --signer-workflow dsx-ai-factory/topograph/.github/workflows/docker.yml \
   --source-ref refs/tags/v1.2.0
 ```
+
+Verify the container image's cosign signature, SBOMs, and OpenVEX
+attestations. Which digest carries which evidence is explained in
+[SECURITY.md](./SECURITY.md#container-image-signature-sbom-and-openvex). Use
+the exact identity of the release you are checking, so the image behind the
+tag is bound to that release's workflow run. For a release candidate, replace
+the tag with the short commit SHA tag and the identity's ref with
+`refs/heads/release-1.2`. Drop `openvex` from the loop for an image built
+before `.openvex.json` was added:
+
+```bash
+IMAGE=ghcr.io/dsx-ai-factory/topograph
+ISSUER=https://token.actions.githubusercontent.com
+IDENTITY=https://github.com/dsx-ai-factory/topograph/.github/workflows/docker.yml@refs/tags/v1.2.0
+INDEX=$(crane digest "$IMAGE:v1.2.0")
+
+cosign verify --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity "$IDENTITY" "$IMAGE@$INDEX"
+cosign verify-attestation --type slsaprovenance1 --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity "$IDENTITY" "$IMAGE@$INDEX" > /dev/null
+for PLATFORM in linux/amd64 linux/arm64; do
+  DIGEST=$(crane digest --platform "$PLATFORM" "$IMAGE@$INDEX")
+  for TYPE in cyclonedx openvex; do
+    cosign verify-attestation --type "$TYPE" --certificate-oidc-issuer "$ISSUER" \
+      --certificate-identity "$IDENTITY" "$IMAGE@$DIGEST" > /dev/null
+  done
+done
+```
+
+The Docker workflow's own verification step, and the admission policy sample
+in SECURITY.md, use a regular expression that accepts any `vX.Y.Z` tag or
+`release-X.Y` branch instead, because they accept every release rather than
+check one.
 
 Download the Helm chart and verify its SLSA provenance:
 
@@ -322,6 +367,10 @@ Also confirm that:
 ### Failed provenance generation
 
 - Review the **Generate SLSA provenance** step in the publishing workflow.
+- The container image's signed provenance comes only from that step. The
+  Docker build runs with BuildKit provenance turned off (`provenance: false`),
+  so the image index lists only the `linux/amd64` and `linux/arm64` manifests
+  and no `unknown/unknown` attestation entries. Their absence is expected.
 - For container provenance, confirm that the Docker job grants the following:
   `packages: write`, `id-token: write`, `attestations: write`, and
   `artifact-metadata: write`.
@@ -331,3 +380,25 @@ Also confirm that:
 - Retry the failed publishing workflow from the same tag. For **Release**, use
   the tag-bound manual dispatch command shown above so the new attestation still
   names `refs/tags/v1.2.0` as its source.
+
+### Failed image signing or verification
+
+- Review the **Sign the image and attest SBOM and OpenVEX** and **Verify
+  signature and attestations** steps of the **Docker** workflow. They run only
+  for a `vX.Y.Z` tag and for a dispatch from a `release-X.Y` branch.
+- Signing is keyless and needs the job's `id-token: write` and
+  `packages: write` permissions.
+- The workflow's verification identity accepts only `docker.yml` on a
+  `vX.Y.Z` tag or a `release-X.Y` branch. A run from any other ref is not
+  signed, by design.
+- The attest step fails closed when the image index contains a platform other
+  than `linux/amd64` and `linux/arm64`, when an SBOM is not CycloneDX 1.6 for
+  the manifest it describes, or when `.openvex.json` names a product other
+  than `pkg:oci/topograph`. Fix the cause through a reviewed pull request.
+- Retry by dispatching **Docker** from the same tag or release branch, as
+  shown above. Every SBOM and VEX document is generated and validated before
+  anything is published, and the index is not signed until every attestation
+  has been published, so a failed run never leaves a signed index with
+  missing evidence. A failure part way through attesting can leave some
+  attestations on the platform manifests of an unsigned index; the retry
+  publishes a complete set.

@@ -28,9 +28,12 @@ updates:
           - "minor"
           - "patch"
 
-  # Actions referenced by the workflows under .github/workflows/.
+  # Actions referenced by the workflows under .github/workflows/ ("/") and by
+  # the composite actions under .github/actions/, which "/" does not scan.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
       day: "monday"

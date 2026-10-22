@@ -54,6 +54,27 @@ jobs:
       packages: write
 
     steps:
+      # What this keeps, checked against the v3.1.0 source
+      # (src/core/filter_out_multi_arch_children.rs, src/registry/client.rs):
+      #
+      # - Platform manifests of a multi-arch image. They are untagged, but
+      #   v3.1.0 fetches the manifest of every tagged version it keeps (with
+      #   tag-selection: untagged, that is every tagged version) and removes
+      #   the children of any image index from the deletion candidates. The
+      #   SBOM and OpenVEX attestations docker.yml publishes point at these
+      #   manifests, so they must survive.
+      # - Signatures and attestations. GHCR has no OCI referrers API, so cosign
+      #   and actions/attest store them through the referrers tag fallback: an
+      #   image index tagged `sha256-<subject hex>` whose children are the
+      #   untagged Sigstore bundle manifests. The `sha256-*` index is tagged, so
+      #   it is never selected, and its bundle manifests are protected as its
+      #   children by the same rule.
+      #
+      # The protection fails closed: if a manifest cannot be fetched, nothing is
+      # deleted from the package. Keep v3.1.0 or later, and do not switch
+      # tag-selection to `tagged` or `both` without excluding the `sha256-*`
+      # tags through `image-tags`, or the signatures and attestations become
+      # deletion candidates.
       - name: Delete stale untagged images
         uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
         with:
