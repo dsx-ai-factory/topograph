@@ -105,7 +105,17 @@ jobs:
             const current = (freshIssue.assignees || []).map(a => a.login);
 
             if (unassign) {
-              // Self-only: a commenter may only release their own claim.
+              // Self-only: a commenter may only release their own claim. A
+              // mention ("/unassign @someone") reads as naming someone else,
+              // so refuse it rather than silently releasing the commenter.
+              if (tokens.slice(1).some(t => t.includes('@'))) {
+                core.info(`Refusing /unassign with a named target: ${tokens.slice(1).join(' ')}`);
+                await github.rest.issues.createComment({
+                  ...common,
+                  body: `@${commenter} \`/unassign\` only releases your own claim and takes no user. Comment \`/unassign\` on its own to release yours; a maintainer can unassign someone else.`,
+                });
+                return;
+              }
               if (!current.includes(commenter)) {
                 core.info(`${commenter} is not assigned; nothing to unassign`);
                 await github.rest.issues.createComment({
