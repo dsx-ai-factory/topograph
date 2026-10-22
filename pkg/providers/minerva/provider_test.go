@@ -112,12 +112,12 @@ func TestGenerateTopologyConfig(t *testing.T) {
 
 	pageSize := 50
 	cis := []topology.ComputeInstances{
-		{Instances: map[string]string{"i-01": "node-01", "i-02": "node-02", "i-03": "node-03"}},
+		{Instances: map[string]string{"i-01": "srv-01", "i-02": "srv-02", "i-03": "srv-03"}},
 	}
 	graph, httpErr := p.GenerateTopologyConfig(context.Background(), &pageSize, cis)
 	require.Nil(t, httpErr)
 	require.NotNil(t, graph.Tiers)
-	require.Contains(t, graph.Tiers.Vertices, "d-0001")
+	require.Contains(t, graph.Tiers.Vertices, "ss1")
 
 	// server-side failure surfaces as an error, not a partial graph
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +159,7 @@ func TestGenerateOutputWithSlurmEngine(t *testing.T) {
 	}
 
 	cis := []topology.ComputeInstances{
-		{Instances: map[string]string{"i-01": "node-01", "i-02": "node-02", "i-03": "node-03"}},
+		{Instances: map[string]string{"i-01": "srv-01", "i-02": "srv-02", "i-03": "srv-03"}},
 	}
 	graph, httpErr := p.GenerateTopologyConfig(context.Background(), nil, cis)
 	require.Nil(t, httpErr)
@@ -167,12 +167,14 @@ func TestGenerateOutputWithSlurmEngine(t *testing.T) {
 	data, httpErr := slurm.GenerateOutput(context.Background(), graph, nil)
 	require.Nil(t, httpErr)
 
-	expected := `# spine-01=d-0001
-SwitchName=spine-01 Switches=leaf-[01-02]
-# leaf-01=d-1001
-SwitchName=leaf-01 Nodes=node-[01-02]
-# leaf-02=d-1002
-SwitchName=leaf-02 Nodes=node-03
+	expected := `# super-01=ss1
+SwitchName=super-01 Switches=p1-spine-01
+# p1-spine-01=p1-s1
+SwitchName=p1-spine-01 Switches=p1-leaf-[01-02]
+# p1-leaf-01=p1-l1
+SwitchName=p1-leaf-01 Nodes=srv-[01-02]
+# p1-leaf-02=p1-l2
+SwitchName=p1-leaf-02 Nodes=srv-03
 `
 	require.Equal(t, expected, string(data))
 }
