@@ -1,17 +1,28 @@
 /coverage.out
+/coverage.html
 /bin
 # Binaries built at the repo root by `go build ./cmd/...`
 /topograph
 /node-observer
 /node-data-broker
+/kwok-nodes
 /ssl
+# Developer-local scratch space; may hold real endpoints or tokens (see AGENTS.md)
+/localdev/
 /deb/topograph/DEBIAN/control
 /deb/topograph/usr/local/bin/
 /deb/topograph/etc/topograph/
 /deb/topograph/lib
-/rpmbuild
+# rpmbuild output from scripts/build-rpm.sh; rpmbuild/topograph.spec is tracked
+/rpmbuild/BUILD/
+/rpmbuild/BUILDROOT/
+/rpmbuild/RPMS/
+/rpmbuild/SOURCES/
+/rpmbuild/SPECS/
+/rpmbuild/SRPMS/
 # Chainsaw CLI downloaded by demos/tas-lab/setup/chainsaw.sh
 /demos/tas-lab/.bin/
+.idea/
 .vscode
 # Rendered chart and Checkov SARIF from the chart scan (.github/workflows/chart-scan.yaml)
 /rendered-chart/
