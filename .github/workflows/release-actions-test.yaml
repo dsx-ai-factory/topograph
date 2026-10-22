@@ -18,6 +18,8 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - ".github/actions/**"
+      # The tests check the identity regexp docker.yml passes to the verify action.
+      - ".github/workflows/docker.yml"
       - ".github/workflows/release-actions-test.yaml"
   workflow_dispatch:
 
@@ -47,6 +49,7 @@ jobs:
           shellcheck \
             .github/actions/oci-platform-digests.sh \
             .github/actions/cosign-attest-multiplatform/bind-openvex.sh \
+            .github/actions/cosign-verify-image/check-identity-regexp.sh \
             .github/actions/testdata/test.sh
 
       - name: Run fixture tests

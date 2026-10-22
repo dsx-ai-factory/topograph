@@ -4,8 +4,9 @@
 
 # Offline tests for the scripts the release signing actions run:
 #
-#   .github/actions/oci-platform-digests.sh               (platform resolution)
-#   .github/actions/cosign-attest-multiplatform/bind-openvex.sh  (VEX binding)
+#   .github/actions/oci-platform-digests.sh                       (platform resolution)
+#   .github/actions/cosign-attest-multiplatform/bind-openvex.sh   (VEX binding)
+#   .github/actions/cosign-verify-image/check-identity-regexp.sh  (identity anchoring)
 #
 # Nothing touches a registry. `docker` is replaced by a PATH shim that prints
 # a committed fixture from index/, and each case asserts the exit status and a
@@ -123,15 +124,43 @@ expect "projection products, subcomponents and @id" 0 "true" -- jq -e --arg boun
     and .statements[0].status == "not_affected"' "${work}/projection.json"
 expect "empty statements" 0 "Bound 0 OpenVEX statement(s)" -- bind "${testdata}/openvex/empty-statements.json"
 expect "empty statements stay empty" 0 "true" -- jq -e '.statements == []' "${work}/projection.json"
-expect "foreign product" 1 "statement 0 names a product other than pkg:oci/topograph" \
+expect "foreign product" 1 'statement 0 product 0 @id "pkg:oci/other-image" is not pkg:oci/topograph' \
   -- bind "${testdata}/openvex/foreign-product.json"
-expect "qualified purl" 1 "statement 0 names a product other than pkg:oci/topograph" \
+expect "qualified purl" 1 'statement 0 product 0 @id "pkg:oci/topograph?arch=amd64" is not pkg:oci/topograph' \
   -- bind "${testdata}/openvex/qualified-purl.json"
+expect "identifier other than purl" 1 "statement 0 product 0 identifiers has keys other than purl: cpe23" \
+  -- bind "${testdata}/openvex/extra-identifier.json"
+expect "identifiers.purl differs from @id" 1 \
+  'statement 0 product 0 identifiers.purl "pkg:oci/other-image" is not pkg:oci/topograph' \
+  -- bind "${testdata}/openvex/mismatched-purl.json"
+expect "missing vulnerability" 1 "statement 0 must set vulnerability.name to a non-empty string" \
+  -- bind "${testdata}/openvex/missing-vulnerability.json"
+expect "missing status" 1 "statement 0 status null is not one of not_affected, affected, fixed, under_investigation" \
+  -- bind "${testdata}/openvex/missing-status.json"
+expect "unknown status" 1 'statement 0 status "not_vulnerable" is not one of' \
+  -- bind "${testdata}/openvex/unknown-status.json"
+expect "not_affected without justification or impact statement" 1 \
+  "statement 0 is not_affected and needs a justification or an impact_statement" \
+  -- bind "${testdata}/openvex/not-affected-unjustified.json"
+expect "affected without action statement" 1 "statement 0 is affected and needs an action_statement" \
+  -- bind "${testdata}/openvex/affected-without-action.json"
 expect "valid JSON, wrong shape" 1 "must be a single JSON object whose statements field is an array" \
   -- bind "${testdata}/openvex/wrong-shape.json"
 expect "invalid JSON" 1 "is not valid JSON" -- bind "${testdata}/openvex/not-json.json"
 expect "malformed digest" 1 "platform digest must be sha256:<64 hex>" \
   -- bind "${testdata}/openvex/good.json" sha256:abc
+
+echo "== check-identity-regexp.sh"
+check_re() { "${actions}/cosign-verify-image/check-identity-regexp.sh" "$1"; }
+docker_identity="$(sed -n "s/^ *certificate-identity-regexp: '\(.*\)'\$/\1/p" "${actions}/../workflows/docker.yml")"
+expect "docker.yml identity regexp is read" 0 "docker" -- printf '%s' "${docker_identity}"
+expect "docker.yml identity regexp passes" 0 "" -- check_re "${docker_identity}"
+expect "alternation inside a group passes" 0 "" -- check_re '^https://example\.com/(a|b)$'
+expect "unanchored fails" 1 "must start with ^" -- check_re 'https://github\.com/dsx-ai-factory/topograph/'
+expect "top-level alternation fails" 1 "has a top-level |" -- check_re '^a|b$'
+expect "missing \$ fails" 1 'must end with $' -- check_re '^https://github\.com/dsx-ai-factory/topograph/.*'
+expect "escaped final \$ fails" 1 'must end with an unescaped $' -- check_re '^https://example\.com/a\$'
+expect "unbalanced group fails" 1 "has an unbalanced (" -- check_re '^a(b|c$'
 
 echo "${cases} cases, ${failures} failed"
 [[ "${failures}" -eq 0 ]]

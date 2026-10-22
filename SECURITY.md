@@ -167,6 +167,8 @@ for PLATFORM in linux/amd64 linux/arm64; do
   DIGEST=$(crane digest --platform "$PLATFORM" "$IMAGE@$INDEX")
   cosign verify-attestation --type cyclonedx --certificate-oidc-issuer "$ISSUER" \
     --certificate-identity "$IDENTITY" "$IMAGE@$DIGEST" > /dev/null
+  # Omit this check for an image built before .openvex.json was added: that
+  # release published no OpenVEX attestation, so the check finds none.
   cosign verify-attestation --type openvex --certificate-oidc-issuer "$ISSUER" \
     --certificate-identity "$IDENTITY" "$IMAGE@$DIGEST" > /dev/null
 done

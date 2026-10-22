@@ -35,7 +35,12 @@ inputs:
     required: false
     default: linux/amd64,linux/arm64
   certificate-identity-regexp:
-    description: Regular expression the signing certificate identity (the workflow ref) must match.
+    description: >-
+      Regular expression the signing certificate identity (the workflow ref)
+      must match. It must be anchored over the whole identity: start with ^,
+      end with an unescaped $, and keep every | inside a group, as in
+      ^https://github\.com/<owner>/<repo>/\.github/workflows/<file>@refs/(tags/v.*|heads/release-.*)$.
+      check-identity-regexp.sh enforces this before cosign runs.
     required: true
   certificate-oidc-issuer:
     description: OIDC issuer the signing certificate must carry.
@@ -67,6 +72,9 @@ runs:
           echo "::error::certificate-identity-regexp and certificate-oidc-issuer are required"
           exit 1
         fi
+        # cosign searches for the pattern anywhere in the identity, so an
+        # unanchored pattern would accept identities that merely contain it.
+        "${GITHUB_ACTION_PATH}/check-identity-regexp.sh" "${IDENTITY_REGEXP}"
         case "${VERIFY_OPENVEX}" in
           true | false) ;;
           *) echo "::error::verify-openvex must be true or false, got '${VERIFY_OPENVEX}'"; exit 1 ;;

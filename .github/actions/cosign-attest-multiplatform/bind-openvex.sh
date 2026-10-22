@@ -17,9 +17,13 @@
 #
 # Fails closed when:
 #   - the source is not OpenVEX v0.2.0, or `statements` is not an array;
-#   - a statement names a product other than the bare `pkg:oci/<name>`
-#     (binding it would publish a signed claim about something never triaged
-#     against this image);
+#   - a statement lacks `vulnerability.name` or a valid `status`, or breaks
+#     the OpenVEX v0.2.0 rules for `not_affected` (justification or impact
+#     statement) and `affected` (action statement);
+#   - a product names anything other than the bare `pkg:oci/<name>`, through
+#     `@id`, `identifiers.purl`, or any other identifier (binding it would
+#     publish a signed claim about something never triaged against this
+#     image);
 #   - the projection lost a statement, or any product in it does not carry the
 #     platform digest.
 #
@@ -67,25 +71,66 @@ if ! jq -s -e 'length == 1 and (.[0] | type) == "object" and (.[0].statements | 
   exit 1
 fi
 
-# Content checks. Each problem is printed on its own line; no output means valid.
+# Content checks, matching the OpenVEX v0.2.0 rules the repository's
+# .openvex.json validator enforces. Each problem is printed on its own line; no
+# output means valid. An empty `statements` array is valid.
 problems="$(jq -r --arg context "${context}" --arg bare "${bare}" '
-    def products: if (.products | type) == "array" then .products else [] end;
-    def ident: if (.identifiers | type) == "object" then .identifiers.purl else null end;
-    def names_bare:
-      type == "object"
-      and (.["@id"] == null or .["@id"] == $bare)
-      and (ident == null or ident == $bare)
-      and (.["@id"] != null or ident != null);
+    def statuses: ["not_affected", "affected", "fixed", "under_investigation"];
+    def justifications: [
+      "component_not_present",
+      "vulnerable_code_not_present",
+      "vulnerable_code_not_in_execute_path",
+      "vulnerable_code_cannot_be_controlled_by_adversary",
+      "inline_mitigations_already_exist"
+    ];
+    def filled: type == "string" and test("[^[:space:]]");
+    def one_of($allowed): type == "string" and IN($allowed[]);
+    # Problems with one product. The projection replaces `@id` and
+    # `identifiers` wholesale, so anything there that does not name the bare
+    # image would be silently rewritten into a signed claim: reject it.
+    def product_problems($i; $j):
+      if type != "object" then "statement \($i) product \($j) is not an object"
+      else
+        (if .["@id"] == null or .["@id"] == $bare then empty
+         else "statement \($i) product \($j) @id \(.["@id"] | tojson) is not \($bare)" end),
+        (if .identifiers == null then empty
+         elif (.identifiers | type) != "object" then "statement \($i) product \($j) identifiers is not an object"
+         else
+           (if (.identifiers | keys - ["purl"]) == [] then empty
+            else "statement \($i) product \($j) identifiers has keys other than purl: \(.identifiers | keys - ["purl"] | join(", "))" end),
+           (if .identifiers.purl == null or .identifiers.purl == $bare then empty
+            else "statement \($i) product \($j) identifiers.purl \(.identifiers.purl | tojson) is not \($bare)" end)
+         end),
+        (if .["@id"] != null or (.identifiers | type) == "object" and .identifiers.purl != null then empty
+         else "statement \($i) product \($j) has neither @id nor identifiers.purl" end)
+      end;
+    def statement_problems($i):
+      if type != "object" then "statement \($i) is not an object"
+      else
+        .status as $status | .justification as $justification
+        | (if (.vulnerability | type) == "object" and (.vulnerability.name | filled) then empty
+           else "statement \($i) must set vulnerability.name to a non-empty string" end),
+          (if $status | one_of(statuses) then empty
+           else "statement \($i) status \($status | tojson) is not one of \(statuses | join(", "))" end),
+          (if $justification == null or ($justification | one_of(justifications)) then empty
+           else "statement \($i) justification \($justification | tojson) is not one of \(justifications | join(", "))" end),
+          (if $status == "not_affected"
+              and (($justification | one_of(justifications)) | not)
+              and ((.impact_statement | filled) | not)
+           then "statement \($i) is not_affected and needs a justification or an impact_statement"
+           else empty end),
+          (if $status == "affected" and ((.action_statement | filled) | not)
+           then "statement \($i) is affected and needs an action_statement"
+           else empty end),
+          (if (.products | type) == "array" and (.products | length) > 0
+           then (.products | to_entries[] | .key as $j | .value | product_problems($i; $j))
+           else "statement \($i) lists no products" end)
+      end;
     [ (if .["@context"] == $context then empty
        else "@context must be \($context), got \(.["@context"] | tojson)" end),
       (if (.["@id"] | type) == "string" and (.["@id"] | length) > 0 then empty
        else "@id must be a non-empty string" end),
-      (.statements | to_entries[]
-       | .key as $i | .value
-       | if type != "object" then "statement \($i) is not an object"
-         elif (products | length) == 0 then "statement \($i) lists no products"
-         elif (products | all(names_bare)) then empty
-         else "statement \($i) names a product other than \($bare)" end)
+      (.statements | to_entries[] | .key as $i | .value | statement_problems($i))
     ] | .[]' "${source_file}")"
 if [[ -n "${problems}" ]]; then
   while IFS= read -r problem; do
