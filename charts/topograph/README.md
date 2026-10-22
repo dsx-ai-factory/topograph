@@ -23,6 +23,22 @@ helm install topograph \
   --namespace topograph --create-namespace
 ```
 
+From the OCI registry on GHCR, where the chart is also published and signed
+with cosign. The OCI chart is published starting with the first release after
+v1.0.0; for v1.0.0 and earlier versions, install from the Helm chart
+repository above.
+
+```bash
+helm install topograph \
+  oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph \
+  --version <chart-version> \
+  --namespace topograph --create-namespace
+```
+
+[RELEASE.md](https://github.com/dsx-ai-factory/topograph/blob/main/RELEASE.md#release-verification)
+shows how to verify the chart's cosign signature and SLSA provenance; those
+`cosign` commands need cosign v3.0 or later.
+
 From a local source checkout:
 
 ```bash

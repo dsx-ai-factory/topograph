@@ -47,6 +47,27 @@ versions, run `helm search repo topograph/topograph --versions`.
 
 Provider-specific credentials and parameters are passed via Helm values. See the [chart README](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/README.md) and [`values.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.yaml) for the full values shape, plus the example values files shipped in the chart directory.
 
+### Install from the OCI registry
+
+The same chart is also published to GHCR as an OCI artifact, signed with
+cosign. Argo CD, Flux, and registry mirroring tools can consume this form
+directly, and it needs no `helm repo add`:
+
+```bash
+helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph \
+  --version <chart-version> \
+  --namespace topograph --create-namespace \
+  --set provider.name=<provider> \
+  --set engine.name=<engine> \
+  # ... engine-specific flags ...
+```
+
+The OCI chart is published starting with the first release after v1.0.0. For
+v1.0.0 and earlier versions, install from the Helm repository as shown above.
+To verify the chart's signature and provenance before installing it, follow
+[Release verification](https://github.com/dsx-ai-factory/topograph/blob/main/RELEASE.md#release-verification);
+the `cosign` commands there need cosign v3.0 or later.
+
 ## Verify
 
 The `helm test` verification is the same regardless of engine:
