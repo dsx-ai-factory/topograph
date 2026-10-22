@@ -54,13 +54,15 @@ on:
   workflow_dispatch:
 
 # A newer push to a pull-request/N branch supersedes the analysis still running
-# for it, so cancel that run. Every other run (main, schedule, dispatch) gets a
-# group of its own, keyed on the run ID. A shared group would not be enough even
-# with cancel-in-progress off: GitHub keeps one pending run per group and
-# cancels the older pending one, so a burst of main pushes could skip commits.
+# for it, so cancel that run. Every other run (pushes to main, the schedule, and
+# manual runs, including a manual run on a pull-request/N branch) gets a group of
+# its own, keyed on the run ID, so it neither cancels nor is cancelled by a push
+# run. A shared group would not be enough even with cancel-in-progress off:
+# GitHub keeps one pending run per group and cancels the older pending one, so a
+# burst of main pushes could skip commits.
 concurrency:
-  group: ${{ github.workflow }}-${{ startsWith(github.ref, 'refs/heads/pull-request/') && github.ref || github.run_id }}
-  cancel-in-progress: ${{ startsWith(github.ref, 'refs/heads/pull-request/') }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/pull-request/') && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/pull-request/') }}
 
 permissions:
   contents: read
