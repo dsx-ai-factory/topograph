@@ -28,10 +28,12 @@ name: Commit Requirements
 # It reports; it does not yet gate. It is not a required status check, so a
 # red run is visible without blocking the merge button. Maintainers promote it
 # once the open pull requests have caught up, in two steps on the
-# `main-enforced` ruleset:
+# `main-enforced` ruleset and one here:
 #   1. add `Commit requirements` (this job's name) to the required status
 #      checks, next to `DCO`;
-#   2. enable "Require signed commits".
+#   2. enable "Require signed commits";
+#   3. update or remove the NOT_REQUIRED_YET footer in the script below, so
+#      the comment stops telling contributors the check does not block merges.
 # Before step 1, note that a pull request opened with GITHUB_TOKEN never
 # triggers this check, because events caused by GITHUB_TOKEN do not start
 # workflows. A required check that never reports would block such a pull
@@ -45,6 +47,14 @@ name: Commit Requirements
 # job never checks out or executes the contributor's code, it only reads commit
 # metadata through the API.
 #
+# `edited` is in the trigger list because retargeting a pull request to another
+# base branch changes its commit list without moving its head. Every `edited`
+# event runs the full check, including title and body edits, rather than
+# skipping or returning early when the base did not change: a skipped job or an
+# early return still reports success under this check's name, which would
+# replace a failing result with a pass. The check is a few API calls, and an
+# unchanged comment is not rewritten, so the extra runs cost nothing visible.
+#
 # Runner: GitHub-hosted ubuntu-latest, as scorecard.yaml uses, rather than the
 # self-hosted runners most workflows here use. Any GitHub user can trigger this
 # job by opening a pull request, and it only calls the API, so it has no reason
@@ -54,7 +64,7 @@ name: Commit Requirements
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: read
@@ -98,15 +108,22 @@ jobs:
             const LIST_COMMITS_CAP = 250;
 
             // Read the pull request on both sides of the commit list, and give up
-            // if the head moved in between. `context.payload.pull_request` is a
-            // snapshot from when the event fired and a run can sit in the queue
-            // for hours, so nothing here may be paired with it: a force-push
-            // during the read window would otherwise judge one head's commits
-            // against another head's commit count. The push that moved the head
-            // queued its own run, which sees a stable head and reports for it.
-            const headBefore = (
-              await github.rest.pulls.get({ owner, repo, pull_number: number })
-            ).data.head.sha;
+            // if the head or the base branch moved in between.
+            // `context.payload.pull_request` is a snapshot from when the event
+            // fired and a run can sit in the queue for hours, so nothing here may
+            // be paired with it: a force-push or a retarget during the read
+            // window would otherwise judge one commit list against another's
+            // commit count. The push or the `edited` event that moved it queued
+            // its own run, which sees a stable pull request and reports for it.
+            //
+            // The base is compared by branch name, not by SHA. The base SHA moves
+            // with every push to the base branch, which queues no run here, so
+            // giving up on it would leave a pass that nothing computed.
+            const { data: before } = await github.rest.pulls.get({
+              owner, repo, pull_number: number,
+            });
+            const headBefore = before.head.sha;
+            const baseBefore = before.base.ref;
 
             const commits = await github.paginate(github.rest.pulls.listCommits, {
               owner, repo, pull_number: number, per_page: 100,
@@ -119,6 +136,13 @@ jobs:
             if (pull.head.sha !== headBefore) {
               core.info(
                 `Head moved while the commits were being read (${headBefore} to ${pull.head.sha}). A later run covers the current head.`,
+              );
+              return;
+            }
+
+            if (pull.base.ref !== baseBefore) {
+              core.info(
+                `Base branch changed while the commits were being read (${baseBefore} to ${pull.base.ref}). A later run covers the new base.`,
               );
               return;
             }
@@ -146,10 +170,11 @@ jobs:
             // the commit's email address, and a bot's
             // `ID+name[bot]@users.noreply.github.com` address can be set with
             // `git config` like any other, so an unsigned commit can claim to be
-            // a bot. GitHub signs the commits it creates itself, through its web
-            // UI or its API, so Dependabot commits and bot commits made through
-            // the API pass the signature check without any exemption. A bot that
-            // pushes commits with plain git has to sign them like anyone else.
+            // a bot. Bots get no special treatment here: a bot commit passes only
+            // when GitHub reports it as verified. That covers commits GitHub
+            // creates through its web interface and commits Dependabot creates,
+            // which GitHub signs; any other bot or API client passes only if its
+            // commits come out verified, and otherwise fails like anyone else.
             const isBot = (c) => c.author?.type === 'Bot';
 
             // Merge commits are exempt from sign-off, not from signing. GitHub's
@@ -194,6 +219,17 @@ jobs:
                 .replace(/>/g, '&gt;')
                 .replace(/\|/g, '\\|')
                 .replace(/@/g, '@&#8203;');
+
+            // One comment holds at most 65,536 characters, and a pull request can
+            // carry up to 250 offending commits. List the first MAX_ROWS, with
+            // subjects cut to MAX_SUBJECT characters, and count the rest.
+            const MAX_ROWS = 50;
+            const MAX_SUBJECT = 100;
+            const MAX_COMMENT = 65536;
+            const shorten = (s) => {
+              const t = String(s).trim();
+              return t.length > MAX_SUBJECT ? `${t.slice(0, MAX_SUBJECT - 1)}…` : t;
+            };
 
             const violations = [];
             for (const c of commits) {
@@ -246,6 +282,8 @@ jobs:
               }
             };
 
+            // Promotion step 3 in the header: once this is a required check,
+            // update or remove this footer.
             const NOT_REQUIRED_YET =
               'This check is not yet a required status check, so it does not block the merge on its own, but every commit is still expected to be signed before a maintainer merges.';
 
@@ -279,15 +317,28 @@ jobs:
             const shellQuote = (v) => "'" + String(v).replace(/'/g, "'\\''") + "'";
             const headRef = shellQuote(context.payload.pull_request.head.ref);
 
-            const rows = violations
-              .map((v) => `| \`${v.sha.slice(0, 8)}\` | ${cell(v.subject)} | ${v.problems.join('<br>')} |`)
-              .join('\n');
+            // The repair commands work against the branch this pull request
+            // targets, read fresh above, never a hard-coded `main`: on a release
+            // branch pull request, `--keep-base` against `main` would rewrite
+            // release commits that are not this contributor's. Quoted for the
+            // same copy-paste reason as the head ref.
+            const base = pull.base.ref;
+            const baseRemote = shellQuote(`origin/${base}`);
+
+            const rowsFor = (list) =>
+              list
+                .map((v) => `| \`${v.sha.slice(0, 8)}\` | ${cell(shorten(v.subject))} | ${v.problems.join('<br>')} |`)
+                .join('\n') +
+              (list.length < violations.length
+                ? `\n\n…and ${violations.length - list.length} more commit(s); see this pull request's Commits tab.`
+                : '');
+            const rows = rowsFor(violations.slice(0, MAX_ROWS));
 
             const scope = CHECK_SIGN_OFF
               ? ''
               : ' This check covers the signature; the `DCO` check covers the sign-off.';
 
-            await upsert([
+            const render = (tableRows) => [
               CHECK_SIGN_OFF
                 ? '### ❌ Some commits are missing a sign-off or a signature'
                 : '### ❌ Some commits are not signed',
@@ -296,7 +347,7 @@ jobs:
               '',
               '| Commit | Subject | Problem |',
               '| --- | --- | --- |',
-              rows,
+              tableRows,
               '',
               '<details>',
               '<summary>How to fix</summary>',
@@ -328,24 +379,24 @@ jobs:
               'git push --force-with-lease origin ' + headRef,
               '```',
               '',
-              `To fix every commit on the branch at once. Below, \`origin/main\` means ${owner}/${repo}'s \`main\`, fetched first with \`git fetch origin\`. On a fork, where \`origin\` is your fork, run \`git fetch upstream\` and use \`upstream/main\` instead (add the remote once with \`git remote add upstream https://github.com/${owner}/${repo}.git\` if it is missing).`,
+              `To fix every commit on the branch at once. Below, \`origin/${base}\` is the branch this pull request targets, \`${base}\` on ${owner}/${repo}. On a fork, where \`origin\` is your fork, run \`git fetch upstream\` and use \`upstream/${base}\` instead (add the remote once with \`git remote add upstream https://github.com/${owner}/${repo}.git\` if it is missing).`,
               '',
               'Fetch the base and check for merge commits first, because a plain rebase drops them:',
               '',
               '```bash',
-              'git fetch origin   # on a fork: git fetch upstream, and use upstream/main below',
-              'git log --oneline --merges origin/main..HEAD   # empty output means linear',
+              `git fetch origin   # on a fork: git fetch upstream, and use upstream/${base} below`,
+              `git log --oneline --merges ${baseRemote}..HEAD   # empty output means linear`,
               '',
               '# Linear branch:',
-              "git rebase --keep-base --exec 'git commit --amend -s -S --no-edit' origin/main",
+              `git rebase --keep-base --exec 'git commit --amend -s -S --no-edit' ${baseRemote}`,
               '',
               '# Branch with merge commits, preserving them:',
-              "git rebase --keep-base --rebase-merges --exec 'git commit --amend -s -S --no-edit' origin/main",
+              `git rebase --keep-base --rebase-merges --exec 'git commit --amend -s -S --no-edit' ${baseRemote}`,
               '```',
               '',
               '`--rebase-merges` recreates each merge rather than copying it: conflicts resolved in the original merge must be resolved again, and any other manual change made in a merge commit is lost.',
               '',
-              '`--keep-base` (Git 2.24 or later) re-signs the commits where they are instead of moving them onto the latest `main`, so the rewrite should change nothing but the signatures. Confirm that before pushing; this must print nothing:',
+              `\`--keep-base\` (Git 2.24 or later) re-signs the commits where they are instead of moving them onto the latest \`${base}\`, so the rewrite should change nothing but the signatures. Confirm that before pushing; this must print nothing:`,
               '',
               '```bash',
               'git diff @{u} HEAD',
@@ -364,7 +415,15 @@ jobs:
               '</details>',
               '',
               `Full details are in [CONTRIBUTING.md](${CONTRIBUTING}). ${NOT_REQUIRED_YET}`,
-            ].join('\n'));
+            ].join('\n');
+
+            // The caps above keep the table well under the limit; this is the
+            // backstop if escaping or a long base branch name ever pushes it
+            // over. The full list is in the job log either way.
+            for (const v of violations) core.info(`${v.sha} ${v.problems.join('; ')}`);
+            let body = render(rows);
+            if (MARKER.length + 1 + body.length > MAX_COMMENT) body = render(rowsFor([]));
+            await upsert(body);
 
             core.setFailed(
               `${violations.length} of ${commits.length} commit(s) are not ${REQUIRED}.`,

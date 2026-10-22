@@ -300,15 +300,11 @@ the touched files will fail the Codecov check.
 
 ### Commits must be signed off and signed
 
-Every commit needs both the DCO sign-off (`-s`) and a GPG or SSH signature (`-S`):
-`git commit -s -S`, and `git commit --amend -s -S --no-edit` for amends. The two are
-independent; neither substitutes for the other. One-time key setup, how to re-sign
-commits already on a branch, and what the `Commit requirements` check verifies are in
-[CONTRIBUTING.md](../CONTRIBUTING.md#sign-your-work). That check reports on every
-PR but is not yet a required status check, so a failing run does not block the merge;
-signing is required regardless.
+Every commit must be signed off and signed (`git commit -s -S`); setup, repair, and what
+the `Commit requirements` check verifies are in [CONTRIBUTING.md](../CONTRIBUTING.md#sign-your-work).
 If signing fails, for example because a sandbox blocks access to the key, stop and
-tell the user; never commit with `--no-gpg-sign` or `-c commit.gpgsign=false`.
+tell the user; never commit with `--no-gpg-sign` or `-c commit.gpgsign=false`, and
+never drop `-s`.
 
 ### Potential security issues
 

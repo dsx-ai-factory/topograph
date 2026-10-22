@@ -280,12 +280,17 @@ unregistered key and an unverified email are the usual causes.
 
 The [Commit Requirements](.github/workflows/commit-requirements.yaml) workflow
 runs on every pull request. For every commit, it checks that GitHub verified
-the commit's signature. Bot commits are not exempt: GitHub signs the commits it
-creates itself through its web UI or API, which covers Dependabot, so those
-pass, while a bot that pushes with plain git has to sign like anyone else. An
-unsigned commit that merely uses a bot's email address is flagged too. If any
+the commit's signature. Bot commits are not exempt, and pass only when GitHub
+reports them as verified. GitHub signs the commits it creates through its web
+interface and the commits Dependabot creates, so those pass; any other bot or
+API client passes only if its commits come out verified. An unsigned commit
+that merely uses a bot's email address is flagged like any other. If any
 commit fails, it posts a single comment listing those commits with the commands
 to fix them, and updates that comment to a success note once they are fixed.
+GitHub lists at most 250 commits for a pull request. If it returns fewer than
+the pull request has, the check cannot verify them all, so it fails with a
+"Could not check every commit" report; split the pull request or reduce its
+commit count.
 Sign-off is checked separately, by the `DCO` check described above. A pull
 request opened with a workflow's `GITHUB_TOKEN` does not trigger the check,
 because GitHub does not start workflows for events that token causes; a
@@ -301,10 +306,14 @@ merge, and will make the check required once open pull requests have caught up.
 Whether a commit is missing its sign-off or its signature, the fix is the
 same: rewrite the commits with both, and force-push.
 
-Below, `origin/main` means `dsx-ai-factory/topograph`'s `main`, fetched first
-with `git fetch origin`; the [Development Guide](DEVELOPMENT.md#clone-and-build)'s
+Below, `origin/main` stands for the branch your pull request targets on
+`dsx-ai-factory/topograph`: `main`, or `release-X.Y` for a pull request against
+a release branch. Use that branch in every command; rewriting against the
+wrong one would re-sign commits that are not yours. Fetch it first with
+`git fetch origin`; the [Development Guide](DEVELOPMENT.md#clone-and-build)'s
 clone flow names that remote `origin`. On a fork, where `origin` is your fork,
-fetch the upstream repository and use `upstream/main` instead:
+fetch the upstream repository and use `upstream/main` (or
+`upstream/release-X.Y`) instead:
 
 ```bash
 git remote add upstream https://github.com/dsx-ai-factory/topograph.git   # once, if missing
