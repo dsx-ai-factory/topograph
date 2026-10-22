@@ -195,17 +195,19 @@ jobs:
             // The concurrency group serializes commands, not edits made in the
             // UI or by other tools, and addAssignees adds without replacing.
             // If someone was assigned between the fresh read above and this
-            // call, back out only the user this run added, leaving the other
-            // assignment untouched, so the issue keeps a single owner.
+            // call, the issue now has more than one owner. The response does
+            // not say who added each assignee (a maintainer may have assigned
+            // the target too), so remove nobody: report the conflict and leave
+            // the choice to a maintainer.
             if (others.length) {
-              core.info(`Assigned to ${others.join(', ')} concurrently; removing ${added.login}`);
-              await github.rest.issues.removeAssignees({
-                ...common,
-                assignees: [added.login],
-              });
+              const owners = [added.login, ...others].map(u => '@' + u).join(', ');
+              core.warning(`Concurrent assignment; issue now assigned to ${owners}`);
               await github.rest.issues.createComment({
                 ...common,
-                body: `This issue was assigned to ${others.map(u => '@' + u).join(', ')} while the command ran, so \`/assign\` was not applied.`,
+                body: [
+                  `This issue was assigned to ${others.map(u => '@' + u).join(', ')} while \`/assign\` ran, so it now has more than one assignee (${owners}).`,
+                  'A maintainer should decide who keeps it; the other can comment `/unassign`.',
+                ].join('\n'),
               });
               return;
             }
