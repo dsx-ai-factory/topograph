@@ -170,3 +170,17 @@ jobs:
         with:
           sarif_file: results.sarif
           category: checkov-helm-chart
+
+      # Code scanning locations point into rendered-chart/, which is not in the
+      # repository. Keep the rendered manifests and the SARIF with the run so
+      # a reviewer can open the exact file and line a finding refers to.
+      - name: Upload rendered manifests
+        if: ${{ !cancelled() && hashFiles('rendered-chart/**') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chart-scan-rendered-manifests
+          path: |
+            rendered-chart/
+            results.sarif
+          if-no-files-found: warn
+          retention-days: 14
