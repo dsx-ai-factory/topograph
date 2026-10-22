@@ -27,41 +27,47 @@ func TestParseResponse(t *testing.T) {
 
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
 	httpErr := parseResponse(treeRoot, &resp, map[string]bool{
-		"node-01": true,
-		"node-02": true,
-		"node-03": true,
+		"srv-01": true,
+		"srv-02": true,
+		"srv-03": true,
 	})
 	require.Nil(t, httpErr)
 
-	node01 := &topology.Vertex{ID: "d-2001", Name: "node-01"}
-	node02 := &topology.Vertex{ID: "d-2002", Name: "node-02"}
-	node03 := &topology.Vertex{ID: "d-2003", Name: "node-03"}
+	srv01 := &topology.Vertex{ID: "s1", Name: "srv-01"}
+	srv02 := &topology.Vertex{ID: "s2", Name: "srv-02"}
+	srv03 := &topology.Vertex{ID: "s3", Name: "srv-03"}
 
-	leaf01 := &topology.Vertex{ID: "d-1001", Name: "leaf-01", Vertices: map[string]*topology.Vertex{
-		"d-2001": node01, "d-2002": node02,
+	// each server is cabled to a leaf in both planes; only one parent is kept
+	// so the result is a tree, and the plane-2 switches never appear.
+	leaf01 := &topology.Vertex{ID: "p1-l1", Name: "p1-leaf-01", Vertices: map[string]*topology.Vertex{
+		"s1": srv01, "s2": srv02,
 	}}
-	leaf02 := &topology.Vertex{ID: "d-1002", Name: "leaf-02", Vertices: map[string]*topology.Vertex{
-		"d-2003": node03,
+	leaf02 := &topology.Vertex{ID: "p1-l2", Name: "p1-leaf-02", Vertices: map[string]*topology.Vertex{
+		"s3": srv03,
 	}}
-	spine01 := &topology.Vertex{ID: "d-0001", Name: "spine-01", Vertices: map[string]*topology.Vertex{
-		"d-1001": leaf01, "d-1002": leaf02,
+	spine01 := &topology.Vertex{ID: "p1-s1", Name: "p1-spine-01", Vertices: map[string]*topology.Vertex{
+		"p1-l1": leaf01, "p1-l2": leaf02,
+	}}
+	super01 := &topology.Vertex{ID: "ss1", Name: "super-01", Vertices: map[string]*topology.Vertex{
+		"p1-s1": spine01,
 	}}
 
-	expected := &topology.Vertex{Vertices: map[string]*topology.Vertex{"d-0001": spine01}}
+	expected := &topology.Vertex{Vertices: map[string]*topology.Vertex{"ss1": super01}}
 	require.Equal(t, expected, treeRoot)
 
-	// only a subset of nodes requested: leaf-01 (whose other children,
-	// node-01/node-02, are not requested) must not appear in the tree, and
-	// spine-01 must remain the root rather than being inverted underneath
-	// leaf-02.
+	// only a subset of nodes requested: p1-leaf-01 (whose servers srv-01 and
+	// srv-02 are not requested) must not appear in the tree, and the
+	// super-spine must remain the root.
 	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr = parseResponse(treeRoot, &resp, map[string]bool{"node-03": true})
+	httpErr = parseResponse(treeRoot, &resp, map[string]bool{"srv-03": true})
 	require.Nil(t, httpErr)
 
 	expectedSubset := &topology.Vertex{Vertices: map[string]*topology.Vertex{
-		"d-0001": {ID: "d-0001", Name: "spine-01", Vertices: map[string]*topology.Vertex{
-			"d-1002": {ID: "d-1002", Name: "leaf-02", Vertices: map[string]*topology.Vertex{
-				"d-2003": {ID: "d-2003", Name: "node-03"},
+		"ss1": {ID: "ss1", Name: "super-01", Vertices: map[string]*topology.Vertex{
+			"p1-s1": {ID: "p1-s1", Name: "p1-spine-01", Vertices: map[string]*topology.Vertex{
+				"p1-l2": {ID: "p1-l2", Name: "p1-leaf-02", Vertices: map[string]*topology.Vertex{
+					"s3": {ID: "s3", Name: "srv-03"},
+				}},
 			}},
 		}},
 	}}
@@ -340,4 +346,78 @@ func TestGetNetworkTreeErrors(t *testing.T) {
 func TestDeviceID(t *testing.T) {
 	require.Equal(t, "d-1", deviceID(Device{DeviceName: "node-01", DeviceID: "d-1"}))
 	require.Equal(t, "node-01", deviceID(Device{DeviceName: "node-01"}))
+}
+
+// TestParseLiveShapeResponse covers the quirks of a real export-topology
+// payload that the minimal fixture does not: numeric GPU componentId,
+// nvlink-switch devices with a null device_id, empty interface objects, an
+// unrecognized-role switch, extra top-level fields, and servers dual-homed to
+// a leaf in each of two planes.
+func TestParseLiveShapeResponse(t *testing.T) {
+	data, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
+	require.NoError(t, err)
+
+	var resp ExportTopologyResponse
+	require.NoError(t, json.Unmarshal(data, &resp))
+	require.True(t, resp.Success)
+	require.Len(t, resp.Topology.Layer2, 13)
+	require.Len(t, resp.Topology.Layer2["srv-01"].GPUs, 4)
+	require.Equal(t, 0, resp.Topology.Layer2["srv-01"].GPUs[0].ComponentID)
+
+	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
+	httpErr := parseResponse(treeRoot, &resp, map[string]bool{"srv-01": true, "srv-02": true})
+	require.Nil(t, httpErr)
+
+	// every requested server is placed under a switch, none are dropped or
+	// parked under the no-topology switch
+	require.NotContains(t, treeRoot.Vertices, topology.NoTopology)
+	servers := map[string]bool{}
+	names := map[string]bool{}
+	var walk func(v *topology.Vertex)
+	walk = func(v *topology.Vertex) {
+		names[v.Name] = true
+		if len(v.Vertices) == 0 {
+			servers[v.Name] = true
+		}
+		for _, c := range v.Vertices {
+			walk(c)
+		}
+	}
+	for _, v := range treeRoot.Vertices {
+		walk(v)
+	}
+	require.Equal(t, map[string]bool{"srv-01": true, "srv-02": true}, servers)
+
+	// the nvlink-switch (null device_id) and the unknown-role switch take no
+	// part in the switch tree
+	require.NotContains(t, names, "nvl-sw-01")
+	require.NotContains(t, names, "p1-leaf-09")
+	require.NotContains(t, names, "p2-leaf-09")
+
+	// a dual-homed server has exactly one parent, so the result is a tree
+	seen := map[string]int{}
+	var count func(v *topology.Vertex)
+	count = func(v *topology.Vertex) {
+		seen[v.ID]++
+		for _, c := range v.Vertices {
+			count(c)
+		}
+	}
+	for _, v := range treeRoot.Vertices {
+		count(v)
+	}
+	require.Equal(t, 1, seen["s1"])
+	require.Equal(t, 1, seen["s2"])
+
+	// the super-spine is the single root above both planes
+	require.Len(t, treeRoot.Vertices, 1)
+	require.Contains(t, treeRoot.Vertices, "ss1")
+}
+
+func TestGPUComponentIDNumeric(t *testing.T) {
+	var g GPU
+	require.NoError(t, json.Unmarshal([]byte(`{"name":"gpu","componentId":3}`), &g))
+	require.Equal(t, 3, g.ComponentID)
+
+	require.Error(t, json.Unmarshal([]byte(`{"name":"gpu","componentId":"c-1"}`), &g))
 }
