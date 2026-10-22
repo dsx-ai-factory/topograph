@@ -159,7 +159,12 @@ make docker-buildx    # multi-platform build (linux/arm64,linux/amd64) and push 
 output (see the comment above `GIT_REF` in the `Makefile`): the `vX.Y.Z` tag
 at `HEAD` (`vX.Y.Z-dirty` when tracked files are modified), else the current
 branch name, else the short commit SHA, else `unknown` when no git metadata is
-available. Pass `GIT_REF=...` to set it.
+available. Pass `GIT_REF=...` to set it for `make build`, `make deb`,
+`make rpm` and the default image tag. The image build is the exception: the
+Dockerfile runs `make` again inside the build without `GIT_REF`, so the
+binaries in the image always take their version from the git metadata in the
+build context, and `make image-build GIT_REF=...` changes only the tag. Passing
+the value into the Docker build is tracked in #606.
 
 Override the target/tag with `IMAGE_REPO` and `IMAGE_TAG`, e.g.:
 
