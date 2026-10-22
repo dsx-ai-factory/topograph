@@ -22,7 +22,9 @@ features, and any other change:
 - **Features or enhancements**: file a [feature request](https://github.com/dsx-ai-factory/topograph/issues/new?template=feature_request.yml)
   describing the problem and your proposed solution.
 - Search [existing issues](https://github.com/dsx-ai-factory/topograph/issues) first to
-  avoid duplicates, and comment on the issue to claim it before starting work.
+  avoid duplicates, and claim the issue before starting work by commenting
+  `/assign` on it. That assigns it to you if nobody else holds it; comment
+  `/unassign` to release it if you stop working on it.
 
 Opening the issue first gives maintainers a chance to weigh in on approach
 before code is written, and keeps the change from crossing one of this
