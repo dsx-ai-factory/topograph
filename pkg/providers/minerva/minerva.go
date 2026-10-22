@@ -9,7 +9,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 
 	"k8s.io/klog/v2"
 
@@ -96,7 +99,9 @@ func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topo
 		headerXApiKey:     p.creds.ApiKey,
 	}
 	f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, ExportTopologyURL)
-	_, data, httpErr := httpreq.DoRequest(f, true)
+	// The server certificate is verified and redirects are refused: the API key
+	// is sent in a header and the response decides the cluster topology.
+	_, data, httpErr := httpreq.DoRequestWithRedirects(f, false, false)
 	if httpErr != nil {
 		return nil, httpErr
 	}
@@ -106,7 +111,11 @@ func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topo
 		return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("minerva output read failed: %v", err))
 	}
 	if !resp.Success {
-		return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("minerva export-topology failed: %s", resp.Error))
+		reason := resp.Error
+		if len(reason) == 0 {
+			reason = resp.Message
+		}
+		return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("minerva export-topology failed: %s", reason))
 	}
 
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
@@ -138,7 +147,8 @@ func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inpu
 
 	switches := make(map[string]*topology.Vertex)   // every switch, keyed by ID, regardless of whether it's reachable from a requested node
 	frontier := make(map[string]*topology.Vertex)   // requested servers: the starting point for growing the tree upward
-	unresolved := make(map[string]*topology.Vertex) // requested servers not yet attached to a switch
+	unresolved := make(map[string]*topology.Vertex) // requested nodes not yet attached to a switch, keyed by requested name
+	requested := make(map[string]*topology.Vertex)  // every requested server Minerva reports, to confirm it survives merging
 	for name, dev := range devices {
 		id := nameToID[name]
 		v := &topology.Vertex{ID: id, Name: name}
@@ -149,8 +159,29 @@ func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inpu
 		}
 		if inputNodes[name] {
 			frontier[id] = v
-			unresolved[id] = v
+			unresolved[name] = v
+			requested[id] = v
 		}
+	}
+
+	// A requested node Minerva doesn't report as a server has no switch
+	// parent either; keep it under no-topology instead of dropping it. Requested
+	// names and device IDs are unrelated namespaces, so its vertex gets an ID
+	// that no reported device uses.
+	reportedIDs := make(map[string]bool, len(nameToID))
+	for _, id := range nameToID {
+		reportedIDs[id] = true
+	}
+	for name := range inputNodes {
+		if dev, ok := devices[name]; ok && dev.Role == RoleServer {
+			continue
+		}
+		klog.Warningf("Requested node %q is not a server in the Minerva topology", name)
+		id := "missing/" + name
+		for reportedIDs[id] {
+			id = "_" + id
+		}
+		unresolved[name] = &topology.Vertex{ID: id, Name: name}
 	}
 
 	// Grow the tree outward from the requested servers, one wave of parents
@@ -171,7 +202,9 @@ func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inpu
 					continue
 				}
 				parent.Vertices[id] = v
-				delete(unresolved, id)
+				if _, ok := requested[id]; ok {
+					delete(unresolved, v.Name)
+				}
 				if _, isSwitch := switches[id]; isSwitch {
 					hasParent[id] = true
 				}
@@ -200,8 +233,32 @@ func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inpu
 	// detection can drop the deeper branch's children from the merged tree.
 	merger := topology.NewMerger(top)
 	merger.Merge()
-	for _, v := range merger.TopTier() {
+	tree := singleParent(merger.TopTier())
+	for _, v := range tree {
 		treeRoot.Vertices[v.ID] = v
+	}
+
+	// topology.Merger can drop a deeper branch under a switch whose children
+	// sit at different depths. A requested server that didn't make it into the
+	// tree is grouped under no-topology below instead of vanishing.
+	placed := make(map[string]bool)
+	var collect func(v *topology.Vertex)
+	collect = func(v *topology.Vertex) {
+		placed[v.ID] = true
+		for _, c := range v.Vertices {
+			if c != nil {
+				collect(c)
+			}
+		}
+	}
+	for _, v := range tree {
+		collect(v)
+	}
+	for id, v := range requested {
+		if !placed[id] {
+			klog.Warningf("Requested node %q was dropped while merging the Minerva switch tree", v.Name)
+			unresolved[v.Name] = v
+		}
 	}
 
 	// Requested servers with no resolvable switch parent are grouped under
@@ -210,14 +267,57 @@ func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inpu
 	// silently dropped or surfacing as a top-level switch themselves.
 	if len(unresolved) != 0 {
 		noTopology := &topology.Vertex{ID: topology.NoTopology, Vertices: make(map[string]*topology.Vertex)}
-		for id, v := range unresolved {
-			noTopology.Vertices[id] = v
+		for _, v := range unresolved {
+			noTopology.Vertices[v.ID] = v
 			metrics.SetMissingTopology(NAME, v.Name)
 		}
 		treeRoot.Vertices[topology.NoTopology] = noTopology
 	}
 
 	return nil
+}
+
+// singleParent makes the merged forest a tree. Merging collapses switches
+// with identical child sets, but in a partially connected fabric (e.g. two
+// spines sharing one leaf) a vertex can still sit under several parents, which
+// the engines reject. Each vertex is kept under the first parent reached in ID
+// order and removed from the others; switches left without children are then
+// pruned. Servers are never removed, since every one stays under the parent
+// that kept it.
+func singleParent(roots []*topology.Vertex) []*topology.Vertex {
+	seen := make(map[string]bool)
+
+	var visit func(v *topology.Vertex)
+	visit = func(v *topology.Vertex) {
+		seen[v.ID] = true
+		for _, id := range slices.Sorted(maps.Keys(v.Vertices)) {
+			child := v.Vertices[id]
+			if child == nil || seen[child.ID] {
+				delete(v.Vertices, id)
+				continue
+			}
+			visit(child)
+			if child.Vertices != nil && len(child.Vertices) == 0 {
+				delete(v.Vertices, id)
+			}
+		}
+	}
+
+	sorted := slices.Clone(roots)
+	slices.SortFunc(sorted, func(a, b *topology.Vertex) int { return strings.Compare(a.ID, b.ID) })
+
+	var tree []*topology.Vertex
+	for _, root := range sorted {
+		if seen[root.ID] {
+			continue
+		}
+		visit(root)
+		if len(root.Vertices) != 0 {
+			tree = append(tree, root)
+		}
+	}
+
+	return tree
 }
 
 // deviceIDIndex maps each device name to its ID. Vertex.Vertices (and
@@ -299,8 +399,10 @@ func parentLinks(devices map[string]Device, nameToID map[string]string, tiers ma
 	}
 
 	// The output must be a tree, so a server can have only one parent. Multi-rail
-	// and multi-plane servers are cabled to a leaf in each plane; keep the one
-	// whose device name sorts first so the choice is deterministic.
+	// and multi-plane servers are cabled to a leaf in each plane; keep the
+	// parent at the lowest tier, so a server never skips past its leaf, and
+	// among those the one whose device name sorts first so the choice is
+	// deterministic.
 	idToName := make(map[string]string, len(nameToID))
 	for name, id := range nameToID {
 		idToName[id] = name
@@ -311,7 +413,8 @@ func parentLinks(devices map[string]Device, nameToID map[string]string, tiers ma
 		}
 		var keep string
 		for parent := range set {
-			if keep == "" || idToName[parent] < idToName[keep] {
+			if keep == "" || tiers[parent] < tiers[keep] ||
+				(tiers[parent] == tiers[keep] && idToName[parent] < idToName[keep]) {
 				keep = parent
 			}
 		}
