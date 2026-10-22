@@ -13,7 +13,10 @@
 # The rule is deliberately conservative:
 #   - the pattern starts with `^` and ends with an unescaped `$`;
 #   - every `|` sits inside a parenthesised group, so the anchors apply to all
-#     alternatives, as in `^https://...@refs/(tags/v...|heads/release-...)$`.
+#     alternatives, as in `^https://...@refs/(tags/v...|heads/release-...)$`;
+#   - no `\Q...\E` literal quoting. RE2 treats everything inside it as literal,
+#     so a quoted `(` or `)` would fool the group count below, as in
+#     `^trusted\Q(\E|.*\Q)\E$`, where cosign sees a top-level `|`.
 # Escaped characters and bracket expressions are skipped when looking for `|`.
 
 set -euo pipefail
@@ -32,6 +35,7 @@ fail() {
 
 [[ "${re}" == ^* ]] || fail "must start with ^"
 [[ "${re}" == *'$' ]] || fail "must end with \$"
+[[ "${re}" != *'\Q'* ]] || fail "must not use \\Q...\\E literal quoting"
 
 depth=0
 in_class=false

@@ -161,6 +161,7 @@ expect "top-level alternation fails" 1 "has a top-level |" -- check_re '^a|b$'
 expect "missing \$ fails" 1 'must end with $' -- check_re '^https://github\.com/dsx-ai-factory/topograph/.*'
 expect "escaped final \$ fails" 1 'must end with an unescaped $' -- check_re '^https://example\.com/a\$'
 expect "unbalanced group fails" 1 "has an unbalanced (" -- check_re '^a(b|c$'
+expect "quoted parentheses fail" 1 'must not use \Q...\E literal quoting' -- check_re '^trusted\Q(\E|.*\Q)\E$'
 
 echo "${cases} cases, ${failures} failed"
 [[ "${failures}" -eq 0 ]]
