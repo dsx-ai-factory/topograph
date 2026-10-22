@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# actionlint configuration, read by .github/workflows/workflow-lint.yaml and by
+# a local `actionlint` run from the repository root.
+
+self-hosted-runner:
+  # Self-hosted runner labels used by this repository's workflows. actionlint
+  # only knows GitHub-hosted labels and reports anything else as unknown, so
+  # add a label here when a workflow starts using it.
+  labels:
+    - linux-amd64-cpu8
+    - linux-amd64-cpu16
+    - linux-amd64-cpu32
+
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # `concurrency.queue` (single or max) is a documented key in GitHub's
+      # workflow syntax reference, but actionlint 1.7.12 does not know it yet.
+      # Drop this ignore once the pinned actionlint accepts the key.
+      - 'unexpected key "queue" for "concurrency"'

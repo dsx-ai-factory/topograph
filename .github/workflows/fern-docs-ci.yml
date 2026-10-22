@@ -54,7 +54,7 @@ jobs:
           node-version: '20'
 
       - name: Install Fern CLI
-        run: npm install -g fern-api@$(jq -r .version fern/fern.config.json)
+        run: npm install -g "fern-api@$(jq -r .version fern/fern.config.json)"
 
       - name: Check MDX safety
         # Intentionally inline — a composite action would add indirection without benefit for a single grep.

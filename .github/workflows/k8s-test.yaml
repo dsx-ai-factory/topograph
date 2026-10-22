@@ -56,17 +56,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.3'
+          go-version-file: go.mod
 
       - name: Set up Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v4.1.1
 
@@ -87,9 +87,11 @@ jobs:
           kind load docker-image "$TOPOGRAPH_IMAGE" --name topograph
 
       - name: Create KWOK nodes
+        env:
+          KWOK_MODEL: ${{ matrix.model || './tests/models/medium.yaml' }}
         run: |
           ./scripts/create-kind-kwok-cluster.sh \
-            --model "${{ matrix.model || './tests/models/medium.yaml' }}" \
+            --model "$KWOK_MODEL" \
             --cluster topograph \
             --kwok-release "$KWOK_RELEASE"
 

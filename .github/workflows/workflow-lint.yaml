@@ -1,0 +1,148 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Lints the GitHub Actions configuration whenever anything under .github/
+# changes, and once a week so zizmor's online audits catch new advisories
+# against the actions this repository already pins.
+#
+# actionlint checks workflow syntax, expressions, runner labels, and action
+# inputs. It is blocking. Its configuration, including the self-hosted runner
+# labels the other workflows use, lives in .github/actionlint.yaml.
+#
+# zizmor audits workflows and dependabot.yml for security problems such as
+# template injection, excessive permissions, persisted credentials, and
+# unpinned actions. Its findings go to the code scanning dashboard as SARIF and
+# do not fail the job, because these accepted findings remain:
+#   - dependabot-cooldown (x3): no cooldown on the gomod, github-actions, and
+#     docker ecosystems in dependabot.yml
+#   - adhoc-packages (x3): `npm install -g fern-api` in fern-docs-ci.yml,
+#     fern-docs-preview-comment.yml, and publish-fern-docs.yml
+#   - dangerous-triggers: the workflow_run trigger in
+#     fern-docs-preview-comment.yml, part of the two-workflow docs preview
+#   - superfluous-actions: softprops/action-gh-release in release.yml
+# Make the job blocking once these are resolved or explicitly ignored.
+#
+# Both tools are release binaries pinned by version and by the SHA-256 of the
+# downloaded archive, recorded here rather than read from a checksums file in
+# the same release. Dependabot does not track these pins: bump each version
+# and its checksum together by hand. Automated tracking is proposed in #591.
+#
+# The jobs are light, so they run on GitHub-hosted runners, as scorecard.yaml
+# does.
+
+name: Workflow Lint
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - '.github/**'
+  schedule:
+    # Mondays at 07:30 UTC, clear of the Scorecard run at 06:00.
+    - cron: '30 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Clone the repository.
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint
+        env:
+          # Bumped by hand together with ACTIONLINT_SHA256 (linux x86_64 archive);
+          # not tracked by Dependabot, see #591.
+          ACTIONLINT_VERSION: '1.7.12'
+          ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
+          echo "${ACTIONLINT_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check -
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" actionlint
+
+      - name: Run actionlint
+        # The shellcheck and pyflakes integrations are turned off so the result
+        # does not depend on which of those happen to be installed on the
+        # runner image. DEVELOPMENT.md gives the same flags for local runs.
+        run: '"${RUNNER_TEMP}/actionlint" -color -shellcheck= -pyflakes='
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Clone the repository, and let the SARIF upload read this workflow run.
+      # GitHub documents both as needed only for private repositories, so
+      # declare them rather than depend on this one staying public.
+      contents: read
+      actions: read
+      # Upload the SARIF result to the code scanning dashboard.
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        env:
+          # Bumped by hand together with ZIZMOR_SHA256 (linux x86_64 archive);
+          # not tracked by Dependabot, see #591.
+          ZIZMOR_VERSION: '1.31.1'
+          ZIZMOR_SHA256: 'd185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99'
+        run: |
+          set -euo pipefail
+          archive="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/${archive}"
+          echo "${ZIZMOR_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check -
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}" zizmor
+
+      - name: Run zizmor
+        env:
+          # Enables the online audits, which resolve action refs through the
+          # GitHub API (impostor commits, ref confusion, known-vulnerable
+          # actions). The token carries only this job's permissions.
+          GH_TOKEN: ${{ github.token }}
+        # --no-exit-codes keeps the job green with findings present; they are
+        # reported through code scanning instead. See the header comment.
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/zizmor" --format sarif --no-exit-codes . > zizmor.sarif
+
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor

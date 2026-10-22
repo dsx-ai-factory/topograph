@@ -21,7 +21,7 @@ make qualify                  # fmt + vet + lint + test — run this before ever
 | --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Go 1.27.3+](https://go.dev/dl/)                          | Language runtime       | See `go.mod` for the exact minimum; newer minor versions are fine                                                                                                                     |
 | `make`                                                    | Build automation       | Pre-installed on macOS/Linux                                                                                                                                                          |
-| [golangci-lint 2.14.0+](https://golangci-lint.run/usage/install/) | Go linting             | `brew install golangci-lint`, or see the [install guide](https://golangci-lint.run/usage/install/) for `go install`/binary options; CI runs it via `golangci/golangci-lint-action@v9` |
+| [golangci-lint 2.14.0+](https://golangci-lint.run/usage/install/) | Go linting             | `brew install golangci-lint`, or see the [install guide](https://golangci-lint.run/usage/install/) for `go install`/binary options; CI runs it via `golangci/golangci-lint-action` in `go.yml` |
 | [helm 3.10+ or 4.x](https://helm.sh/docs/intro/install/)  | Chart lint/test        | Required for `make chart-test`; CI pins `v4.1.1` in `.github/workflows/chart-test.yaml`                                                                                               |
 | [docker](https://docs.docker.com/get-docker/)             | Container image builds | Only needed for `make image-build` / `make docker-buildx`                                                                                                                             |
 
@@ -170,23 +170,75 @@ make rpm    # ARCH=$(GOARCH) scripts/build-rpm.sh <git-ref> <package-revision>
 
 ## CI Parity
 
-CI doesn't invoke `make test` / `make lint` directly — it runs the
+CI doesn't invoke `make test` / `make lint` directly. It runs the
 underlying tools with CI-specific flags, which are close to but not
-identical to the local `make` targets:
+identical to the local `make` targets.
 
-- `.github/workflows/go.yml` — build; `go test -v -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...`
+Pull request checks run on the `pull-request/<n>` branch that copy-pr-bot
+pushes for each PR; the first three also run on `main`:
+
+- `.github/workflows/go.yml`: build; `go test -v -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...`
   (coverage-instrumented, but _without_ `-race`, unlike `make test`);
-  `golangci/golangci-lint-action@v9` (not `make lint`, so it isn't affected
-  by the local `master`-ref issue above); and `govulncheck`
-- `.github/workflows/chart-test.yaml` — `make chart-test` on every push/PR
-- `.github/workflows/k8s-test.yaml` — Kubernetes integration tests (kind +
-  KWOK) on `pull-request/*` branches
-- `.github/workflows/slinky-test.yaml` — Slinky engine integration tests
-- `.github/workflows/docker.yml` — container image build (manual trigger)
-- `.github/workflows/helm-release.yaml` — Helm chart release (manual trigger)
+  golangci-lint through `golangci/golangci-lint-action` (not `make lint`, so
+  it isn't affected by the local `master`-ref issue above); `make vet`; a
+  `go fmt` check; and `govulncheck ./...`
+- `.github/workflows/license-scan.yml`: `go-licenses check ./...` against
+  the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list
+- `.github/workflows/workflow-lint.yaml`: when `.github/**` changes, plus
+  weekly and on demand so zizmor's online audits catch new advisories
+  against pinned actions. actionlint fails the run on any finding; zizmor
+  uploads its security findings to code scanning without failing the run
+- `.github/workflows/chart-test.yaml`: `make chart-test`
+- `.github/workflows/k8s-test.yaml`: Kubernetes integration tests (kind +
+  KWOK); can also be run manually
+- `.github/workflows/slinky-test.yaml`: Slinky engine integration tests; can
+  also be run manually
+- `.github/workflows/fern-docs-ci.yml`: Fern docs checks when `docs/` or
+  `fern/` changes
+- `.github/workflows/fern-docs-preview-build.yml` and
+  `.github/workflows/fern-docs-preview-comment.yml`: build a Fern docs
+  preview when `docs/` or `fern/` changes and post its link on the PR
+
+Release and maintenance workflows:
+
+- `.github/workflows/docker.yml`: on a `v*` tag push or manual dispatch,
+  builds the `linux/amd64` and `linux/arm64` image, pushes it to GHCR, and
+  attests its provenance
+- `.github/workflows/release.yml`: on a `v*` tag push, or a manual re-run
+  for an existing tag, checks the tag against `charts/topograph/Chart.yaml`
+  and `CHANGELOG.md`, packages and attests the Helm chart, updates the Helm
+  repository on `gh-pages`, and creates the GitHub release
+- `.github/workflows/publish-fern-docs.yml`: on a `vX.Y.Z` tag push or
+  manual dispatch, publishes the versioned docs site
+- `.github/workflows/helm-release.yaml`: manual Helm chart publication to
+  `gh-pages`
+- `.github/workflows/scorecard.yaml`: OpenSSF Scorecard analysis on pushes
+  to `main`, weekly, and on demand
+- `.github/workflows/cleanup-untagged-images.yml`: nightly removal of
+  untagged GHCR images older than 30 days
+
+Every `actions/setup-go` step reads the Go version from `go.mod`, so a
+toolchain bump there also moves the CI jobs that use it. The container
+image build does not: `Dockerfile` pins its own `golang` builder image,
+which Dependabot's `docker` ecosystem bumps, so keep it on the same Go
+version as `go.mod`. Every action is pinned to a commit SHA, and
+Dependabot keeps those pins current.
+
+To lint workflow changes before pushing, run
+[actionlint](https://github.com/rhysd/actionlint) and
+[zizmor](https://docs.zizmor.sh/) from the repository root, at the
+versions pinned in `workflow-lint.yaml`. actionlint picks up
+`.github/actionlint.yaml`, which lists the self-hosted runner labels. CI
+turns off actionlint's shellcheck and pyflakes integrations, so pass the
+same flags to get the same result:
+
+```bash
+actionlint -shellcheck= -pyflakes=
+zizmor .
+```
 
 `make qualify` and `make chart-test` (when charts changed) passing locally
-is a strong signal, not a guarantee of an identical CI run — in particular,
+is a strong signal, not a guarantee of an identical CI run. In particular,
 `make test`'s `-race` detector runs checks CI's coverage-only invocation
 doesn't, and the reverse is also possible in principle.
 

@@ -248,9 +248,13 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '20'
+          # This job publishes on tag pushes, so never restore a package cache
+          # that another ref could have written. The repository has no
+          # package.json, so automatic caching was not active anyway.
+          package-manager-cache: false
 
       - name: Install Fern CLI
-        run: npm install -g fern-api@$(jq -r .version fern/fern.config.json)
+        run: npm install -g "fern-api@$(jq -r .version fern/fern.config.json)"
 
       - name: Publish docs
         env:

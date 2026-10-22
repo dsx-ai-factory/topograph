@@ -305,7 +305,8 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
 
 - **Automated** — Go build/test/lint/`govulncheck` (`go.yml`), Helm chart
   lint/unittest (`chart-test.yaml`), Codecov patch/project coverage, and the
-  DCO bot all run on every push to the PR.
+  DCO bot all run on every push to the PR, and workflow lint
+  (`workflow-lint.yaml`: actionlint and zizmor) runs when `.github/` changes.
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)
