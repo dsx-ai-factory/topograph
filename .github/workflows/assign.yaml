@@ -166,12 +166,18 @@ jobs:
               assignees: [target],
             });
 
-            // GitHub drops non-assignable users without erroring, so surface
-            // them. Logins are case-insensitive and the response carries the
+            // Logins are case-insensitive and the response carries the
             // canonical spelling, so "/assign @Octocat" must still match
             // "octocat" or a successful assignment would be reported as failed.
-            const got = new Set(issue.assignees.map(a => a.login.toLowerCase()));
-            if (!got.has(target.toLowerCase())) {
+            const targetLower = target.toLowerCase();
+            const added = issue.assignees.find(a => a.login.toLowerCase() === targetLower);
+            const others = issue.assignees
+              .map(a => a.login)
+              .filter(u => u.toLowerCase() !== targetLower);
+
+            // GitHub drops non-assignable users without erroring, so surface
+            // them.
+            if (!added) {
               core.warning(`Could not assign: ${target}`);
               await github.rest.issues.createComment({
                 ...common,
@@ -185,4 +191,22 @@ jobs:
               });
               return;
             }
-            core.info(`Assigned ${target}`);
+
+            // The concurrency group serializes commands, not edits made in the
+            // UI or by other tools, and addAssignees adds without replacing.
+            // If someone was assigned between the fresh read above and this
+            // call, back out only the user this run added, leaving the other
+            // assignment untouched, so the issue keeps a single owner.
+            if (others.length) {
+              core.info(`Assigned to ${others.join(', ')} concurrently; removing ${added.login}`);
+              await github.rest.issues.removeAssignees({
+                ...common,
+                assignees: [added.login],
+              });
+              await github.rest.issues.createComment({
+                ...common,
+                body: `This issue was assigned to ${others.map(u => '@' + u).join(', ')} while the command ran, so \`/assign\` was not applied.`,
+              });
+              return;
+            }
+            core.info(`Assigned ${added.login}`);
