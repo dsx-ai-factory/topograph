@@ -93,6 +93,8 @@ Pass credentials directly in the topology request:
 1. Calls `POST /v1/export-topology` with a JSON-marshaled empty `ExportTopologyRequest` payload (`{}`) to export the entire fabric — a full-fabric export is a single, consistent snapshot with no client-side paging to manage. The optional page-size request parameter, when set, is forwarded as `limit` to control Minerva's internal pagination batch size.
 2. Parses the returned device/link list (`topology.layer2`). Minerva does not report tier numbers, so each device's tier is derived from its `role`, per Minerva's documented standard roles and interface-role pairs: `server` is tier `-1`, `leaf` is tier `0`, `spine` is tier `1`, and `super_spine` is tier `2`. Devices with any other role — including Minerva's deployment-specific "Custom" roles — take no part in the switch tree.
 3. Builds the switch tree outward from the requested server nodes (filtered by the incoming `ComputeInstances`), following each device's links to a neighbor at a higher tier — regardless of which of the two devices declared the link in Minerva's response — the same directed-by-tier approach the NetQ provider uses once it has tier data. A requested server with no resolvable switch parent is grouped under a shared `no-topology` switch rather than being dropped or reported as a partial failure.
+
+   A server cabled to more than one leaf (for example one per plane in a multi-plane fabric) can have only one parent in the output tree, so the provider keeps the leaf whose device name sorts first.
 4. Reduces Clos fabrics — switches that fan out to the same set of children at a given tier — into a canonical tree via `topology.Merger`, exactly as the NetQ provider does.
 
 ## Verifying the Output

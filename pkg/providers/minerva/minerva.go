@@ -78,7 +78,7 @@ type InterfaceLink struct {
 
 type GPU struct {
 	Name        string `json:"name"`
-	ComponentID string `json:"componentId"`
+	ComponentID int    `json:"componentId"`
 }
 
 func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topology.ComputeInstances) (*topology.Vertex, *httperr.Error) {
@@ -264,7 +264,7 @@ func computeTiers(devices map[string]Device, nameToID map[string]string) map[str
 // guaranteed to be declared on both ends, so every link is classified by
 // comparing tiers rather than assuming a particular device declared it.
 // Devices with no assigned tier (see computeTiers) never appear as a parent
-// or a child.
+// or a child. A server linked to several leaves keeps only one parent.
 func parentLinks(devices map[string]Device, nameToID map[string]string, tiers map[string]int) map[string]map[string]bool {
 	parents := make(map[string]map[string]bool)
 	addParent := func(child, parent string) {
@@ -296,6 +296,26 @@ func parentLinks(devices map[string]Device, nameToID map[string]string, tiers ma
 				addParent(remoteID, id)
 			}
 		}
+	}
+
+	// The output must be a tree, so a server can have only one parent. Multi-rail
+	// and multi-plane servers are cabled to a leaf in each plane; keep the one
+	// whose device name sorts first so the choice is deterministic.
+	idToName := make(map[string]string, len(nameToID))
+	for name, id := range nameToID {
+		idToName[id] = name
+	}
+	for child, set := range parents {
+		if tiers[child] != roleTier[RoleServer] || len(set) < 2 {
+			continue
+		}
+		var keep string
+		for parent := range set {
+			if keep == "" || idToName[parent] < idToName[keep] {
+				keep = parent
+			}
+		}
+		parents[child] = map[string]bool{keep: true}
 	}
 
 	return parents
