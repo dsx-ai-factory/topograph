@@ -1,0 +1,128 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Verify the evidence cosign-attest-multiplatform and actions/attest published
+# for a multi-platform image, the same way SECURITY.md tells users to.
+#
+#   Check                                         Subject
+#   --------------------------------------------  ------------------------
+#   cosign verify                                 Index digest
+#   cosign verify-attestation --type slsaprovenance1  Index digest
+#   cosign verify-attestation --type cyclonedx    Each platform manifest
+#   cosign verify-attestation --type openvex      Each platform manifest
+#
+# The platform manifests are resolved from the index again here rather than
+# taken from the attest step, so a platform the attest step skipped cannot pass
+# unnoticed. Any failure fails the job.
+#
+# Requires cosign on PATH (the same release the signing side used), docker
+# with buildx, jq, and coreutils `timeout`.
+
+name: Cosign verify multi-platform image
+description: >-
+  Verify the keyless cosign signature and SLSA provenance on an image index and
+  the CycloneDX SBOM and OpenVEX attestations on each platform manifest.
+
+inputs:
+  image-name:
+    description: Lowercase OCI repository without tag or digest.
+    required: true
+  index-digest:
+    description: Digest of the multi-platform image index, sha256:<64 hex>.
+    required: true
+  platforms:
+    description: Comma-separated platforms the index must contain, exactly.
+    required: false
+    default: linux/amd64,linux/arm64
+  certificate-identity-regexp:
+    description: >-
+      Regular expression the signing certificate identity (the workflow ref)
+      must match. It must be anchored over the whole identity: start with ^,
+      end with an unescaped $, avoid \Q...\E literal quoting, and keep every |
+      inside a group, as in
+      ^https://github\.com/<owner>/<repo>/\.github/workflows/<file>@refs/(tags/v.*|heads/release-.*)$.
+      check-identity-regexp.sh enforces this before cosign runs.
+    required: true
+  certificate-oidc-issuer:
+    description: OIDC issuer the signing certificate must carry.
+    required: false
+    default: https://token.actions.githubusercontent.com
+  verify-openvex:
+    description: '"true" to require an OpenVEX attestation on every platform manifest.'
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Verify signature and attestations
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        INDEX_DIGEST: ${{ inputs.index-digest }}
+        PLATFORMS: ${{ inputs.platforms }}
+        IDENTITY_REGEXP: ${{ inputs.certificate-identity-regexp }}
+        OIDC_ISSUER: ${{ inputs.certificate-oidc-issuer }}
+        VERIFY_OPENVEX: ${{ inputs.verify-openvex }}
+      run: |
+        set -euo pipefail
+        # shellcheck source=.github/actions/oci-platform-digests.sh
+        source "${GITHUB_ACTION_PATH}/../oci-platform-digests.sh"
+
+        if [[ -z "${IDENTITY_REGEXP}" || -z "${OIDC_ISSUER}" ]]; then
+          echo "::error::certificate-identity-regexp and certificate-oidc-issuer are required"
+          exit 1
+        fi
+        # cosign searches for the pattern anywhere in the identity, so an
+        # unanchored pattern would accept identities that merely contain it.
+        "${GITHUB_ACTION_PATH}/check-identity-regexp.sh" "${IDENTITY_REGEXP}"
+        case "${VERIFY_OPENVEX}" in
+          true | false) ;;
+          *) echo "::error::verify-openvex must be true or false, got '${VERIFY_OPENVEX}'"; exit 1 ;;
+        esac
+
+        out="$(mktemp)"
+        trap 'rm -f "${out}"' EXIT
+
+        # Payloads go to a file, not the log: an SBOM runs to megabytes. Every
+        # verified statement must name the digest it was verified against.
+        verify_attestation() {
+          local type="$1" digest="$2"
+          echo "Verifying ${type} attestation on ${IMAGE_NAME}@${digest}"
+          timeout --foreground 120s cosign verify-attestation \
+            --type "${type}" \
+            --certificate-identity-regexp "${IDENTITY_REGEXP}" \
+            --certificate-oidc-issuer "${OIDC_ISSUER}" \
+            --new-bundle-format=true \
+            "${IMAGE_NAME}@${digest}" >"${out}"
+          if ! jq -s -e --arg hex "${digest#sha256:}" '
+              length > 0
+              and all(.[]; .payload | @base64d | fromjson
+                           | any(.subject[]; .digest.sha256 == $hex))
+            ' "${out}" >/dev/null; then
+            echo "::error::a verified ${type} attestation on ${IMAGE_NAME}@${digest} does not name that digest as its subject"
+            exit 1
+          fi
+        }
+
+        echo "Verifying signature on ${IMAGE_NAME}@${INDEX_DIGEST}"
+        timeout --foreground 120s cosign verify \
+          --certificate-identity-regexp "${IDENTITY_REGEXP}" \
+          --certificate-oidc-issuer "${OIDC_ISSUER}" \
+          --new-bundle-format=true \
+          "${IMAGE_NAME}@${INDEX_DIGEST}" >/dev/null
+
+        verify_attestation slsaprovenance1 "${INDEX_DIGEST}"
+
+        resolved="$(resolve_platform_digests "${IMAGE_NAME}" "${INDEX_DIGEST}" "${PLATFORMS}")"
+        while read -r platform digest; do
+          echo "${platform} -> ${digest}"
+          verify_attestation cyclonedx "${digest}"
+          if [[ "${VERIFY_OPENVEX}" == "true" ]]; then
+            verify_attestation openvex "${digest}"
+          else
+            echo "OpenVEX verification not requested for ${platform}"
+          fi
+        done <<<"${resolved}"
+
+        echo "All signatures and attestations verified for ${IMAGE_NAME}@${INDEX_DIGEST}"

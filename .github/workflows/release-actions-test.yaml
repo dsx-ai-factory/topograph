@@ -1,0 +1,56 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Offline tests for the scripts behind the release signing actions under
+# .github/actions/. Those actions only run on a release tag or a release
+# branch dispatch, on self-hosted runners, so without this job a broken
+# platform resolver or OpenVEX binding would first fail during a release.
+#
+# Nothing here reaches a registry: .github/actions/testdata/test.sh replaces
+# `docker` with a PATH shim that prints committed fixtures.
+
+name: Release Actions Test
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - ".github/actions/**"
+      # The tests check the identity regexp docker.yml passes to the verify action.
+      - ".github/workflows/docker.yml"
+      - ".github/workflows/release-actions-test.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test release action scripts
+    # A few seconds of shellcheck and jq: GitHub-hosted, like scorecard.yaml,
+    # rather than a slot on the self-hosted pool. Both tools ship on the image.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck
+        run: |
+          shellcheck --version
+          shellcheck \
+            .github/actions/oci-platform-digests.sh \
+            .github/actions/cosign-attest-multiplatform/bind-openvex.sh \
+            .github/actions/cosign-verify-image/check-identity-regexp.sh \
+            .github/actions/testdata/test.sh
+
+      - name: Run fixture tests
+        run: ./.github/actions/testdata/test.sh

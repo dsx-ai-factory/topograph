@@ -103,9 +103,129 @@ attestation naming a workflow or source reference other than the ones above as a
 chain problem, and report it through the channel described above. A release published before that
 point carries no attestation by design, so its absence is not something to report.
 
-Topograph does not currently publish a detached cosign signature or a GPG-signed release manifest.
-The Sigstore-backed provenance attestations and the chart checksum are the verification path
-today. The full release and verification procedure is documented in [RELEASE.md](./RELEASE.md).
+### Container image signature, SBOM, and OpenVEX
+
+Images published by the **Docker** workflow (`.github/workflows/docker.yml`) for an official
+`vX.Y.Z` tag or a release candidate built from a `release-X.Y` branch are also signed with
+[Sigstore cosign](https://docs.sigstore.dev/) in keyless mode, and carry a
+[CycloneDX](https://cyclonedx.org/) 1.6 SBOM and an [OpenVEX](https://openvex.dev/) document as
+signed attestations. The workflow verifies all of it before the run succeeds. Images built before
+this was added (see [CHANGELOG.md](./CHANGELOG.md)) carry the provenance attestation only, and
+`cosign verify` finds no signature on them. The OpenVEX attestation is published only by releases
+built after `.openvex.json` was added to the repository.
+
+The tag resolves to an image **index**, which lists one **platform manifest** per architecture
+(`linux/amd64`, `linux/arm64`). Each piece of evidence is attached to the digest it is true about,
+so no single digest carries all of it:
+
+| Evidence | Digest | cosign command |
+| --- | --- | --- |
+| cosign signature | Index | `cosign verify` |
+| SLSA build provenance (the attestation `gh attestation verify` reads) | Index | `cosign verify-attestation --type slsaprovenance1` |
+| CycloneDX SBOM | Each platform manifest | `cosign verify-attestation --type cyclonedx` |
+| OpenVEX | Each platform manifest | `cosign verify-attestation --type openvex` |
+
+An SBOM or a VEX document describes one root filesystem, and the amd64 and arm64 images do not
+share one, so they are attached to the platform manifests rather than the index. Verifying the
+signature against a platform digest, or looking for the SBOM on the index digest, finds nothing.
+That is expected.
+
+The OpenVEX document binds each statement to `pkg:oci/topograph@<platform digest>`. It may contain
+no statements at all: an empty document asserts that the maintainers claim no exceptions to what
+a scanner reports, not that the image has no vulnerabilities.
+
+The certificate identity is the Docker workflow run that signed the image:
+`https://github.com/dsx-ai-factory/topograph/.github/workflows/docker.yml@<ref>`. When you
+verify a specific release, pass the exact identity of that release's ref with
+`--certificate-identity`. That binds the image you resolved from `:vX.Y.Z` to the run for the
+`vX.Y.Z` tag; a pattern that accepts any release would also accept an image signed for a
+different release and moved under that tag. Do not loosen the identity to the organization or to
+any ref: that would accept a signature produced by another workflow or branch. These commands
+assume cosign v3 and
+[crane](https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md):
+
+```bash
+IMAGE=ghcr.io/dsx-ai-factory/topograph
+ISSUER=https://token.actions.githubusercontent.com
+VERSION=vX.Y.Z
+IDENTITY="https://github.com/dsx-ai-factory/topograph/.github/workflows/docker.yml@refs/tags/$VERSION"
+# For a release candidate, set VERSION to the short commit SHA tag the Docker workflow
+# published, and use the release branch it was built from:
+#   IDENTITY="https://github.com/dsx-ai-factory/topograph/.github/workflows/docker.yml@refs/heads/release-X.Y"
+
+# Resolve the tag to an immutable index digest once, and verify by digest from here on.
+INDEX=$(crane digest "$IMAGE:$VERSION")
+
+# Signature and SLSA provenance: index digest.
+cosign verify --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity "$IDENTITY" "$IMAGE@$INDEX"
+cosign verify-attestation --type slsaprovenance1 --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity "$IDENTITY" "$IMAGE@$INDEX" > /dev/null
+
+# SBOM and OpenVEX: each platform manifest, resolved from the verified index rather than the tag.
+for PLATFORM in linux/amd64 linux/arm64; do
+  DIGEST=$(crane digest --platform "$PLATFORM" "$IMAGE@$INDEX")
+  cosign verify-attestation --type cyclonedx --certificate-oidc-issuer "$ISSUER" \
+    --certificate-identity "$IDENTITY" "$IMAGE@$DIGEST" > /dev/null
+  # Omit this check for an image built before .openvex.json was added: that
+  # release published no OpenVEX attestation, so the check finds none.
+  cosign verify-attestation --type openvex --certificate-oidc-issuer "$ISSUER" \
+    --certificate-identity "$IDENTITY" "$IMAGE@$DIGEST" > /dev/null
+done
+```
+
+`cosign verify-attestation` prints each verified attestation as a DSSE envelope. To read the SBOM
+itself, decode the first payload:
+
+```bash
+cosign verify-attestation --type cyclonedx --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity "$IDENTITY" "$IMAGE@$DIGEST" \
+  | jq -r .payload | head -n 1 | base64 -d | jq .predicate > topograph-sbom.cdx.json
+```
+
+Without crane, `docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE:vX.Y.Z"`
+prints the index digest, and `docker buildx imagetools inspect --raw "$IMAGE@$INDEX"` lists the
+platform manifest digests under `manifests`. Deploy by the index digest you verified, so the image
+you checked is the image that runs.
+
+To enforce the signature at admission, the Sigstore
+[policy-controller](https://docs.sigstore.dev/policy-controller/overview/) (v0.13.0 or later, for
+`signatureFormat: bundle`) accepts a policy such as:
+
+```yaml
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: topograph-release
+spec:
+  images:
+    - glob: "ghcr.io/dsx-ai-factory/topograph**"
+  authorities:
+    - name: topograph-docker-workflow
+      signatureFormat: bundle
+      keyless:
+        url: https://fulcio.sigstore.dev
+        identities:
+          - issuer: https://token.actions.githubusercontent.com
+            subjectRegExp: '^https://github\.com/dsx-ai-factory/topograph/\.github/workflows/docker\.yml@refs/(tags/v[0-9]+\.[0-9]+\.[0-9]+|heads/release-[0-9]+\.[0-9]+)$'
+      ctlog:
+        url: https://rekor.sigstore.dev
+```
+
+The policy applies to namespaces labeled `policy.sigstore.dev/include=true`. It uses a regular
+expression rather than an exact identity because admission has no single release to pin: any
+Topograph release or release candidate is acceptable there, but nothing signed by another
+workflow, branch, or repository is. The Docker workflow verifies its own output against the same
+expression. It checks the signature on the index, which is the digest a pod that references the
+image resolves to. The SBOM and OpenVEX attestations hang on the platform manifests, so check them
+with the cosign commands above rather than at admission.
+
+As with the provenance above, treat a failed verification, a missing signature or attestation on
+an image published after this was added, or an identity other than the ones above as a potential
+supply chain problem, and report it through the channel described above.
+
+Topograph does not publish a GPG-signed release manifest. The full release and verification
+procedure is documented in [RELEASE.md](./RELEASE.md).
 
 ## NVIDIA Product Security
 

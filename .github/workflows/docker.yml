@@ -11,21 +11,35 @@ on:
       - "v*"
   workflow_dispatch:
 
+# Nothing at workflow level; the build job asks for what it needs.
 permissions: {}
 
 env:
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
+  # Platforms the image is built for. The attest and verify actions fail when
+  # the pushed index contains anything else, so every released platform gets
+  # its own SBOM.
+  PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   build:
     runs-on: linux-amd64-cpu16
     permissions:
+      # Check out the repository.
       contents: read
+      # Push the image, and the signature and attestations that cosign and
+      # actions/attest store beside it in GHCR.
       packages: write
+      # Mint the GitHub OIDC token that keyless cosign and actions/attest
+      # exchange with Sigstore Fulcio for a short-lived signing certificate.
       id-token: write
+      # actions/attest records the SLSA provenance in the GitHub attestations
+      # API, which is what `gh attestation verify` reads.
       attestations: write
+      # actions/attest records an artifact metadata storage record for the
+      # pushed image.
       artifact-metadata: write
 
     steps:
@@ -69,6 +83,31 @@ jobs:
             echo "::error::Chart appVersion ${app_version} does not match release tag ${RELEASE_TAG}."
             exit 1
           fi
+
+      # Only official releases (a vX.Y.Z tag, pushed or re-dispatched as
+      # RELEASE.md documents for retries) and release candidates (a manual
+      # dispatch from a release-X.Y branch) are signed and get an SBOM and VEX.
+      # Keep these patterns in step with the certificate identity regexp passed
+      # to cosign-verify-image below, with its copy in the SECURITY.md
+      # ClusterImagePolicy sample, and with the exact per-release identities
+      # in the SECURITY.md and RELEASE.md verification commands.
+      - name: Decide whether to publish release evidence
+        id: evidence
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          publish=false
+          if [[ "${REF_TYPE}" == "tag" && "${REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            publish=true
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" && "${REF_TYPE}" == "branch" \
+                && "${REF_NAME}" =~ ^release-[0-9]+\.[0-9]+$ ]]; then
+            publish=true
+          fi
+          echo "publish=${publish}" >> "${GITHUB_OUTPUT}"
+          echo "Sign and attest SBOM and VEX for ${REF_TYPE} ${REF_NAME}: ${publish}"
 
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
@@ -117,10 +156,14 @@ jobs:
           context: .
           file: ./Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.PLATFORMS }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max,version=v1
+          # BuildKit provenance would add unsigned attestation manifests
+          # (platform unknown/unknown) to the index, beside the signed
+          # provenance actions/attest publishes below. The actions/attest
+          # provenance is the one RELEASE.md and SECURITY.md verify.
+          provenance: false
 
       - name: Generate SLSA provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -128,3 +171,35 @@ jobs:
           subject-name: ${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.build-and-push.outputs.digest }}
           push-to-registry: true
+
+      - name: Install cosign
+        if: steps.evidence.outputs.publish == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pinned, not inherited from the installer: the cosign release decides
+          # the on-registry bundle layout, and the attest action requires v3.1.0
+          # or later.
+          cosign-release: v3.1.3
+
+      - name: Sign the image and attest SBOM and OpenVEX
+        id: attest
+        if: steps.evidence.outputs.publish == 'true'
+        uses: ./.github/actions/cosign-attest-multiplatform
+        with:
+          image-name: ${{ steps.image.outputs.name }}
+          index-digest: ${{ steps.build-and-push.outputs.digest }}
+          platforms: ${{ env.PLATFORMS }}
+
+      # The identity pins the signer to this workflow and to the two refs that
+      # publish releases. SECURITY.md carries a copy in its ClusterImagePolicy
+      # sample; SECURITY.md and RELEASE.md document the exact per-release
+      # identities it accepts. Change them together.
+      - name: Verify signature and attestations
+        if: steps.evidence.outputs.publish == 'true'
+        uses: ./.github/actions/cosign-verify-image
+        with:
+          image-name: ${{ steps.image.outputs.name }}
+          index-digest: ${{ steps.build-and-push.outputs.digest }}
+          platforms: ${{ env.PLATFORMS }}
+          certificate-identity-regexp: '^https://github\.com/dsx-ai-factory/topograph/\.github/workflows/docker\.yml@refs/(tags/v[0-9]+\.[0-9]+\.[0-9]+|heads/release-[0-9]+\.[0-9]+)$'
+          verify-openvex: ${{ steps.attest.outputs.openvex-attested }}
