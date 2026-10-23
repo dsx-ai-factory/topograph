@@ -343,15 +343,19 @@ for arch in amd64 arm64; do
   diff <(jq -r "$VEXED" "before-$arch.json") <(jq -r "$VEXED" "after-$arch.json")
 done
 
-# What the new statement must do on each platform. A statement may list one
-# subcomponent per platform-specific version (Step 6), so the expected rows
-# come from what each platform's base scan still reported for this ID, not
-# from the statement alone.
-ID='<vulnerability.name of the new statement>'
-jq -r --arg id "$ID" '.statements[]
-  | select(.vulnerability.name == $id)
+# What the edited statement must do on each platform. Several statements can
+# share an ID, so select the edited one by its zero-based index in
+# `statements`. List them to find it:
+jq -r '.statements | to_entries[]
+  | "\(.key) \(.value.vulnerability.name) \(.value.status)"' .openvex.json
+IDX='<index of the edited statement>'
+ID=$(jq -r --argjson idx "$IDX" '.statements[$idx].vulnerability.name' .openvex.json)
+jq -r --argjson idx "$IDX" '.statements[$idx]
   | .products[].subcomponents[]
   | (.["@id"] // .identifiers.purl)' .openvex.json | sort -u > scoped.txt
+# A statement may list one subcomponent per platform-specific version
+# (Step 6), so the expected rows come from what each platform's base scan
+# still reported for this ID, not from the statement alone.
 for arch in amd64 arm64; do
   echo "== $arch"
   # Subcomponents present on this platform: reported for this ID before the edit.
@@ -385,9 +389,12 @@ Read the result, per platform:
   version that platform does not ship. One statement can also cover several
   rows, for example the same CVE in two Alpine packages.
 - `missing`, `unexpected`, and `still reported` must all be empty on both
-  platforms. The checks cover only the packages the statement names: the same
-  ID in a package the statement does not name stays in `.matches[]` on purpose,
-  as a finding to triage on its own.
+  platforms. The checks cover only the packages the selected statement names:
+  the same ID in a package it does not name stays in `.matches[]` on purpose,
+  as a finding to triage on its own, and another statement with the same ID is
+  checked by running the block again with that statement's index. If one edit
+  adds two statements with the same ID, each one's rows appear under the
+  other's `unexpected`; confirm them with the other index.
 
 If `expected` is empty on both platforms, the statement names no package and
 version either scan reports for this ID: suspect the subcomponent version, then
