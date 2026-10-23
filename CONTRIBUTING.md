@@ -241,6 +241,10 @@ package or area touched (e.g. `feat(provider/crusoe): ...`,
 under about 70 characters — it's what shows up in `git log --oneline` and in
 the PR list.
 
+Pull requests are squash merged, and the squash commit takes the pull request
+title as its subject, so the title must follow the same format. The `PR title`
+check (`pr-title.yaml`) fails until it does, and editing the title re-runs it.
+
 Examples:
 
 ```gitcommit
@@ -309,6 +313,8 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
   lint/unittest (`chart-test.yaml`), Codecov patch/project coverage, and the
   DCO bot all run on every push to the PR, and workflow lint
   (`workflow-lint.yaml`: actionlint and zizmor) runs when `.github/` changes.
+  The `PR title` check (`pr-title.yaml`) runs when the PR is opened, pushed
+  to, or edited.
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)

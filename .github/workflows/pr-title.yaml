@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Checks that the pull request title follows Conventional Commits, as
+# CONTRIBUTING.md "Commit messages" describes. Pull requests are squash merged
+# and the squash commit takes the pull request title as its subject, so the
+# title, not the contributor's own commits, is what lands on main.
+#
+# The trigger is pull_request, not pull_request_target. The check needs no
+# secrets and no write token, and GitHub blocks pull_request_target in public
+# repositories by default from December 2, 2026, unless an Actions event policy
+# allows it. A fork pull request therefore waits for the repository's fork
+# approval policy before its first run, like any pull_request workflow. The job
+# never checks out or runs the contributor's code, holds no permissions, and
+# reads the title through an environment variable rather than interpolating it
+# into the script.
+#
+# `synchronize` is in the trigger list although a push does not change the
+# title, because a required check is reported per head commit, and a push with
+# no run would leave the new head without one. `edited` also fires on body
+# edits; every run does the full check rather than skipping when the title did
+# not change, because a skipped job reports success under this check's name and
+# would replace a failing result with a pass.
+#
+# Runner: GitHub-hosted ubuntu-latest, as assign.yaml uses. Any GitHub user can
+# trigger this job by opening a pull request, and it runs a few lines of shell,
+# so it has no reason to run on, or queue for, the project's own machines. The
+# repository guard keeps copies of this workflow in forks from running there.
+
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: PR title
+    if: github.repository == 'dsx-ai-factory/topograph'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+
+    steps:
+      - name: Check the title follows Conventional Commits
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          CONTRIBUTING: ${{ github.server_url }}/${{ github.repository }}/blob/main/CONTRIBUTING.md#commit-messages
+        run: |
+          set -euo pipefail
+          # Keep the types in step with CONTRIBUTING.md "Commit messages". The
+          # scope is optional and may hold any text but parentheses, `!` marks
+          # a breaking change, and the description must not be empty.
+          types='feat|fix|docs|chore|refactor|style|perf|test|build|ci'
+          pattern="^(${types})(\\([^()]+\\))?!?: [^[:space:]]"
+          # The title is printed after a fixed prefix and never as part of a
+          # workflow command, so it cannot inject one.
+          printf 'Title: %s\n' "${TITLE}"
+          if [[ "${TITLE}" =~ ${pattern} ]]; then
+            echo "The title follows Conventional Commits."
+            exit 0
+          fi
+          echo "::error title=PR title::The pull request title does not follow Conventional Commits. Edit the title to the form type(scope): description, for example 'fix(engine/slurm): handle empty fabric tiers'. See ${CONTRIBUTING}"
+          {
+            echo "### The pull request title does not follow Conventional Commits"
+            echo
+            echo "The title becomes the commit subject on \`main\` when the pull request is squash merged. Edit it to \`type(scope): description\`, where \`type\` is one of \`${types//|/\`, \`}\` and \`(scope)\` is optional. Editing the title re-runs this check."
+            echo
+            echo "See [Commit messages](${CONTRIBUTING}) in CONTRIBUTING.md."
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit 1
