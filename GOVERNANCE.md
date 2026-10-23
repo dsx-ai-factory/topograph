@@ -268,7 +268,7 @@ A surface is public when a user or a downstream project can depend on it without
 
 | Surface | Examples |
 | --- | --- |
-| Provider names registered in `pkg/registry` and the Helm `provider.name` value | `aws`, `crusoe`, `dra`, `gcp`, `infiniband-bm`, `infiniband-k8s`, `lambdai`, `nebius`, `netq`, `nscale`, `oci`, `oci-imds`, and the simulation variants such as `aws-sim` and `dsx-sim` |
+| Provider names registered in `pkg/registry` and the Helm `provider.name` value | See the [supported providers](docs/overview.md#supported-providers), including simulation variants |
 | Engine names registered in `pkg/registry` and the Helm `engine.name` value | `slurm`, `k8s`, `nfd`, `slinky`, `graph` |
 | Node label and annotation keys | `fabric.topograph.run/tier-N`, `accelerator.topograph.run/domain`, `accelerator.topograph.run/sub-domain`, and the rest of `docs/reference/node-labels.md` |
 | HTTP endpoints, request parameters, and response fields | `/v1/generate`, `/v1/topology`, `/v1/lookup` |

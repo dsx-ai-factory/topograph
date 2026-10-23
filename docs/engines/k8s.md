@@ -455,7 +455,7 @@ networkPolicy:
 | all (under default-deny) | kube-apiserver Service IP on `443` or endpoint IP on `6443` (see above) |
 | `netq` | the NetQ server IP (resolve the `apiUrl` host) on its port (`443` by default) |
 | BCM (planned) | the BCM head-node CIDR on `8081` |
-| `aws`, `gcp`, `oci`, `nebius`, `nscale`, `lambdai`, `cw` | the cloud API over `443`; if the provider reads instance metadata, `169.254.169.254/32` — **IMDS access is a credential-exposure vector**, so scope it tightly and prefer workload identity where the provider supports it |
+| Cloud providers ([supported providers](../overview.md#supported-providers)) | the cloud API over `443`; if the provider reads instance metadata, `169.254.169.254/32` — **IMDS access is a credential-exposure vector**, so scope it tightly and prefer workload identity where the provider supports it |
 | `dra`, `infiniband-k8s` | none beyond the kube-apiserver + DNS (they operate in-cluster) |
 
 > **On NMC / Calico clusters** the tenant baseline is a cluster-wide Calico `GlobalNetworkPolicy` default-deny that already allows kube-apiserver and DNS egress and governs intra-tenant traffic by namespace-list membership. There, prefer adding the Topograph namespace to the NMC network-policy `user.namespaceList` (and the BCM CIDR to `bcmHeadNodeCidrs`) rather than this chart policy; this `networkPolicy` is aimed at clusters that expect each workload to ship its own default-deny allow-rules.
@@ -492,13 +492,7 @@ The Helm chart ships two layers of validation for operators.
 
 ### Schema-backed values validation at install time
 
-`charts/topograph/values.schema.json` is a JSON Schema that Helm enforces during `helm template` and `helm install`. Misspelled provider names, wrong engine enums, out-of-range replica counts, bad pull policies, invalid service port numbers, and malformed `serviceMonitor` / `tests` / `ingress` shapes are rejected with a clear `at '/field/path': <explanation>` error before any template rendering happens. For example, `--set engine.name=bogus` produces:
-
-```
-Error: values don't meet the specifications of the schema(s) in the following chart(s):
-topograph:
-- at '/engine/name': value must be one of 'graph', 'k8s', 'nfd', 'slinky', 'slurm'
-```
+`charts/topograph/values.schema.json` is a JSON Schema that Helm enforces during `helm template` and `helm install`. Out-of-range replica counts, bad pull policies, invalid service port numbers, and malformed `serviceMonitor` / `tests` / `ingress` shapes are rejected with a clear `at '/field/path': <explanation>` error before any template rendering happens. `provider.name` and `engine.name` must be strings, but accepted names are validated by Topograph's runtime registries rather than chart allowlists.
 
 The schema is deliberately narrow: per-provider credential requirements are documented in prose in `docs/providers/<name>.md` rather than enforced in the schema, because credential field sets evolve with upstream provider changes.
 

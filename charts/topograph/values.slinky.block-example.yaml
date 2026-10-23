@@ -3,7 +3,7 @@
 # Declare variables to be passed into your templates.
 
 provider:
-  # name: "aws", "oci", "gcp", "nebius", "netq", "infiniband-k8s", "dra" or "test"
+  # See [supported providers](https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md#supported-providers).
   name: aws
   params:
     nodeSelector:

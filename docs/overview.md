@@ -38,22 +38,25 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 
 ## Supported Environments
 
-Currently supported providers:
+### Supported Providers
 
-- [AWS](./providers/aws.md)
-- [Crusoe](./providers/crusoe.md)
-- [Firebird](./providers/firebird.md) — client credentials authentication; includes `firebird-sim` for offline model-based testing
-- [OCI](./providers/oci.md)
-- [GCP](./providers/gcp.md)
-- [Nebius](./providers/nebius.md)
-- [Nscale](./providers/nscale.md)
-- [Lambda](./providers/lambdai.md)
-- [NetQ](./providers/netq.md)
-- [DRA](./providers/dra.md) — provides Slinky block topology from a configured pre-existing Node label (default `nvidia.com/gpu.clique`); it does not discover the backend switch fabric
-- [InfiniBand (bare-metal)](./providers/infiniband.md#infiniband-bm-bare-metal)
-- [InfiniBand (Kubernetes)](./providers/infiniband.md#infiniband-k8s-kubernetes)
-- [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation)
-- [Test](./providers/test.md) - simulates Topograph success, pending, and error responses for integration testing
+| Service provider or network fabric | Topograph provider name | Simulation variant |
+|---|---|---|
+| [Amazon Web Services (AWS)](./providers/aws.md) | `aws` | `aws-sim` |
+| [Crusoe Cloud](./providers/crusoe.md) | `crusoe` | `crusoe-sim` |
+| [Firebird](./providers/firebird.md) | `firebird` | `firebird-sim` |
+| [Oracle Cloud Infrastructure (OCI)](./providers/oci.md) | `oci` (API), `oci-imds` (instance metadata) | `oci-sim` (API) |
+| [Google Cloud Platform (GCP)](./providers/gcp.md) | `gcp` | `gcp-sim` |
+| [Nebius](./providers/nebius.md) | `nebius` | `nebius-sim` |
+| [Nscale](./providers/nscale.md) | `nscale` | `nscale-sim` |
+| [Lambda](./providers/lambdai.md) | `lambdai` | `lambdai-sim` |
+| [NVIDIA NetQ](./providers/netq.md) | `netq` | — |
+| [NVIDIA NVLink partitions from Kubernetes Node labels](./providers/dra.md) | `dra` | — |
+| [InfiniBand](./providers/infiniband.md) | `infiniband-bm` (bare metal), `infiniband-k8s` (Kubernetes) | [`infiniband-sim`](./providers/infiniband.md#infiniband-sim-offline-simulation) |
+| [DSX topology model](./modeling.md#provider-simulations) | — | `dsx-sim` |
+| [Topograph API lifecycle testing](./providers/test.md) | `test` | — (the provider itself simulates success, pending, and error responses) |
+
+An em dash (—) indicates that no corresponding provider variant is registered.
 
 Currently supported engines:
 
@@ -62,27 +65,6 @@ Currently supported engines:
 - [Node Feature Discovery](./engines/nfd.md)
 - [SLURM-on-Kubernetes (Slinky)](./engines/slinky.md)
 - [Graph](./engines/graph.md) - returns per-instance network layers and accelerator labels as JSON
-
-### Choosing a Provider
-
-| Scenario | Recommended provider |
-|---|---|
-| Cloud cluster (AWS, Crusoe, GCP, OCI, Nebius, Nscale, Lambda) | Use the matching CSP provider |
-| Spectrum-X fabric | [NetQ](./providers/netq.md) |
-| Multi-Node NVLink (MNNVL), including cross-partition fabric locality | [NetQ](./providers/netq.md) or [InfiniBand (Kubernetes)](./providers/infiniband.md#infiniband-k8s-kubernetes) |
-| MNNVL with Slinky, workloads contained within one NVLink partition, and `nvidia.com/gpu.clique` present | [DRA](./providers/dra.md) |
-| InfiniBand fabric, NetQ deployed | [NetQ](./providers/netq.md) |
-| InfiniBand fabric, no NetQ, bare-metal / Slurm | [InfiniBand (bare-metal)](./providers/infiniband.md) |
-| InfiniBand fabric, no NetQ, Kubernetes | [InfiniBand (Kubernetes)](./providers/infiniband.md) |
-| Replay a captured InfiniBand fabric without node access | [InfiniBand (simulation)](./providers/infiniband.md#infiniband-sim-offline-simulation) |
-| Crusoe Cloud, including Crusoe Managed Kubernetes | [Crusoe](./providers/crusoe.md) |
-| Cluster with a Firebird topology API and client credentials | [Firebird](./providers/firebird.md) |
-| Test Firebird topology without API access | [Firebird simulation](./providers/firebird.md#simulation) |
-| Client integration and regression testing | [Test](./providers/test.md) |
-
-The DRA provider is a narrow Slinky integration, not a general Kubernetes MNNVL topology provider. It groups nodes into Slurm `topology/block` domains from an existing Node label, defaulting to `nvidia.com/gpu.clique`. That label is not present in every GPU Operator deployment, and DRA does not discover the backend switch fabric between NVLink partitions. Consequently, if a workload cannot fit in one partition, selection of additional partitions is not informed by network proximity. Use NetQ or `infiniband-k8s` when cross-partition fabric locality is required.
-
-For non-MNNVL GPU clusters (such as DGX B200 or B300 SuperPODs), `nvidia.com/gpu.clique` is not set — Topograph with an InfiniBand provider is the only source of network topology for scheduling decisions on these systems.
 
 ## Learn more
 

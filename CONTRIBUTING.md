@@ -111,9 +111,9 @@ scheduler-specific output from a provider, stop and reconsider the design.
    of hand-rolling detection logic inside the provider.
 5. Document it: add `docs/providers/<name>.md` (follow the shape of
    `aws.md` / `netq.md`), and add the provider to `docs/overview.md`'s
-   supported-provider list and "Choosing a Provider" scenario table.
+   [supported providers table](docs/overview.md#supported-providers).
 6. Optional: export a second `NamedLoaderSim` for a simulated/testable
-   variant (see `aws`, `gcp`, `oci`, `lambdai`).
+   variant (see the [simulation variants](docs/overview.md#supported-providers)).
 
 The full checklist and the `Provider` interface contract are the source of
 truth in [AGENTS.md § Adding a new provider](AGENTS.md#adding-a-new-provider).

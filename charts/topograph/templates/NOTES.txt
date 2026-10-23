@@ -45,6 +45,11 @@
 
   NOTE: node-data-broker applies node annotations once when each broker pod starts.
 {{- end }}
+{{- if eq .Values.provider.name "firebird" }}
+
+  NOTE: Firebird requires provider.params.apiUrl to use HTTPS and runtime
+        clientId/clientSecret credentials. See docs/providers/firebird.md.
+{{- end }}
 {{- if eq .Values.provider.name "infiniband-k8s" }}
 
   NOTE: InfiniBand fabric discovery uses ibnetdiscover; accelerator-domain

@@ -80,20 +80,11 @@ For the complete API status-code simulation behavior, see [Test Mode and Test Pr
 
 ### Provider Simulations
 
-Several providers also have simulation variants, such as:
+Available simulation variants are listed in the [supported providers table](./overview.md#supported-providers).
 
-- `aws-sim`
-- `gcp-sim`
-- `oci-sim`
-- `nebius-sim`
-- `nscale-sim`
-- `firebird-sim`
-- `lambdai-sim`
-- `dsx-sim`
+Model-based simulation providers load a model file and then simulate that provider's API responses. This is useful when you want to exercise the normal provider translation logic without real provider credentials or infrastructure. The [InfiniBand simulation provider](./providers/infiniband.md#infiniband-sim-offline-simulation) instead replays captured `ibnetdiscover` output.
 
-These providers load a model file and then simulate that provider's API responses. This is useful when you want to exercise the normal provider translation logic without real provider credentials or infrastructure.
-
-Simulation providers share these common parameters:
+Model-based simulation providers share these common parameters:
 
 | Parameter       | Required | Description                                                                                                                          |
 | --------------- | -------: | ------------------------------------------------------------------------------------------------------------------------------------ |

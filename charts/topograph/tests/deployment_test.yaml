@@ -9,6 +9,30 @@ release:
   name: chart-ci
   namespace: topograph
 tests:
+  - it: accepts engine names outside the chart's known engines
+    set:
+      engine.name: custom-engine
+    asserts:
+      - isKind:
+          of: Deployment
+        template: templates/deployment.yaml
+
+  - it: accepts provider names outside the chart's known providers
+    set:
+      provider.name: custom-provider
+    asserts:
+      - isKind:
+          of: Deployment
+        template: templates/deployment.yaml
+
+  - it: accepts the Firebird simulation provider
+    set:
+      provider.name: firebird-sim
+    asserts:
+      - isKind:
+          of: Deployment
+        template: templates/deployment.yaml
+
   - it: renders a Deployment with a single replica by default
     asserts:
       - isKind:

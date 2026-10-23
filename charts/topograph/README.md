@@ -38,11 +38,11 @@ helm search repo topograph/topograph --versions
 
 ## Configuration
 
-The default `values.yaml` ships the `test` provider + `k8s` engine, suitable for a smoke-test install. Production installs select a real provider:
+The default `values.yaml` ships the `test` provider + `k8s` engine, suitable for a smoke-test install. Production installs select a [supported provider](https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md#supported-providers) for their environment:
 
 ```yaml
 provider:
-  name: test       # or aws, gcp, oci, nebius, netq, infiniband-k8s, ...
+  name: test
 engine:
   name: k8s        # or nfd, slurm, slinky, graph
 ```
@@ -85,7 +85,9 @@ ServiceAccount, set `name: default` explicitly.
 
 ### Values validation
 
-The chart ships a [`values.schema.json`](./values.schema.json) that validates the most error-prone fields at install time — the `provider.name` and `engine.name` enums, type and range constraints on `kubeClient`, `replicaCount`, `image.pullPolicy`, `service.type`, `service.port`, and `verbosity`, and the expected shapes of `serviceAccount`, `rbac`, `ingress`, `serviceMonitor`, and related nested objects. Invalid values are rejected by `helm install` and `helm template` with a clear schema-validation error.
+The chart ships a [`values.schema.json`](./values.schema.json) that validates the most error-prone fields at install time — type and range constraints on `kubeClient`, `replicaCount`, `image.pullPolicy`, `service.type`, `service.port`, and `verbosity`, and the expected shapes of `serviceAccount`, `rbac`, `ingress`, `serviceMonitor`, and related nested objects. Invalid values are rejected by `helm install` and `helm template` with a clear schema-validation error.
+
+`provider.name` and `engine.name` must be strings; the chart does not restrict them to lists of names. Topograph validates provider and engine names against its runtime registries.
 
 The schema is deliberately narrow: per-provider credential requirements (which fields a given provider needs in its credentials map) are documented in prose in `docs/providers/<name>.md` rather than enforced in the schema, because the credential field sets evolve with upstream provider changes and are hard to keep accurate in a schema.
 

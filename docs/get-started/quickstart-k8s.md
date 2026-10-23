@@ -38,8 +38,7 @@ helm install topograph topograph/topograph \
   # ... engine-specific flags ...
 ```
 
-Replace `<provider>` with one of the supported values (`aws`, `gcp`, `oci`,
-`nebius`, `nscale`, `netq`, `infiniband-k8s`, `lambdai`). For Slinky
+Replace `<provider>` with a name from the [supported providers](../overview.md#supported-providers) that matches your environment. For Slinky
 `topology/block` deployments only, `dra` is also supported when every
 participating node already has a valid `nvidia.com/gpu.clique` label; see the
 [DRA provider documentation](../providers/dra.md). To see available chart

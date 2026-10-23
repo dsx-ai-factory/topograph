@@ -46,7 +46,7 @@ helm install topograph topograph/topograph \
   --set engine.name=k8s
 ```
 
-Replace `<provider>` with one of `aws`, `crusoe`, `gcp`, `oci`, `nebius`, `nscale`, `lambdai`, `netq`, `infiniband-k8s`, `dra` or `test`. Provider credentials and parameters are passed as Helm values; the full values shape is in [`charts/topograph/values.yaml`](charts/topograph/values.yaml).
+Replace `<provider>` with a name from the [supported providers](docs/overview.md#supported-providers). Provider credentials and parameters are passed as Helm values; the full values shape is in [`charts/topograph/values.yaml`](charts/topograph/values.yaml).
 
 To confirm it worked, run the bundled chart tests, which probe `/healthz` and `/metrics` inside the cluster, then look for the labels the `k8s` engine writes onto nodes a few seconds after install:
 
@@ -77,12 +77,12 @@ make deb                             # Debian / Ubuntu, writes bin/topograph-*.d
 sudo dpkg -i bin/topograph-*.deb     # or: sudo rpm -ivh bin/topograph-*.rpm
 ```
 
-The package installs the service but does not start it. Set at least the provider and engine in `/etc/topograph/topograph-config.yaml`:
+The package installs the service but does not start it. Set at least the provider and engine in `/etc/topograph/topograph-config.yaml`, choosing a [supported provider](docs/overview.md#supported-providers) for your environment:
 
 ```yaml
 http:
   port: 49021
-provider: aws                        # or gcp, oci, nebius, nscale, netq, infiniband-bm, ...
+provider: aws
 engine: slurm
 requestAggregationDelay: 15s
 ```
