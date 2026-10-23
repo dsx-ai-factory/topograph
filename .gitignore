@@ -1,12 +1,8 @@
 /coverage.out
 /coverage.html
 /bin
-# Binaries built at the repo root by `go build ./cmd/...`
-/topograph
-/node-observer
-/node-data-broker
-/kwok-nodes
 /ssl
+/.DS_Store
 # Developer-local scratch space; may hold real endpoints or tokens (see AGENTS.md)
 /localdev/
 /deb/topograph/DEBIAN/control
