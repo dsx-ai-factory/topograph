@@ -14,7 +14,7 @@ it and is not repeated here:
 | You need | Read |
 |---|---|
 | Prerequisites, build, local test loop, running a binary, container images, packaging, CI parity | [DEVELOPMENT.md](../DEVELOPMENT.md) |
-| Issue-first workflow, DCO sign-off, commit and branch conventions, review process, AI-assisted contribution policy | [CONTRIBUTING.md](../CONTRIBUTING.md) |
+| Issue-first workflow, DCO sign-off and commit signing, commit and branch conventions, review process, AI-assisted contribution policy | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | What each runtime component does and how a request flows between them | [docs/architecture.md](../docs/architecture.md) |
 | Every label and annotation key the Kubernetes engine writes | [docs/reference/node-labels.md](../docs/reference/node-labels.md) |
 | Provider selection, supported providers, the "Choosing a Provider" scenario table | `docs/overview.md` |
@@ -265,7 +265,7 @@ provider's output must be translatable into.
 | Change `pkg/topology/Vertex` fields without discussion | Every provider and engine depends on the shape |
 | Add a new provider in `pkg/providers/<name>/` without also updating `pkg/registry/registry.go` | Orphaned code; provider will not be loadable |
 | Modify an AGENTS.md-described surface (new Makefile target, top-level directory, chart template, invariant) without updating `AGENTS.md` + `.claude/CLAUDE.md` in the same PR | Drift between the code and its agent-facing description; the next contributor or agent reads stale guidance |
-| Skip DCO sign-off to "fix later" | The DCO bot will block the PR; rebase with `--signoff` is always available |
+| Skip DCO sign-off or commit signing to "fix later" | The DCO bot will block the PR and the `Commit requirements` check will flag it; on a linear branch cloned from this repository, `git fetch origin` then `git rebase --keep-base --exec 'git commit --amend -s -S --no-edit' origin/main` fixes both; for merge commits or a fork, follow [CONTRIBUTING.md](../CONTRIBUTING.md#fixing-existing-commits). `rebase --signoff` drops signatures unless `commit.gpgsign` is set |
 | Use plain `error` at the provider interface boundary | Must be `*httperr.Error` so the API server returns the correct HTTP status |
 | Commit a credential, API key, token, or environment variable value | Anything reaching git history has to be rotated, not just deleted |
 | Enable both `ingress.enabled` and `gatewayAPI.enabled` in the same Helm release | Mutually exclusive; deploying both routing resources against the same Service is almost always a misconfiguration. Enforced by `charts/topograph/templates/_validation.tpl`. |
@@ -283,8 +283,8 @@ ID and region source contract in [docs/api.md](../docs/api.md#node-instance-id-a
 
 ## 4. Pull Request Guidelines
 
-Branch naming, the Conventional Commits format, DCO sign-off and how to repair a
-missing one, the review process, and the AI-assisted contribution policy are all in
+Branch naming, the Conventional Commits format, DCO sign-off, commit signing and how
+to repair either one, the review process, and the AI-assisted contribution policy are all in
 [CONTRIBUTING.md](../CONTRIBUTING.md). What follows is the part specific to keeping this
 repository's own documents and gates in step.
 
@@ -298,13 +298,13 @@ From `codecov.yml`:
 Coverage checks run on pull requests. A drop below target with no matching uplift in
 the touched files will fail the Codecov check.
 
-### GPG signing is optional but recommended
+### Commits must be signed off and signed
 
-DCO sign-off (`git commit -s`) is required and is covered in `CONTRIBUTING.md`. GPG
-signing is separate and optional; configure it once with
-`git config --global user.signingkey <key-id>` and
-`git config --global commit.gpgsign true`, then use `git commit -s -S`. Signed commits
-get a **Verified** badge once the public key is uploaded to your GitHub account.
+Every commit must be signed off and signed (`git commit -s -S`); setup, repair, and what
+the `Commit requirements` check verifies are in [CONTRIBUTING.md](../CONTRIBUTING.md#sign-your-work).
+If signing fails, for example because a sandbox blocks access to the key, stop and
+tell the user; never commit with `--no-gpg-sign` or `-c commit.gpgsign=false`, and
+never drop `-s`.
 
 ### Potential security issues
 
@@ -368,4 +368,4 @@ template wholesale.
 - [ ] User-facing changes recorded in `CHANGELOG.md` `[Unreleased]` when applicable
 - [ ] `pkg/topology/` changes were discussed in an issue first
 - [ ] No credential, API key, token, or environment variable value appears anywhere in the diff
-- [ ] Every commit has a DCO sign-off
+- [ ] Every commit is signed off and signed (`git commit -s -S`)

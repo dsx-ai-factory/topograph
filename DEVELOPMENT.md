@@ -273,4 +273,4 @@ doesn't, and the reverse is also possible in principle.
 ## Before Opening a Pull Request
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the issue-first workflow, DCO
-sign-off requirements, and the full pre-push checklist.
+sign-off and commit signing requirements, and the full pre-push checklist.

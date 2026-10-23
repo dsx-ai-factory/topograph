@@ -6,4 +6,4 @@
 - [ ] I am familiar with the [Contributing Guidelines](./CONTRIBUTING.md).
 - [ ] New or existing tests cover these changes.
 - [ ] The documentation is up to date with these changes.
-- [ ] All commits are signed off per DCO (`git commit -s`).
+- [ ] All commits are signed off per DCO and signed (`git commit -s -S`).

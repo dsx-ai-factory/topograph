@@ -139,8 +139,24 @@ registry pattern, registered in `engines.NewRegistry(...)`. Full detail in
 
 ## Sign your work
 
-The sign-off is a simple signature at the end of the description for the patch.
-Your signature certifies that you wrote the patch or otherwise have the right
+Every commit must be both **signed off** and **signed**, maintainers'
+commits included:
+
+```bash
+git commit -s -S -m "your message"
+```
+
+- `-s` (lowercase) adds the `Signed-off-by:` trailer that certifies the
+  Developer Certificate of Origin below.
+- `-S` (uppercase) attaches a GPG or SSH signature that proves the commit came
+  from you. GitHub shows it as **Verified**.
+
+The two are independent and neither implies the other, so use both on every
+commit, amends included. [Commit signing](#commit-signing) covers the one-time
+setup that makes `-S` automatic.
+
+The sign-off is a simple line at the end of the description for the patch.
+Your sign-off certifies that you wrote the patch or otherwise have the right
 to pass it on as an open-source patch.
 
 The rules are pretty simple, and sign-off means that you certify the DCO below
@@ -192,7 +208,7 @@ To sign off, you just add the following line to every git commit message:
 You must use your real name (sorry, no pseudonyms or anonymous contributions).
 
 If you set your `user.name` and `user.email` using git config, you can sign
-your commit automatically with `git commit -s`.
+off your commit automatically with `git commit -s`.
 
 ### DCO bot enforcement
 
@@ -202,24 +218,162 @@ App on every pull request — it checks every commit in the PR for a
 checks. There is no `.github/dco.yml` exemption configured: `dsx-ai-factory` org
 membership does not bypass it, and neither does any other affiliation.
 
-**If the `DCO` check fails**, rebase the branch to add sign-off to every
-commit rather than opening a new PR. The [Development Guide](DEVELOPMENT.md#clone-and-build)'s
-clone flow names the remote `origin`; if you're working from a fork with
-`origin` pointing at your fork, substitute whatever remote tracks
-`dsx-ai-factory/topograph`'s `main` (commonly added as `upstream`) instead:
+**If the `DCO` check fails**, fix the commits on the branch as described in
+[Fixing existing commits](#fixing-existing-commits) rather than opening a new
+PR.
+
+### Commit signing
+
+A signature ties each commit to a key registered on the author's GitHub
+account, so the code a release workflow builds can be traced back to the
+people who wrote it. The sign-off is a statement; the signature is the
+evidence that you made it.
+
+#### One-time setup
+
+Do this once and `-S` becomes automatic. Drop `--global` to configure a single
+repository instead.
+
+Your commit identity, which is what lands in the `Signed-off-by:` trailer:
 
 ```bash
-# add sign-off to every commit on the branch since it diverged from main
-git rebase --signoff origin/main
-git push --force-with-lease
+git config --global user.name "Your Name"
+git config --global user.email "your.email@example.com"
+```
+
+Use an address that is verified on your GitHub account. GitHub does not mark a
+commit as verified when its email is not one of the account's verified
+addresses, even if the signature itself is valid.
+
+Then a signing key, which GitHub must also know about. Follow GitHub's guide to
+[generate a GPG or SSH signing key and add it to your account](https://docs.github.com/en/authentication/managing-commit-signature-verification),
+then point git at it. For SSH:
+
+```bash
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub   # the public key, not the private one
+```
+
+Add an SSH key to GitHub with the key type **Signing Key**. A key added only as
+an authentication key lets you push but does not verify commits; the same key
+can be added once as each type.
+
+For GPG, leave `gpg.format` unset and use the key ID from
+`gpg --list-secret-keys --keyid-format=long`. The key's email has to match your
+commit email:
+
+```bash
+git config --global user.signingkey <key-id>
+```
+
+Finally, sign every commit without having to remember `-S`:
+
+```bash
+git config --global commit.gpgsign true
+```
+
+After your next push, the commit shows a **Verified** badge on GitHub. If it
+shows **Unverified** instead, hover over the badge for the reason; an
+unregistered key and an unverified email are the usual causes.
+
+#### What the automated check verifies
+
+The [Commit Requirements](.github/workflows/commit-requirements.yaml) workflow
+runs on every pull request. For every commit, it checks that GitHub verified
+the commit's signature. Bot commits are not exempt, and pass only when GitHub
+reports them as verified. GitHub signs the commits it creates through its web
+interface and the commits Dependabot creates, so those pass; any other bot or
+API client passes only if its commits come out verified. An unsigned commit
+that merely uses a bot's email address is flagged like any other. If any
+commit fails, it posts a single comment listing those commits with the commands
+to fix them, and updates that comment to a success note once they are fixed.
+GitHub lists at most 250 commits for a pull request. If it returns fewer than
+the pull request has, the check cannot verify them all, so it fails with a
+"Could not check every commit" report; split the pull request or reduce its
+commit count.
+Sign-off is checked separately, by the `DCO` check described above. A pull
+request opened with a workflow's `GITHUB_TOKEN` does not trigger the check,
+because GitHub does not start workflows for events that token causes; a
+maintainer can close and reopen such a pull request to run it.
+
+The check is not yet a required status check, and `main` does not yet require
+signed commits, so a failing check does not block a merge on its own. Signing
+is still required: maintainers expect every commit to be signed before they
+merge, and will make the check required once open pull requests have caught up.
+
+### Fixing existing commits
+
+Whether a commit is missing its sign-off or its signature, the fix is the
+same: rewrite the commits with both, and force-push.
+
+Below, `origin/main` stands for the branch your pull request targets on
+`dsx-ai-factory/topograph`: `main`, or `release-X.Y` for a pull request against
+a release branch. Use that branch in every command; rewriting against the
+wrong one would re-sign commits that are not yours. Fetch it first with
+`git fetch origin`; the [Development Guide](DEVELOPMENT.md#clone-and-build)'s
+clone flow names that remote `origin`. On a fork, where `origin` is your fork,
+fetch the upstream repository and use `upstream/main` (or
+`upstream/release-X.Y`) instead:
+
+```bash
+git remote add upstream https://github.com/dsx-ai-factory/topograph.git   # once, if missing
+git fetch upstream
 ```
 
 For just the most recent commit:
 
 ```bash
-git commit --amend -s --no-edit
+git commit --amend -s -S --no-edit
 git push --force-with-lease
 ```
+
+To fix every commit on the branch at once, first fetch the base and check
+whether the branch contains merge commits, because a plain rebase drops them
+and takes any merge-only changes with them:
+
+```bash
+git fetch origin   # on a fork: git fetch upstream, and use upstream/main below
+git log --oneline --merges origin/main..HEAD   # empty output means the branch is linear
+```
+
+For a linear branch:
+
+```bash
+git rebase --keep-base --exec 'git commit --amend -s -S --no-edit' origin/main
+```
+
+For a branch with merge commits, preserve them:
+
+```bash
+git rebase --keep-base --rebase-merges --exec 'git commit --amend -s -S --no-edit' origin/main
+```
+
+`--rebase-merges` recreates each merge rather than copying it: conflicts
+resolved in the original merge must be resolved again, and any other manual
+change made in a merge commit is lost.
+
+`--keep-base` (Git 2.24 or later) re-signs the commits where they are instead
+of moving them onto the latest `main`, so the rewrite should change nothing
+but the sign-offs and signatures. Confirm that before you push; this must
+print nothing:
+
+```bash
+git diff @{u} HEAD
+```
+
+For a per-commit view that includes merge commits, use
+`git range-diff --diff-merges=remerge @{u}...HEAD` (Git 2.48 or later); without
+`--diff-merges`, `git range-diff` skips merges.
+
+Then push:
+
+```bash
+git push --force-with-lease
+```
+
+Rewriting every commit outdates the inline comments reviewers have already
+left. If the pull request is already under review, say on it that you
+force-pushed.
 
 ## Commit messages
 
@@ -256,7 +410,8 @@ Branch names use a smaller prefix set than the full commit `type` list above
 `feat/crusoe-provider`; there's no dedicated branch prefix for `style`,
 `perf`, `build`, or `ci` commits, so use whichever of the six branch
 prefixes best fits the change. Every commit still needs the DCO
-`Signed-off-by:` trailer described above — `git commit -s` adds it for you.
+`Signed-off-by:` trailer and the signature described in
+[Sign your work](#sign-your-work); `git commit -s -S` adds both.
 
 ## AI-assisted contributions
 
@@ -299,7 +454,7 @@ Every pull request auto-requests review from the repository's
 [CODEOWNERS](CODEOWNERS). Formal approval requires a **Reviewer** or
 **Maintainer** (per [GOVERNANCE.md](GOVERNANCE.md#roles-and-responsibilities));
 only a **Maintainer** can merge, and merging separately verifies DCO
-sign-off, passing CI, and required approvals — it is not a second code
+sign-off, commit signatures, passing CI, and required approvals; it is not a second code
 review. The current maintainer list, including any path-scoped maintainers,
 is in [MAINTAINERS.md](MAINTAINERS.md).
 
@@ -309,6 +464,9 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
   lint/unittest (`chart-test.yaml`), Codecov patch/project coverage, and the
   DCO bot all run on every push to the PR, and workflow lint
   (`workflow-lint.yaml`: actionlint and zizmor) runs when `.github/` changes.
+  The `Commit requirements` check (`commit-requirements.yaml`) reports commits
+  without a verified signature; it is not yet a required check, see
+  [What the automated check verifies](#what-the-automated-check-verifies).
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)
