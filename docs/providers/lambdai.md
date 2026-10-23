@@ -107,10 +107,16 @@ serviceAccount:
 ### 3. Install with Helm (no credentials Secret)
 
 ```bash
-helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
+helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph \
   --version <chart-version> -n topograph --create-namespace \
   -f values.k8s.lambdai-workload-identity-example.yaml
 ```
+
+The OCI chart is published starting with the first release after v1.0.0. For
+v1.0.0 and earlier versions, install from the Helm repository instead: run
+`helm repo add topograph https://dsx-ai-factory.github.io/topograph` and
+`helm repo update`, then use `topograph/topograph` in place of the `oci://`
+reference, as in the [Kubernetes quickstart](../get-started/quickstart-k8s.md#install).
 
 See [`values.k8s.lambdai-workload-identity-example.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.k8s.lambdai-workload-identity-example.yaml) for a complete example. Unlike the static-token flow, **no `config.credentialsSecret` is set**.
 
@@ -260,7 +266,7 @@ Install with Helm (see the [Kubernetes quickstart](../get-started/quickstart-k8s
 kubectl create secret generic lambdai-creds \
   --from-file=credentials.yaml=creds.yaml -n topograph
 
-helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
+helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph \
   --version <chart-version> -n topograph --create-namespace \
   --set provider.name=lambdai \
   --set provider.params.url=https://cloud.example.com \
@@ -272,6 +278,11 @@ helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
 # After a few seconds, topology labels appear on nodes:
 kubectl get nodes --show-labels | grep fabric.topograph.run
 ```
+
+For v1.0.0 and earlier chart versions, which are not published to GHCR,
+install from the Helm repository instead, as in the
+[Kubernetes quickstart](../get-started/quickstart-k8s.md#install): use
+`topograph/topograph` in place of the `oci://` reference.
 
 Only fabric `tier-N` labels appear until the API returns `nvlink` data (see the note above); the accelerator label follows once it does.
 

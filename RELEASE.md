@@ -109,6 +109,21 @@ Prepare every release candidate on the release branch.
    `topograph-1.2.0-rc.1.tgz.sha256` beside the chart package and generates
    signed SLSA provenance for the chart package.
 
+   It also pushes the chart to GHCR as an OCI artifact,
+   `oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph` with tag
+   `1.2.0-rc.1`, signs it with cosign, attaches signed SLSA provenance to it in
+   the registry, and verifies both before publishing to the Helm repository.
+   The GHCR steps run only when both conditions hold: the workflow is
+   dispatched from a `release-X.Y` branch, and the chart version is a
+   release-candidate version of the form `X.Y.Z-rc.N`. Other runs skip them
+   with a notice and still publish to the Helm repository.
+
+   After the first push to GHCR, confirm once that the
+   `topograph/charts/topograph` package is public in the organization's
+   package settings. A package that GitHub Actions creates can start out
+   private, and the [release verification](#release-verification) pull fails
+   until it is public.
+
 6. Run the release-candidate test cycle.
 
    If testing reveals that generally applicable changes are needed, merge them
@@ -169,8 +184,9 @@ branch for an official release.
 7. The tag push automatically starts these workflows:
 
    - **Release** packages and attests the Helm chart, generates and verifies its
-     SHA-256 checksum, publishes both files to the Helm repository, and creates
-     the GitHub release with both files attached.
+     SHA-256 checksum, pushes the chart to GHCR as a cosign-signed OCI artifact
+     with SLSA provenance, publishes both files to the Helm repository, and
+     creates the GitHub release with both files attached.
    - **Docker** publishes the multi-architecture container image and its signed
      SLSA provenance.
    - **Publish Fern Docs** publishes the versioned documentation.
@@ -228,11 +244,15 @@ An official release publishes:
   `ghcr.io/dsx-ai-factory/topograph:vX.Y.Z`
 - A Helm chart in the Topograph chart repository at
   `https://dsx-ai-factory.github.io/topograph`
+- The same Helm chart as an OCI artifact at
+  `oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph`, tagged with the
+  chart version (`X.Y.Z`) and signed with cosign
 - A SHA-256 checksum published beside the Helm chart package
 - A GitHub release and source tag named `vX.Y.Z`, with the Helm chart and its
   checksum attached
 - Versioned documentation generated from the release tag
-- Signed SLSA build provenance for the container image and Helm chart package
+- Signed SLSA build provenance for the container image and Helm chart package,
+  also attached to the OCI Helm chart in GHCR
 
 ## Quality gates
 
@@ -282,6 +302,35 @@ gh attestation verify topograph-1.2.0.tgz \
   --source-ref refs/tags/v1.2.0
 ```
 
+Pull the OCI Helm chart from GHCR anonymously, so the pull fails if the
+package is not public, then verify its cosign signature and the SLSA provenance
+attached to it in the registry. The `cosign` commands need cosign v3.0 or
+later, which reads the Sigstore bundle format the release workflows write.
+`helm pull` prints the chart's digest; to check that exact artifact, replace
+`:1.2.0` with `@sha256:<digest>` in the `cosign` commands.
+
+```bash
+# Empty registry configs, so neither Helm nor Docker credentials are used.
+anon=$(mktemp -d)
+DOCKER_CONFIG="${anon}" HELM_REGISTRY_CONFIG="${anon}/registry.json" \
+  helm pull oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph --version 1.2.0
+cosign verify ghcr.io/dsx-ai-factory/topograph/charts/topograph:1.2.0 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/dsx-ai-factory/topograph/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+cosign verify-attestation ghcr.io/dsx-ai-factory/topograph/charts/topograph:1.2.0 \
+  --type slsaprovenance1 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/dsx-ai-factory/topograph/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'
+```
+
+Release candidates are signed by the **Release Helm Charts** workflow on the
+release branch, so for a chart such as `1.2.0-rc.1` use this identity in both
+commands instead:
+
+```text
+^https://github\.com/dsx-ai-factory/topograph/\.github/workflows/helm-release\.yaml@refs/heads/release-[0-9]+\.[0-9]+$
+```
+
 Also confirm that:
 
 - The [GitHub release](https://github.com/dsx-ai-factory/topograph/releases) has the
@@ -311,6 +360,12 @@ Also confirm that:
   gh workflow run docker.yml --ref v1.2.0
   ```
 
+- If an anonymous `helm pull` of the OCI chart is denied while the workflow
+  succeeded, check the visibility of the `topograph/charts/topograph` package
+  in the organization's GHCR packages. A package that GitHub Actions creates on
+  its first push can start out private; a maintainer makes it public once in
+  the package settings.
+
 ### Failed documentation publication
 
 - Review the **Publish Fern Docs** workflow logs.
@@ -325,9 +380,13 @@ Also confirm that:
 - For container provenance, confirm that the Docker job grants the following:
   `packages: write`, `id-token: write`, `attestations: write`, and
   `artifact-metadata: write`.
-- For Helm provenance, confirm that the Helm job grants `id-token: write` and
-  `attestations: write`. It does not need `artifact-metadata: write` because the
-  chart attestation is stored by GitHub rather than pushed to an OCI registry.
+- For Helm provenance, confirm that the Helm job grants `id-token: write`,
+  `attestations: write`, `packages: write`, and `artifact-metadata: write`. The
+  provenance for the `.tgz` package is stored by GitHub; the provenance for the
+  OCI chart is also pushed to GHCR, which needs `packages: write`, and creates
+  an artifact metadata storage record, which needs `artifact-metadata: write`.
+- For the GHCR chart's cosign signature, review the **Sign and verify GHCR Helm
+  chart** step. Signing needs `id-token: write` and `packages: write`.
 - Retry the failed publishing workflow from the same tag. For **Release**, use
   the tag-bound manual dispatch command shown above so the new attestation still
   names `refs/tags/v1.2.0` as its source.

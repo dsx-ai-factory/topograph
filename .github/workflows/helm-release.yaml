@@ -15,6 +15,15 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      # Push the chart, its cosign signature, and its provenance to GHCR.
+      packages: write
+      # Push the chart's SLSA provenance to the registry and create its
+      # artifact metadata storage record (actions/attest with push-to-registry).
+      artifact-metadata: write
+    env:
+      # Fulcio certificate identity of this workflow on a release branch.
+      # RELEASE.md documents the same expression for users.
+      CHART_SIGNER_IDENTITY_REGEXP: '^https://github\.com/${{ github.repository }}/\.github/workflows/helm-release\.yaml@refs/heads/release-[0-9]+\.[0-9]+$'
 
     steps:
       - name: Checkout
@@ -46,6 +55,120 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: packaged/topograph-*.tgz
+
+      # The GHCR chart is published only for release candidates: the workflow
+      # must be dispatched from release-X.Y and the chart version must be a
+      # release-candidate version, X.Y.Z-rc.N. The signature and provenance
+      # name the dispatching ref, and the verification documented in
+      # RELEASE.md accepts release branches only. The version check keeps a
+      # dispatch while Chart.yaml holds a final version from re-pushing that
+      # tag under the release-candidate identity; final versions are published
+      # by release.yml from the release tag. Runs that fail either check keep
+      # publishing to the GitHub Pages repository as before and skip the GHCR
+      # steps below.
+      - name: Check GHCR publication
+        id: ghcr
+        run: |
+          set -euo pipefail
+          chart_version=$(awk '$1 == "version:" {gsub(/"/, "", $2); print $2; exit}' charts/topograph/Chart.yaml)
+          if [[ ! "${GITHUB_REF}" =~ ^refs/heads/release-[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::Skipping GHCR chart publication: ${GITHUB_REF} is not a release-X.Y branch."
+            echo "publish=false" >> "${GITHUB_OUTPUT}"
+          elif [[ ! "${chart_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "::notice::Skipping GHCR chart publication: chart version ${chart_version} is not a release-candidate version (X.Y.Z-rc.N)."
+            echo "publish=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "publish=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      # cosign and actions/attest read registry credentials from the Docker
+      # config this step writes, and helm push falls back to the same file, so
+      # no separate helm registry login is needed. The action logs out again in
+      # its post step.
+      - name: Log in to GitHub Container Registry
+        if: steps.ghcr.outputs.publish == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Helm chart to GHCR
+        id: oci
+        if: steps.ghcr.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          charts=(packaged/topograph-*.tgz)
+          if [[ ${#charts[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one packaged chart; found ${#charts[@]}."
+            exit 1
+          fi
+          chart="${charts[0]}"
+          chart_version=$(basename "${chart}" .tgz)
+          chart_version=${chart_version#topograph-}
+
+          # OCI repository names must be lowercase.
+          chart_repo="ghcr.io/${GITHUB_REPOSITORY,,}/charts"
+          subject_name="${chart_repo}/topograph"
+
+          # helm push writes the Pushed: and Digest: lines to stderr.
+          if ! push_output=$(helm push "${chart}" "oci://${chart_repo}" 2>&1); then
+            printf '%s\n' "${push_output}"
+            echo "::error::helm push to oci://${chart_repo} failed."
+            exit 1
+          fi
+          printf '%s\n' "${push_output}"
+
+          # OCI tags cannot contain '+', so Helm stores SemVer build metadata
+          # with '_' instead.
+          expected_ref="${subject_name}:${chart_version//+/_}"
+          pushed_ref=$(awk '$1 == "Pushed:" {print $2}' <<< "${push_output}")
+          if [[ "${pushed_ref}" != "${expected_ref}" ]]; then
+            echo "::error::Expected helm push to report ${expected_ref}; got '${pushed_ref}'."
+            exit 1
+          fi
+          digest=$(awk '$1 == "Digest:" {print $2}' <<< "${push_output}")
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Could not parse a sha256 digest from the helm push output; got '${digest}'."
+            exit 1
+          fi
+
+          echo "subject-name=${subject_name}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Sign and verify GHCR Helm chart
+        if: steps.ghcr.outputs.publish == 'true'
+        uses: ./.github/actions/cosign-sign-oci-artifact
+        with:
+          subject-name: ${{ steps.oci.outputs.subject-name }}
+          subject-digest: ${{ steps.oci.outputs.digest }}
+          certificate-identity-regexp: ${{ env.CHART_SIGNER_IDENTITY_REGEXP }}
+
+      - name: Generate SLSA provenance for GHCR Helm chart
+        if: steps.ghcr.outputs.publish == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.oci.outputs.subject-name }}
+          subject-digest: ${{ steps.oci.outputs.digest }}
+          push-to-registry: true
+
+      # Uses the cosign that the sign action installed. --new-bundle-format
+      # matches the layout actions/attest pushes to the registry.
+      - name: Verify GHCR Helm chart provenance
+        if: steps.ghcr.outputs.publish == 'true'
+        env:
+          SUBJECT: ${{ steps.oci.outputs.subject-name }}@${{ steps.oci.outputs.digest }}
+        run: |
+          set -euo pipefail
+          timeout --foreground 120s cosign verify-attestation \
+            --type slsaprovenance1 \
+            --certificate-identity-regexp "${CHART_SIGNER_IDENTITY_REGEXP}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --new-bundle-format=true \
+            "${SUBJECT}" > /dev/null
+          echo "Verified the SLSA provenance on ${SUBJECT}"
 
       - name: Fetch existing Helm repo index
         run: |

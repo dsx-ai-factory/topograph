@@ -46,6 +46,8 @@ helm install topograph topograph/topograph \
   --set engine.name=k8s
 ```
 
+The chart is also published to GHCR as a cosign-signed OCI artifact; to install from there instead, skip `helm repo add` and `helm repo update` and use `oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph` in place of `topograph/topograph`.
+
 Replace `<provider>` with one of `aws`, `crusoe`, `gcp`, `oci`, `nebius`, `nscale`, `lambdai`, `netq`, `infiniband-k8s`, `dra` or `test`. Provider credentials and parameters are passed as Helm values; the full values shape is in [`charts/topograph/values.yaml`](charts/topograph/values.yaml).
 
 To confirm it worked, run the bundled chart tests, which probe `/healthz` and `/metrics` inside the cluster, then look for the labels the `k8s` engine writes onto nodes a few seconds after install:
@@ -149,7 +151,7 @@ Topograph sits between topology sources and schedulers, and replaces neither.
 | Artifact | Where it comes from |
 |---|---|
 | Container image | `ghcr.io/dsx-ai-factory/topograph` |
-| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://dsx-ai-factory.github.io/topograph` |
+| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://dsx-ai-factory.github.io/topograph` and as a cosign-signed OCI artifact at `oci://ghcr.io/dsx-ai-factory/topograph/charts/topograph` |
 | `.deb` package | `make deb`, written to `bin/` |
 | `.rpm` package | `make rpm`, written to `bin/` |
 
