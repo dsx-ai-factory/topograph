@@ -1,0 +1,365 @@
+{
+  "device_summary": {
+    "role_breakdown": {
+      "server": {
+        "count": 3
+      },
+      "leaf": {
+        "count": 4
+      },
+      "unknown": {
+        "count": 2
+      },
+      "spine": {
+        "count": 2
+      },
+      "super_spine": {
+        "count": 1
+      },
+      "nvlink-switch": {
+        "count": 1
+      }
+    },
+    "total_devices": 13
+  },
+  "message": "Topology exported successfully for all devices",
+  "pagination_limit": 100,
+  "success": true,
+  "topology": {
+    "layer2": {
+      "srv-01": {
+        "deviceName": "srv-01",
+        "device_id": "s1",
+        "host_name": "srv-01",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "server",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "eth_p0": {
+            "remoteDevice": "p1-leaf-01",
+            "remoteInterface": "swp1"
+          },
+          "eth_p1": {
+            "remoteDevice": "p2-leaf-01",
+            "remoteInterface": "swp1"
+          },
+          "GPUP0": {
+            "remoteDevice": "nvl-sw-01",
+            "remoteInterface": "AccessP1"
+          }
+        },
+        "GPUs": [
+          {
+            "componentId": 0,
+            "name": "Component:prod:srv-01:Gpu:0:9223372036854775807"
+          },
+          {
+            "componentId": 1,
+            "name": "Component:prod:srv-01:Gpu:1:9223372036854775807"
+          },
+          {
+            "componentId": 2,
+            "name": "Component:prod:srv-01:Gpu:2:9223372036854775807"
+          },
+          {
+            "componentId": 3,
+            "name": "Component:prod:srv-01:Gpu:3:9223372036854775807"
+          }
+        ]
+      },
+      "srv-02": {
+        "deviceName": "srv-02",
+        "device_id": "s2",
+        "host_name": "srv-02",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "server",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "eth_p0": {
+            "remoteDevice": "p1-leaf-01",
+            "remoteInterface": "swp1"
+          },
+          "eth_p1": {
+            "remoteDevice": "p2-leaf-01",
+            "remoteInterface": "swp1"
+          },
+          "GPUP0": {
+            "remoteDevice": "nvl-sw-01",
+            "remoteInterface": "AccessP1"
+          }
+        },
+        "GPUs": [
+          {
+            "componentId": 0,
+            "name": "Component:prod:srv-02:Gpu:0:9223372036854775807"
+          },
+          {
+            "componentId": 1,
+            "name": "Component:prod:srv-02:Gpu:1:9223372036854775807"
+          },
+          {
+            "componentId": 2,
+            "name": "Component:prod:srv-02:Gpu:2:9223372036854775807"
+          },
+          {
+            "componentId": 3,
+            "name": "Component:prod:srv-02:Gpu:3:9223372036854775807"
+          }
+        ]
+      },
+      "srv-03": {
+        "deviceName": "srv-03",
+        "device_id": "s3",
+        "host_name": "srv-03",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "server",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "eth_p0": {
+            "remoteDevice": "p1-leaf-02",
+            "remoteInterface": "swp1"
+          },
+          "eth_p1": {
+            "remoteDevice": "p2-leaf-02",
+            "remoteInterface": "swp1"
+          },
+          "GPUP0": {
+            "remoteDevice": "nvl-sw-01",
+            "remoteInterface": "AccessP3"
+          }
+        },
+        "GPUs": [
+          {
+            "componentId": 0,
+            "name": "Component:prod:srv-03:Gpu:0:9223372036854775807"
+          },
+          {
+            "componentId": 1,
+            "name": "Component:prod:srv-03:Gpu:1:9223372036854775807"
+          },
+          {
+            "componentId": 2,
+            "name": "Component:prod:srv-03:Gpu:2:9223372036854775807"
+          },
+          {
+            "componentId": 3,
+            "name": "Component:prod:srv-03:Gpu:3:9223372036854775807"
+          }
+        ]
+      },
+      "p1-leaf-01": {
+        "deviceName": "p1-leaf-01",
+        "device_id": "p1-l1",
+        "host_name": "p1-leaf-01",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "leaf",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp1": {
+            "remoteDevice": "srv-01",
+            "remoteInterface": "eth_p0"
+          },
+          "swp2": {
+            "remoteDevice": "srv-02",
+            "remoteInterface": "eth_p0"
+          },
+          "swp33": {
+            "remoteDevice": "p1-spine-01",
+            "remoteInterface": "swp1"
+          }
+        }
+      },
+      "p1-leaf-09": {
+        "deviceName": "p1-leaf-09",
+        "device_id": "p1-l9",
+        "host_name": "p1-leaf-09",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "unknown",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp33": {
+            "remoteDevice": "p1-spine-01",
+            "remoteInterface": "swp2"
+          }
+        }
+      },
+      "p1-spine-01": {
+        "deviceName": "p1-spine-01",
+        "device_id": "p1-s1",
+        "host_name": "p1-spine-01",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "spine",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp1": {
+            "remoteDevice": "p1-leaf-01",
+            "remoteInterface": "swp33"
+          },
+          "swp2": {
+            "remoteDevice": "p1-leaf-09",
+            "remoteInterface": "swp33"
+          },
+          "swp46": {
+            "remoteDevice": "super-01",
+            "remoteInterface": "swp10"
+          },
+          "swp3": {
+            "remoteDevice": "p1-leaf-02",
+            "remoteInterface": "swp33"
+          }
+        }
+      },
+      "p2-leaf-01": {
+        "deviceName": "p2-leaf-01",
+        "device_id": "p2-l1",
+        "host_name": "p2-leaf-01",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "leaf",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp1": {
+            "remoteDevice": "srv-01",
+            "remoteInterface": "eth_p0"
+          },
+          "swp2": {
+            "remoteDevice": "srv-02",
+            "remoteInterface": "eth_p0"
+          },
+          "swp33": {
+            "remoteDevice": "p2-spine-01",
+            "remoteInterface": "swp1"
+          }
+        }
+      },
+      "p2-leaf-09": {
+        "deviceName": "p2-leaf-09",
+        "device_id": "p2-l9",
+        "host_name": "p2-leaf-09",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "unknown",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp33": {
+            "remoteDevice": "p2-spine-01",
+            "remoteInterface": "swp2"
+          }
+        }
+      },
+      "p2-spine-01": {
+        "deviceName": "p2-spine-01",
+        "device_id": "p2-s1",
+        "host_name": "p2-spine-01",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "spine",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp1": {
+            "remoteDevice": "p2-leaf-01",
+            "remoteInterface": "swp33"
+          },
+          "swp2": {
+            "remoteDevice": "p2-leaf-09",
+            "remoteInterface": "swp33"
+          },
+          "swp46": {
+            "remoteDevice": "super-01",
+            "remoteInterface": "swp10"
+          },
+          "swp3": {
+            "remoteDevice": "p2-leaf-02",
+            "remoteInterface": "swp33"
+          }
+        }
+      },
+      "super-01": {
+        "deviceName": "super-01",
+        "device_id": "ss1",
+        "host_name": "super-01",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "super_spine",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp10": {
+            "remoteDevice": "p1-spine-01",
+            "remoteInterface": "swp46"
+          },
+          "swp11": {
+            "remoteDevice": "p2-spine-01",
+            "remoteInterface": "swp46"
+          }
+        }
+      },
+      "nvl-sw-01": {
+        "deviceName": "nvl-sw-01",
+        "device_id": null,
+        "host_name": "nvl-sw-01",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "nvlink-switch",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "AccessP1": {
+            "remoteDevice": "srv-01",
+            "remoteInterface": "GPUP0"
+          },
+          "AccessP2": {
+            "remoteDevice": "srv-02",
+            "remoteInterface": "GPUP0"
+          },
+          "AccessP3": {
+            "remoteDevice": "srv-03",
+            "remoteInterface": "GPUP0"
+          }
+        }
+      },
+      "p1-leaf-02": {
+        "deviceName": "p1-leaf-02",
+        "device_id": "p1-l2",
+        "host_name": "p1-leaf-02",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "leaf",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp1": {
+            "remoteDevice": "srv-03",
+            "remoteInterface": "eth_p0"
+          },
+          "swp33": {
+            "remoteDevice": "p1-spine-01",
+            "remoteInterface": "swp3"
+          }
+        }
+      },
+      "p2-leaf-02": {
+        "deviceName": "p2-leaf-02",
+        "device_id": "p2-l2",
+        "host_name": "p2-leaf-02",
+        "mgmt_ipv4": "192.0.2.1",
+        "role": "leaf",
+        "localInterface": {
+          "eth0": {},
+          "lo": {},
+          "swp1": {
+            "remoteDevice": "srv-03",
+            "remoteInterface": "eth_p1"
+          },
+          "swp33": {
+            "remoteDevice": "p2-spine-01",
+            "remoteInterface": "swp3"
+          }
+        }
+      }
+    }
+  }
+}

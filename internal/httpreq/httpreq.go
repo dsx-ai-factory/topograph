@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -83,8 +84,18 @@ func ParseRetryAfter(resp *http.Response) (time.Duration, bool) {
 
 type RequestFunc func() (*http.Request, *httperr.Error)
 
-// DoRequest sends HTTP requests and returns HTTP response
+var errRedirectNotAllowed = errors.New("redirects are not allowed")
+
+// DoRequest sends HTTP requests and returns HTTP response. Redirects are followed.
 func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, *httperr.Error) {
+	return DoRequestWithRedirects(f, insecureSkipVerify, true)
+}
+
+// DoRequestWithRedirects sends HTTP requests and returns HTTP response. When
+// allowRedirects is false, a redirect is not followed but reported as a 502
+// error, so request headers such as an API key are only ever sent to the
+// requested URL.
+func DoRequestWithRedirects(f RequestFunc, insecureSkipVerify, allowRedirects bool) (*http.Response, []byte, *httperr.Error) {
 	req, httpErr := f()
 	if httpErr != nil {
 		return nil, nil, httpErr
@@ -96,10 +107,15 @@ func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, 
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 	}
+	if !allowRedirects {
+		client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+			return fmt.Errorf("%w: refusing to follow a redirect to %s", errRedirectNotAllowed, req.URL.Redacted())
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		code := http.StatusBadGateway
-		if resp != nil {
+		if resp != nil && !errors.Is(err, errRedirectNotAllowed) {
 			code = resp.StatusCode
 		}
 		return resp, nil, httperr.NewError(code, err.Error())
