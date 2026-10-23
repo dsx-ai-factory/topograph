@@ -307,7 +307,9 @@ with no document at all would also count every older statement, so the
 difference would not isolate your change.
 
 Build both platforms the way CI does, named `topograph` so the product matches.
-Building the non-native platform needs QEMU (binfmt) or buildx, as in CI:
+CI builds each platform natively on its own runner. Locally, building the
+non-native platform needs buildx with QEMU (binfmt); the legacy builder cannot
+build for a platform other than the host's:
 
 ```bash
 for arch in amd64 arm64; do

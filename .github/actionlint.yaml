@@ -24,6 +24,11 @@ self-hosted-runner:
     - linux-amd64-cpu8
     - linux-amd64-cpu16
     - linux-amd64-cpu32
+    # GitHub-hosted Ubuntu 26.04 labels, used by vuln-scan-images.yaml.
+    # actionlint 1.7.12 does not know them yet; drop these two once the
+    # pinned actionlint accepts them.
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
 
 paths:
   .github/workflows/**/*.{yml,yaml}:

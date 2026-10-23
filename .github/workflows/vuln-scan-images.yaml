@@ -19,10 +19,9 @@
 # used, so the scan works before any image tag has been published.
 #
 # Both platforms are scanned because the runtime stage installs rdma-core with
-# apk, and the resolved package set can differ between architectures. arm64 is
-# built under QEMU on the amd64 pool, the same way docker.yml builds the
-# release image, which keeps the job on a runner label this repository already
-# uses.
+# apk, and the resolved package set can differ between architectures. Each
+# platform builds natively on its own GitHub-hosted runner, so arm64 is not
+# emulated: under QEMU the Go compile alone took over 20 minutes.
 #
 # The scan is non-blocking: `fail-build` is false, so findings are reported but
 # never fail the job. It stays that way until a first baseline has been
@@ -268,10 +267,8 @@ jobs:
     name: Scan (linux/${{ matrix.arch }})
     needs: validate-inputs
     if: github.repository == 'dsx-ai-factory/topograph'
-    runs-on: linux-amd64-cpu16
-    # The arm64 build compiles Go under QEMU, which takes far longer than the
-    # native amd64 build.
-    timeout-minutes: 60
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
       # Let the SARIF upload read this workflow run. GitHub documents it as
@@ -283,26 +280,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        # `arch` names the platform, the image archive and the code scanning
+        # category; keep it stable so existing alerts carry over.
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set up QEMU
-        if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: arm64
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        with:
-          # Runner-provided registry mirror configuration, as in docker.yml.
-          buildkitd-config: /etc/buildkit/buildkitd.toml
 
-      # Export to a local archive instead of loading into the shared daemon or
+      # Export to a local archive instead of loading into the daemon or
       # pushing. The `topograph:scan` name is what Grype matches the
       # `pkg:oci/topograph` VEX products against.
       - name: Build image
