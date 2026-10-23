@@ -223,6 +223,11 @@ pushes for each PR; the first three also run on `main`:
   `.github/workflows/fern-docs-preview-comment.yml`: build a Fern docs
   preview when `docs/` or `fern/` changes and post its link on the PR
 
+`.github/workflows/pr-title.yaml` runs on the pull request itself rather than
+on the `pull-request/<n>` branch, since it reads only the title: it checks that
+the title follows the Conventional Commits format in `CONTRIBUTING.md`. It has
+no local equivalent.
+
 Release and maintenance workflows:
 
 - `.github/workflows/docker.yml`: on a `v*` tag push or manual dispatch,

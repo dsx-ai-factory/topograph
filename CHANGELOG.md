@@ -52,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Topograph logo variants for light mode (`topograph-logo-color`), dark mode (`topograph-logo-color-dark`), reversed black, and reversed white added to `docs/assets/`. The `README.md` logo now switches between color and color-dark automatically based on the viewer's GitHub theme preference.
 - Fern sidebar now includes a direct link to `CHANGELOG.md` on GitHub under the Reference section, so release notes are discoverable from the docs site without navigating the repository.
 - CI check (`fern-docs-ci.yml`) verifies that every `.md` file under `docs/` (outside `docs/design/`) is listed in `docs/index.yml`, preventing orphaned pages from being authored but never published.
+- CI check (`pr-title.yaml`) verifies that every pull request title follows the Conventional Commits format in `CONTRIBUTING.md`. Pull requests are squash merged with the title as the commit subject, so the check keeps the history on `main` and the release notes in that format.
 
 ### Fixed
 
