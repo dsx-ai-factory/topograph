@@ -18,10 +18,14 @@
 # and the squash commit takes the pull request title as its subject, so the
 # title, not the contributor's own commits, is what lands on main.
 #
-# pull_request_target lets the check run on fork pull requests without a
-# maintainer approving the run first. It is safe here: the job never checks out
-# or runs the contributor's code, holds no permissions, and reads the title
-# through an environment variable rather than interpolating it into the script.
+# The trigger is pull_request, not pull_request_target. The check needs no
+# secrets and no write token, and GitHub blocks pull_request_target in public
+# repositories by default from December 2, 2026, unless an Actions event policy
+# allows it. A fork pull request therefore waits for the repository's fork
+# approval policy before its first run, like any pull_request workflow. The job
+# never checks out or runs the contributor's code, holds no permissions, and
+# reads the title through an environment variable rather than interpolating it
+# into the script.
 #
 # `synchronize` is in the trigger list although a push does not change the
 # title, because a required check is reported per head commit, and a push with
@@ -38,7 +42,7 @@
 name: PR Title
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, reopened, synchronize]
 
 permissions: {}
