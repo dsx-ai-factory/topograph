@@ -16,6 +16,50 @@ entries:
       org.opencontainers.image.title: Topograph
       org.opencontainers.image.vendor: NVIDIA
     apiVersion: v2
+    appVersion: 395e6b8
+    created: "2026-10-23T19:18:38.292932936-04:00"
+    description: Discovers the physical network topology of a cluster and exposes
+      it to schedulers.
+    digest: 5edc4b3afac378bf19c5bc4b811aebfcd6b94e6dbbc4fa658829666fb36bc4b1
+    home: https://github.com/dsx-ai-factory/topograph
+    icon: https://raw.githubusercontent.com/dsx-ai-factory/topograph/main/docs/assets/topograph-logo.png
+    keywords:
+    - topograph
+    - topology
+    - topology-aware
+    - kubernetes
+    - slurm
+    - slinky
+    - infiniband
+    - nvlink
+    - gpu
+    - scheduling
+    kubeVersion: '>=1.27.0-0'
+    maintainers:
+    - name: NVIDIA CORPORATION
+      url: https://topograph.run
+    name: topograph
+    sources:
+    - https://github.com/dsx-ai-factory/topograph
+    type: application
+    urls:
+    - https://dsx-ai-factory.github.io/topograph/topograph-1.1.0-beta.2.tgz
+    version: 1.1.0-beta.2
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md
+        - name: Chart Source
+          url: https://github.com/dsx-ai-factory/topograph/tree/main/charts/topograph
+      org.opencontainers.image.description: Discovers the physical network topology
+        of a cluster and exposes it to schedulers.
+      org.opencontainers.image.documentation: https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md
+      org.opencontainers.image.licenses: Apache-2.0
+      org.opencontainers.image.source: https://github.com/dsx-ai-factory/topograph
+      org.opencontainers.image.title: Topograph
+      org.opencontainers.image.vendor: NVIDIA
+    apiVersion: v2
     appVersion: e500fa6
     created: "2026-10-21T22:39:06.881869266-04:00"
     description: Discovers the physical network topology of a cluster and exposes
@@ -218,4 +262,4 @@ entries:
     urls:
     - https://dsx-ai-factory.github.io/topograph/topograph-0.1.0.tgz
     version: 0.1.0
-generated: "2026-10-21T22:39:06.880368272-04:00"
+generated: "2026-10-23T19:18:38.29068466-04:00"
