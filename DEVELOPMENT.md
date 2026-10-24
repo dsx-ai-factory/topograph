@@ -230,30 +230,14 @@ Release and maintenance workflows:
   attests its provenance
 - `.github/workflows/publish-fern-docs.yml`: on a `vX.Y.Z` tag push or
   manual dispatch, publishes the versioned docs site
-- `.github/workflows/helm-release.yaml`: manual Helm chart publication to NGC OCI,
-  with the `.tgz.sha256` file attached to the chart manifest digest using ORAS
+- `.github/workflows/helm-release.yaml`: on manual dispatch, packages the Helm
+  chart and uploads it to NGC
 - `.github/workflows/scorecard.yaml`: OpenSSF Scorecard analysis on pushes
   to `main`, weekly, and on demand
 
-The release workflow publishes
-to `nvcr.io/1070195845945670/topograph/topograph`, using chart versions such as
-`1.0.0` as tags (container release tags use the `v1.0.0` form).
-After authenticating Helm and ORAS to `nvcr.io`, retrieve a chart and its checksum:
-
-```bash
-chart_ref=nvcr.io/1070195845945670/topograph/topograph
-chart_digest=$(oras resolve "${chart_ref}:1.0.0")
-helm pull "oci://${chart_ref}@${chart_digest}"
-checksum_digest=$(oras discover --format json \
-  --artifact-type application/vnd.topograph.checksum.v1 \
-  "${chart_ref}@${chart_digest}" | jq -er '.referrers[0].digest')
-oras pull "${chart_ref}@${checksum_digest}"
-sha256sum --check topograph-1.0.0.tgz.sha256
-```
-
-The `.sha256` file is an OCI referrer retrieved with ORAS; `helm pull` downloads
-the chart itself. Publication uses the existing `NGC_API_KEY` Actions secret and
-requires push access to this OCI repository and its referrers.
+After internal security approval, the chart is promoted unchanged to the public
+Helm repository at `https://helm.ngc.nvidia.com/nvidia/topograph`, as described in
+[RELEASE.md](RELEASE.md).
 
 Every `actions/setup-go` step reads the Go version from `go.mod`, so a
 toolchain bump there also moves the CI jobs that use it. The container

@@ -6,78 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-
-- Firebird authentication and topology errors preserve their original HTTP status codes, including upstream server errors, while retaining structured error diagnostics.
-
-- Firebird obtains one fresh access token per topology generation request and reuses it across all pages, assuming it remains valid for the request duration. Tokens are no longer cached across requests, and HTTP 401 does not trigger reauthentication.
-
-- Manual Helm chart publishing now targets the NGC OCI repository `nvcr.io/nvidia/topograph/topograph` instead of GitHub Pages. SHA-256 checksum files are attached to the chart manifest digest as OCI referrers.
-- Container image publishing now targets `nvcr.io/nvidia/topograph/topograph`.
-- **BREAKING:** The Go module and canonical repository moved from `github.com/NVIDIA/topograph` to `github.com/dsx-ai-factory/topograph`.
-- **BREAKING:** `topograph` and `node-observer` binaries now use [pflag](https://github.com/spf13/pflag) for flag parsing, matching `node-data-broker`. Single-dash long flags (`-version`, `-logtostderr`, `-vmodule`, etc.) now require a double dash (`--version`, `--logtostderr`, `--vmodule`). This affects the use of all [klog](https://github.com/kubernetes/klog) flags
-- **BREAKING:** `kwok-nodes` now uses [pflag](https://github.com/spf13/pflag) for flag parsing. Single-dash long flags (`-model`, `-output`, etc.) now require a double dash (`--model`, `--output`); the short forms `-m`, `-o`, `-g`, and `-p` are newly added aliases for `--model`, `--output`, `--gpus`, and `--pods` respectively.
-- Go toolchain upgraded from **1.26.6** to **1.27.3** across the module, container build, and CI workflows; the CI linter is upgraded to `golangci-lint` **v2.14.0** for Go 1.27 compatibility.
-- Updated `golang.org/x/net` from **v0.59.0** to **v0.60.0**.
-- The `nscale` provider's Slurm auto-discovery runs `pdsh` across the current Slurm node list and queries each node's own Instance Metadata Service (IMDS) for its server ID (`serverID`) and region, merging the results into the instance-to-node and node-to-region maps.
-- The `nscale` provider's Radar API topology response field is now read as `server_id` instead of `instance_id`, matching the IMDS `serverID` field it is merged with.
-- The `nscale` provider's `region` credential, when set, now restricts Slurm auto-discovery to nodes whose IMDS region (`regionID`) matches it; nodes with a different or missing IMDS region are excluded from the topology query and logged as a warning.
-
-### Removed
-
-- `nscale` provider `instanceApiUrl` parameter and its instance API client — instance and region discovery for Slurm auto-discovery now comes from each node's IMDS instead.
+## [v1.1.0] - 2026-10-23
 
 ### Added
 
-- Configurable Kubernetes instance ID and region sources through `nodeMetadata` (`config.nodeMetadata` in Helm). When set, both `instanceID` and `region` require a source type (`label` or `annotation`) and a valid metadata key; omitted or null `nodeMetadata` preserves both default annotations. Deployments can omit the Node Data Broker when all required metadata is already available and the provider does not require broker pods for discovery. The `infiniband-k8s` provider still requires the broker to run `ibnetdiscover`.
-
-- `demos/tas-lab`, a kind-based lab with eight scenarios that use Topograph labels as KEP-5732 `TopologyConstraint` keys and as Kueue `Topology` levels, run and validated against Kubernetes v1.37 and Kueue v0.20.0. Each scenario states the problem, what it does and how it is validated in `docs/demos/tas-lab.md`; the example Kueue `Topology` manifests for each shape of labels are in `demos/tas-lab/scenarios/08-kueue-topology-shapes/README.md`. The scenarios are declarative Chainsaw tests (`demos/tas-lab/scenarios`), and `demos/tas-lab/setup/chainsaw.sh` installs the pinned Chainsaw CLI.
-- "Install on RKE2 (SUSE)" guide (`docs/get-started/rke2-suse.md`) covering the GPU Operator location for `nvidia-smi` discovery, FQDN node names, Pod Security under RKE2's CIS profile, SELinux on SLES, and RoCE fabrics.
-- Firebird simulation provider (`firebird-sim`) exercises production topology conversion and token pagination using YAML models, with model-based engine discovery, tier trimming, and API failure injection.
-
-- Firebird provider (`firebird`) discovers arbitrary-depth fabric paths from `GET /topology/nodes`, with token pagination, client-credentials authentication through `POST /auth/token` over a required HTTPS API URL, with one access token per topology generation request, leaf-first network paths, switch names taken directly from `networkPath`, `pageSize` and `pageToken` pagination query parameters, requested-node filtering, and structured diagnostics for Firebird HTTP 400, 401, 403, 404, and 429 errors.
-
+- Firebird provider (`firebird`) discovers arbitrary-depth fabric paths from `GET /topology/nodes` over HTTPS, using leaf-first switch names from `networkPath`, `pageSize` / `pageToken` pagination, and requested-node filtering. Client-credentials authentication uses `POST /auth/token` with `grantType: "client_credentials"`, `clientId`, and `clientSecret`. Each topology generation request obtains a fresh access token and reuses it across all pages; HTTP 401 does not trigger reauthentication. Authentication and topology errors preserve upstream HTTP status codes and structured diagnostics.
+- Firebird simulation provider (`firebird-sim`) exercises production topology conversion and token pagination using YAML models, with model-based instance discovery, tier trimming, and API failure injection.
+- Crusoe provider (`crusoe`) and simulation variant (`crusoe-sim`) discover fabric tiers from the `crusoe.ai/pod.id` and `crusoe.ai/ib.partition.id` Node labels, with a synthetic root and placeholder tiers for nodes without fabric labels. On NVLink systems, each distinct `nvidia.com/gpu.clique` value supplies an accelerator domain for `topology/block`; nodes without the clique label receive no accelerator domain. Use `topology/tree` for fabric topology.
 - `infiniband-sim` provider replays a saved `ibnetdiscover` output file through the production InfiniBand parser, allowing offline switch topology testing with requested-node filtering and no fabric access.
-- SHA-256 checksum files published as OCI referrers alongside Helm chart packages.
-- Releases use a dedicated `vX.Y.Z` branch with final chart and changelog
-  metadata. The image and chart complete NVIDIA internal security review before
-  the approved artifacts are promoted unchanged to the public NGC repositories.
-- Signed SLSA build provenance for published container images and Helm chart
-  packages. Release workflows bind each artifact to its source commit and
-  workflow using GitHub artifact attestations; container provenance is also
-  published to NGC alongside the image.
-- Crusoe provider now derives accelerator domains from `nvidia.com/gpu.clique`, so `topology/block` renders one Slurm block per distinct clique value on rack-scale NVLink systems. The domain is the clique verbatim, matching how the InfiniBand and Lambda AI providers publish theirs. That value is the NVL Partition, which can be finer than the physical NVL Domain when one rack is split into several cliques. The InfiniBand partition is deliberately not used as a fallback domain: a partition can span many racks while a clique cannot, so keying blocks on the partition would let Slurm spread one job across racks and fall back to InfiniBand. Nodes without the clique label get no accelerator domain and are scheduled by the switch tree alone, leaving existing GPU classes unchanged.
-- Crusoe provider (`crusoe`) and its simulation variant (`crusoe-sim`) discover the InfiniBand switch fabric on Crusoe Cloud from the `crusoe.ai/ib.partition.id` and `crusoe.ai/pod.id` Node labels the Crusoe control plane publishes. Crusoe compute is virtualized, so a guest VM cannot run `ibnetdiscover` and there is no per-node metadata service for switch identity. Fabric tiers are the rail-optimized pod, the InfiniBand partition, and a synthetic root above them. Nodes without those labels are placed under placeholder tiers beneath the same root, so one Slurm tree spans a heterogeneous cluster. Use it with `topology/tree`.
-- Shared optional provider parameter `imdsUrl` (`providers.GetIMDSURL`, `topology.KeyIMDSURL`) for overriding a provider's default Instance Metadata Service URL. Only the `nscale` provider consumes it so far, falling back to its built-in IMDS URL when unset.
-- README badges replaced with a consistent flat-square Shields.io row: Docs, Go CI, Coverage, Chart Tests, K8s Tests, Release, and License — each linked to its source and using a shared dark label color aligned with the Topograph logo palette.
-- Documentation diagrams for architecture, Kubernetes, Slinky, Slurm topology formats, and engine outputs now ship as community-variant SVG and PNG assets with automatic dark/light mode switching (`<picture>` / `prefers-color-scheme` in docs; `#gh-light-mode-only` / `#gh-dark-mode-only` in README).
-- Topograph logo variants for light mode (`topograph-logo-color`), dark mode (`topograph-logo-color-dark`), reversed black, and reversed white added to `docs/assets/`. The `README.md` logo now switches between color and color-dark automatically based on the viewer's GitHub theme preference.
-- Fern sidebar now includes a direct link to `CHANGELOG.md` on GitHub under the Reference section, so release notes are discoverable from the docs site without navigating the repository.
-- CI check (`fern-docs-ci.yml`) verifies that every `.md` file under `docs/` (outside `docs/design/`) is listed in `docs/index.yml`, preventing orphaned pages from being authored but never published.
+- Configurable Kubernetes instance ID and region sources through `nodeMetadata` (`config.nodeMetadata` in Helm). When set, both `instanceID` and `region` require a source type (`label` or `annotation`) and a valid metadata key; omitted or null `nodeMetadata` preserves both default annotations. Deployments can omit the Node Data Broker when all required metadata is already available and the provider does not require broker pods for discovery. The `infiniband-k8s` provider still requires the broker to run `ibnetdiscover`.
+- Optional provider parameter `imdsUrl` to override the default Instance Metadata Service URL, currently supported by `nscale` for both Slurm auto-discovery and Node Data Broker self-annotation.
+- Opt-in Helm `NetworkPolicy` covering all three components (`networkPolicy.enabled`, default `false`). Ingress allows intra-release traffic and, when configured, the `networkPolicy.metricsScraperNamespace` namespace; `extraIngress` adds custom rules, including access from ingress or Gateway controllers. Egress remains unconstrained unless `extraEgress` is set, which adds DNS and intra-release allows alongside the supplied rules. Under default-deny egress, include the Kubernetes API server and provider endpoints; `dnsPodSelector` supports custom DNS pod labels.
+- SHA-256 checksum files retained with Helm chart packages and signed provenance bundles in the release workflow's `topograph-chart-<version>` GitHub Actions artifact.
+- Signed SLSA build provenance for container images and Helm chart packages through GitHub artifact attestations; container provenance is also published alongside the image in NGC staging.
+- `demos/tas-lab`, a kind-based lab with eight scenarios using Topograph labels as KEP-5732 `TopologyConstraint` keys and Kueue `Topology` levels, with Kubernetes v1.37 and Kueue v0.20.0 defaults. The lab includes declarative Chainsaw tests and a pinned Chainsaw CLI installer; see `docs/demos/tas-lab.md`.
+- "Install on RKE2 (SUSE)" guide (`docs/get-started/rke2-suse.md`) covering GPU Operator placement for `nvidia-smi` discovery, FQDN node names, Pod Security under RKE2's CIS profile, SELinux on SLES, and RoCE fabrics.
+- Light/dark documentation diagrams and logo variants, stacked and horizontal logo lockups, consistent README badges, and a changelog link in the documentation sidebar.
+- CI check that every Markdown page under `docs/`, outside `docs/design/`, appears in `docs/index.yml`.
+
+### Changed
+
+- **BREAKING:** The Go module and canonical repository moved from `github.com/NVIDIA/topograph` to `github.com/dsx-ai-factory/topograph`.
+- **BREAKING:** `topograph` and `node-observer` now use [pflag](https://github.com/spf13/pflag), matching `node-data-broker`. Single-dash long flags such as `-version`, `-logtostderr`, and `-vmodule` require a double dash (`--version`, `--logtostderr`, `--vmodule`); this also applies to other long [klog](https://github.com/kubernetes/klog) flags. The config flag is available as `--config` or `-c`.
+- **BREAKING:** `kwok-nodes` now uses pflag. Single-dash long flags such as `-model` and `-output` require a double dash (`--model`, `--output`); `-m`, `-o`, `-g`, and `-p` are new aliases for `--model`, `--output`, `--gpus`, and `--pods`.
+- The Helm chart defaults to the public container image `nvcr.io/nvidia/topograph/topograph`. The manual image and chart workflows now upload to NGC staging; chart uploads use `ngc registry chart push` instead of GitHub Pages. Public releases promote approved images to `nvcr.io/nvidia/topograph/topograph` and charts to `https://helm.ngc.nvidia.com/nvidia/topograph`.
+- Releases use a dedicated `vX.Y.Z` branch with final chart and changelog metadata. Images and charts complete NVIDIA internal security review before approved artifacts are promoted unchanged to the public NGC repositories; the source tag identifies the approved build commit.
+- The `nscale` provider's Slurm auto-discovery obtains server IDs (`serverID`) and regions (`regionID`) from each node's IMDS through a single `pdsh` sweep shared by the instance and region lookups. Remote commands have a 10-second timeout; partial results are retained with warnings when some nodes fail, and failures with no output return an error.
+- The `nscale` Radar API topology response now uses `server_id` instead of `instance_id`, matching IMDS `serverID`. A configured `region` credential restricts Slurm auto-discovery to nodes with a matching IMDS region; nodes with different or missing regions are excluded with warnings.
+- Helm defaults increase the node-observer CPU limit from `400m` to `1000m` and the node-data-broker CPU request and limit from `100m` to `200m`.
+- Updated `golang.org/x/net` from **v0.56.0** in v1.0.0 to **v0.61.0**.
 
 ### Fixed
 
-- Builds from a release tag checkout used `HEAD` as the version: `topograph`, `node-observer`, and `node-data-broker` in container images built from a tag by the `Docker` workflow would have reported `Version: HEAD`, and `make deb` or `make rpm` on a tag checkout produced a package versioned `0.HEAD` (deb) or `HEAD` (rpm). No published image was affected, because earlier releases were built from a branch named after the version. The version, which also sets the deb and rpm package version and the default `make image-build` tag, is now the `v*` tag at the checked-out commit (`vX.Y.Z-dirty` when tracked files are modified), else the branch name, else the short commit SHA, and `unknown`, with a warning from `make deb` and `make rpm`, when no git metadata is available. Release-candidate images built from `release-X.Y` still report the branch name. On a release tag checkout, `make image-push` and `make docker-buildx` refuse to push the default `v*` tag to `ghcr.io/dsx-ai-factory/topograph` unless `IMAGE_TAG` is set explicitly. Binaries are also built with `-trimpath`, so they no longer embed the builder's file system paths, and `make build` now stops at the first binary that fails to compile (#597).
-- The `graph` engine returned an empty instance list for every provider except `test` and model-backed simulation providers. It now derives `network_layers` and accelerator-domain labels from the topology graph, and also fills them in on per-instance records a provider attached without them (#577).
-- Firebird token requests now include `grantType: "client_credentials"` alongside `clientId` and `clientSecret`, and topology requests use the `pageSize` and `pageToken` query parameters, matching the API.
-- InfiniBand providers (`infiniband-bm`, `infiniband-k8s`, `infiniband-sim`) now match HCA host names to cluster node names by short host name when they differ only by domain, so clusters whose nodes are registered by FQDN (for example RKE2 on SLES) are no longer silently dropped from the switch tree, and `ibnetdiscover` runs once per fabric instead of once per node. The fallback needs at least one of the two names to be short, so two different FQDNs never match, and a short name shared by more than one node, or a node that another HCA reports under a different host name, is skipped with a warning.
-- The `Go` workflow now also runs on pushes to `main`, so Codecov receives a coverage report for every merged commit. Merges are squashed, so the SHA that lands on `main` no longer matches the `pull-request/<n>` SHA that uploaded coverage; without a `main` trigger, Codecov's `main` branch had gone stale since 2026-07-06 and the README coverage badge reported a figure roughly six points below actual coverage.
-- `nscale` provider's Slurm auto-discovery now issues a single `pdsh` sweep to fetch IMDS metadata for the node list, instead of running it twice (once each for `Instances2NodeMap` and `GetInstancesRegions`).
-- `node-data-broker`'s per-node self-annotation for the `nscale` provider now honors the configured `imdsUrl` parameter instead of always querying the default IMDS endpoint, matching the Slurm auto-discovery path's behavior.
-- `nscale` provider's IMDS `pdsh` command no longer masks a failed `curl` behind `echo`'s always-zero exit status; a node whose IMDS request fails now reports that failure to `pdsh` instead of producing an empty response that silently drops the node.
-- GCP and OCI simulation providers now handle partial final pagination pages without indexing past the available instances.
-- Non-positive `pageSize` configuration values now emit a warning and use the provider default instead of reaching provider APIs and simulation pagination loops.
-- The node observer now regenerates topology for every deletion its informers report. Deletions that happen while a watch is disconnected arrive as `cache.DeletedFinalStateUnknown` tombstones, which carry a nil object when the resource has already left the informer store. The node, pod, API server, and node-data-broker delete handlers all required the tombstone to unwrap to the watched type, so those deletions were dropped and the topology stayed stale until an unrelated event arrived.
-- Slinky engine's `configUpdateMode: skeleton-only` now omits intermediate and leaf switches entirely for `topology/tree` output, keeping only the top-level (root) switches declared by name alone — their child-switch list is dropped too, since it would otherwise change whenever a switch below them is added or removed. Composes with a provider's `trimTiers`: "top-level" is the highest surviving tier after trim-tiers has already clipped the fabric path.
-- `topology/block` `blockName` generation no longer aborts the entire topology response when one accelerator domain's hosts are split across hostname-encoded blocks that disagree on the derived name (or a hostname doesn't match `nodeNameRegexp`, or `format` produces an empty name). That domain's block is now dropped from the output with a warning naming the domain, and the rest of the topology — including other partitions in the per-partition path — is still generated. Two different blocks producing the same formatted name is unchanged and still a hard failure. If every block in a per-partition topology gets dropped this way, that partition now falls back to a flat topology instead of aborting every other partition in the same request; the equivalent all-dropped case in the cluster-wide path returns a clear error naming the cause, since there's no flat fallback for the whole-cluster topology. This all-dropped detection now also accounts for the node-less placeholder blocks `blockSizes` padding can add, which previously masked the all-dropped case and let generation silently succeed with an empty topology. A node whose block was dropped now reports no topology spec (`""`) instead of the malformed `default:` (empty block name), which Slinky would otherwise have written as a node annotation.
-- The Helm chart's `helm test` pods (`test-healthz`, `test-metrics`) now set CPU and memory requests and limits from the new `tests.resources` value (defaults: requests `10m` / `16Mi`, limits `100m` / `128Mi`), so they are admitted in namespaces whose `ResourceQuota` requires requests and limits. A namespace `LimitRange` with a minimum or `maxLimitRequestRatio` may need `tests.resources` adjusted.
+- Release-tag checkouts now stamp binaries, deb/rpm packages, and default image tags with the checked-out `v*` tag, including a `-dirty` suffix for tracked modifications, instead of `HEAD`. Without a release tag, version resolution falls back to the branch name, short commit SHA, then `unknown`; packaging warns when git metadata is unavailable. `make image-push` and `make docker-buildx` require an explicit `IMAGE_TAG` before pushing a default release-like tag to `ghcr.io/dsx-ai-factory/topograph`. Builds use `-trimpath` and stop at the first binary compilation failure ([#609](https://github.com/dsx-ai-factory/topograph/pull/609)).
+- The `graph` engine derives instance records, closest-first `network_layers`, and accelerator-domain labels from the canonical graph when providers omit them, and fills missing topology fields in provider-supplied records. This fixes empty instance lists from live providers ([#590](https://github.com/dsx-ai-factory/topograph/pull/590)).
+- InfiniBand providers match HCA host names to cluster node names by short host name when at least one name is short, preserving exact matches and avoiding matches between different FQDNs. Ambiguous matches are skipped with warnings. FQDN-registered nodes are retained in the switch tree, and resolved names prevent redundant `ibnetdiscover` runs on nodes in the same fabric.
+- GCP and OCI simulation providers handle partial final pagination pages without indexing past the available instances.
+- Non-positive `pageSize` configuration values emit a warning and use the provider default.
+- The node observer regenerates topology for all informer deletions, including `cache.DeletedFinalStateUnknown` tombstones whose object is unavailable, preventing stale topology after a disconnected watch.
+- Slinky `configUpdateMode: skeleton-only` emits only top-level switches for `topology/tree`, without child-switch lists or node names. The top-level tier is determined after provider `trimTiers` is applied.
+- `topology/block` drops individual accelerator-domain blocks with invalid or inconsistent `blockName` results, logging a warning while preserving other blocks. If all real blocks are dropped, a per-partition topology falls back to flat output, while cluster-wide block generation returns an error, including when node-less padding blocks remain. Dropped nodes receive no topology spec instead of an empty block name; duplicate formatted names across blocks remain errors.
+- Helm `helm test` pods (`test-healthz`, `test-metrics`) set CPU and memory requests and limits through `tests.resources` (defaults: requests `10m` / `16Mi`, limits `100m` / `128Mi`), supporting namespaces whose `ResourceQuota` requires resources. Adjust these values to satisfy any namespace `LimitRange`.
+- Helm schema validation accepts provider and engine names as strings and leaves registry validation to the application, so newly registered providers are no longer rejected by a stale chart enum.
+- API server shutdown stops its asynchronous work queue and is safe to call repeatedly.
+- The Go workflow runs on pushes to `main`, keeping Codecov coverage and the README badge current after squash merges.
+
+### Removed
+
+- **BREAKING:** The `nscale` provider's `instanceApiUrl` parameter and instance API client. Slurm auto-discovery now uses each node's IMDS; remove `instanceApiUrl` from provider configuration.
+- Obsolete, unregistered `cw` provider implementation.
 
 ### Security
 
-- Main Topograph API server ClusterRole rules are gated by the selected engine and provider: `nodes`, `pods`, `daemonsets`, and `configmaps` permissions render only when the engine or provider reaches the Kubernetes API, and the ClusterRole and ClusterRoleBinding are omitted entirely for non-Kubernetes combinations such as the `test` provider with the `slurm` engine.
-- Node RBAC permissions in the main Topograph API server ClusterRole are collapsed into a single rule following least privilege: the Kubernetes engine receives Node `[get, list, patch]`, the dynamic Slinky engine (`useDynamicNodes: true`) receives Node `[list, patch]`, and other node-consuming configurations receive Node `[list]` without unnecessary `patch`, `get`, or `update` access.
-- Go toolchain bumped to **1.27.3** (`go.mod`, `Dockerfile`, CI) to address a reachable stdlib vulnerability reported by `govulncheck`.
-- The Helm chart's `helm test` pods no longer mount a service account token (`automountServiceAccountToken: false`); they only probe the Topograph Service and never call the Kubernetes API.
+- Go toolchain upgraded from **1.26.6** to **1.27.3** across the module, container build, and CI to address a reachable standard-library vulnerability reported by `govulncheck`. CI uses `golangci-lint` **v2.14.0** for Go 1.27 compatibility.
+- Main API server ClusterRole rules are gated by engine and provider, and the ClusterRole and binding are omitted when no Kubernetes API access is needed. Node permissions use a single rule: `[get, list, patch]` for the Kubernetes engine, `[list, patch]` for dynamic Slinky, and `[list]` for other node-consuming configurations.
+- Helm test pods disable service account token mounting because they only probe the Topograph Service.
+- Added CodeQL analysis for Go, Grype container image scans for `linux/amd64` and `linux/arm64` with OpenVEX support, and Checkov scans of rendered Helm manifests. Grype and Checkov findings are reported to GitHub code scanning without failing builds solely on findings.
+- CI workflows use SHA-pinned actions and reduced token permissions; dependency license checks, digest-pinned container base images, OpenSSF Scorecard, and actionlint/zizmor workflow checks strengthen supply-chain validation.
+
+[Full changelog](https://github.com/dsx-ai-factory/topograph/compare/v1.0.0...v1.1.0)
 
 ---
 
@@ -97,7 +84,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Helm `env`, `initContainers`, and `lifecycle` overrides across the API server, node-observer, and node-data-broker containers.
 - Lambda provider Kubernetes integration, including node-data-broker discovery from Node provider IDs and regions and workload identity through `lambda-pod-identity-webhook` for short-lived API credentials ([#375](https://github.com/dsx-ai-factory/topograph/pull/375)).
 - `kwok-nodes` utility and interactive Kubernetes/KWOK demos for rendering model-derived Node manifests and exercising the test, DRA, OCI simulation, and NFD configurations locally. Generated metadata preserves required KWOK selectors and maps model hostnames to Topograph instance IDs.
-- Opt-in Helm `NetworkPolicy` covering all three components — API server, node-observer, node-data-broker (`networkPolicy.enabled`, default `false`): denies ingress except intra-release traffic (so the node-observer can reach the API server) and, when `networkPolicy.metricsScraperNamespace` is set, the Prometheus scraper namespace (set this to the namespace Prometheus runs in, which may differ from `serviceMonitor.namespace`). Egress stays unconstrained until `networkPolicy.extraEgress` is set, at which point an `Egress` policyType is added with DNS (scoped to the kube-dns pods, overridable via `networkPolicy.dnsPodSelector` for CoreDNS deployments with a non-standard label) and intra-release allows plus the supplied rules (which must include the kube-apiserver and provider endpoint under default-deny egress); `networkPolicy.extraIngress` appends custom ingress rules.
 
 ### Changed
 
@@ -344,7 +330,9 @@ Initial release.
 
 ---
 
-[Unreleased]: https://github.com/dsx-ai-factory/topograph/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/dsx-ai-factory/topograph/compare/v1.1.0...HEAD
+[v1.1.0]: https://github.com/dsx-ai-factory/topograph/compare/v1.0.0...v1.1.0
+[v1.0.0]: https://github.com/dsx-ai-factory/topograph/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/dsx-ai-factory/topograph/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dsx-ai-factory/topograph/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dsx-ai-factory/topograph/compare/v0.1.0...v0.3.0
