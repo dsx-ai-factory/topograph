@@ -38,9 +38,23 @@ jobs:
           helm package charts/topograph --destination packaged
 
       - name: Set up ORAS
-        uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1.2.4
-        with:
-          version: 1.3.0
+        # Install the CLI directly: setup-oras is not allowed by the enterprise
+        # Actions policy. Keep the version and linux/amd64 checksum in sync;
+        # these pins are maintained manually, like the workflow linters.
+        env:
+          ORAS_VERSION: '1.3.0'
+          ORAS_SHA256: '6cdc692f929100feb08aa8de584d02f7bcc30ec7d88bc2adc2054d782db57c64'
+        run: |
+          set -euo pipefail
+          oras_dir=$(mktemp -d "${RUNNER_TEMP}/oras.XXXXXX")
+          archive="oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o "${oras_dir}/${archive}" \
+            "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/${archive}"
+          printf '%s  %s\n' "${ORAS_SHA256}" "${oras_dir}/${archive}" | sha256sum --check -
+          tar -xzf "${oras_dir}/${archive}" -C "${oras_dir}" oras
+          printf '%s\n' "${oras_dir}" >> "${GITHUB_PATH}"
+          "${oras_dir}/oras" version
 
       - name: Generate SHA-256 checksum
         run: |
