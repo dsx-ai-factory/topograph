@@ -45,3 +45,81 @@
 - name: needs-rebase
   color: "e11d21"
   description: "Conflicts with main; the author needs to rebase or merge main"
+
+# Area labels, applied by .github/workflows/labeler.yaml from the paths in
+# .github/labeler.yml.
+
+- name: area/providers
+  color: "c5def5"
+  description: "Changes provider code under pkg/providers/"
+
+- name: area/engines
+  color: "c5def5"
+  description: "Changes engine or translation code under pkg/engines/ or pkg/translate/"
+
+- name: area/topology
+  color: "c5def5"
+  description: "Changes the canonical topology graph under pkg/topology/"
+
+- name: area/accelerator
+  color: "c5def5"
+  description: "Changes accelerator-domain discovery under pkg/accelerator/"
+
+- name: area/chart
+  color: "c5def5"
+  description: "Changes the Helm chart under charts/"
+
+- name: area/node-observer
+  color: "c5def5"
+  description: "Changes the Node Observer: pkg/node_observer/ or cmd/node-observer/"
+
+- name: area/node-data-broker
+  color: "c5def5"
+  description: "Changes the Node Data Broker under cmd/node-data-broker/"
+
+- name: area/api
+  color: "c5def5"
+  description: "Changes the API server: pkg/server/ or cmd/topograph/"
+
+- name: area/infiniband
+  color: "c5def5"
+  description: "Changes the InfiniBand discovery helpers under pkg/ib/"
+
+- name: area/docs
+  color: "c5def5"
+  description: "Changes docs/, fern/, or a Markdown file at the repository root"
+
+- name: area/ci
+  color: "c5def5"
+  description: "Changes GitHub configuration or workflows under .github/"
+
+- name: area/build
+  color: "c5def5"
+  description: "Changes the Dockerfile, Makefile, packaging, or build scripts"
+
+- name: area/tests
+  color: "c5def5"
+  description: "Changes simulation fixtures, shared test helpers, or demos"
+
+# Size labels, applied by .github/workflows/labeler.yaml from the pull
+# request's additions plus deletions.
+
+- name: size/XS
+  color: "009900"
+  description: "Changes fewer than 10 lines (additions plus deletions)"
+
+- name: size/S
+  color: "77bb00"
+  description: "Changes 10 to 49 lines (additions plus deletions)"
+
+- name: size/M
+  color: "eebb00"
+  description: "Changes 50 to 199 lines (additions plus deletions)"
+
+- name: size/L
+  color: "ee9900"
+  description: "Changes 200 to 499 lines (additions plus deletions)"
+
+- name: size/XL
+  color: "ee5500"
+  description: "Changes 500 or more lines (additions plus deletions)"
