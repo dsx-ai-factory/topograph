@@ -1,0 +1,163 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Posts one welcome comment on a first-time author's first issue and on a
+# first-time author's first pull request. Nobody else gets a comment: bots are
+# skipped first, and the repository's owner, org members and collaborators
+# never count as first-time authors.
+#
+# First issue: the issue's author_association is not OWNER, MEMBER or
+# COLLABORATOR, and the author has opened exactly one issue here, the one that
+# triggered the run. The count comes from the issues list filtered by creator,
+# not from the search API, whose index can lag behind an issue opened seconds
+# ago. The list returns pull requests too; they carry a pull_request key and
+# are not counted, so someone who has only sent pull requests is still welcomed
+# on their first issue.
+#
+# First pull request: GitHub's author_association on the pull request is
+# FIRST_TIME_CONTRIBUTOR (no commit in this repository yet) or FIRST_TIMER (no
+# commit anywhere on GitHub yet).
+#
+# The issue comment points to CONTRIBUTING.md "Open an issue first" and to
+# /assign (assign.yaml). The pull request comment points to the DCO sign-off,
+# `git commit -s -S`, and the PR template. Both give the 5-business-day
+# turnaround target from CONTRIBUTING.md.
+#
+# Why pull_request_target: a pull_request run from a fork gets a read-only
+# token, so it could not comment. pull_request_target runs this file as it is
+# on the base branch, with the base repository's token, so the job checks out
+# no code and runs nothing from the pull request: it reads only the event's
+# author fields and posts a fixed text. zizmor reports the trigger as
+# dangerous-triggers; workflow-lint.yaml lists it as accepted.
+#
+# GitHub blocks pull_request_target in public repositories from 2026-12-02
+# unless an Actions policy allows it. The pull request job needs the
+# repository-level policy that allows it (P0 of the governance program) in
+# place before that date, or it stops running. The issue job does not depend
+# on it.
+#
+# Permissions: each job holds one write permission. Listing the author's issues
+# and commenting on an issue need issues write. Commenting on a pull request
+# goes through the issues comments endpoint, which accepts pull-requests write
+# on a pull request.
+
+name: Welcome
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+# Nothing at the workflow level; each job declares what it uses.
+permissions: {}
+
+jobs:
+  issue:
+    name: Welcome a first-time issue author
+    # Issue events only, and upstream only, so a fork with Actions enabled
+    # never comments on its own issues.
+    if: github.event_name == 'issues' && github.repository == 'dsx-ai-factory/topograph'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write # list the author's issues and comment on this one
+    steps:
+      - name: Welcome a first-time issue author
+        id: welcome
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const association = issue.author_association;
+
+            if (issue.user.type === 'Bot') {
+              core.info(`Issue #${issue.number} was opened by a bot; no welcome`);
+              return;
+            }
+            if (['OWNER', 'MEMBER', 'COLLABORATOR'].includes(association)) {
+              core.info(`Issue #${issue.number} author is ${association}; no welcome`);
+              return;
+            }
+
+            // Every item this author created here, including the issue that
+            // triggered this run. Pull requests are listed too and carry a
+            // pull_request key; only issues count.
+            const { owner, repo } = context.repo;
+            const items = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              creator: issue.user.login,
+              state: 'all',
+              per_page: 100,
+            });
+            const issues = items.filter((item) => !item.pull_request);
+            if (issues.length !== 1) {
+              core.info(`Issue #${issue.number} author has opened ${issues.length} issues; no welcome`);
+              return;
+            }
+
+            const contributing = 'https://github.com/dsx-ai-factory/topograph/blob/main/CONTRIBUTING.md';
+            const body = [
+              'Thanks for opening your first issue in Topograph.',
+              '',
+              `- If you would like to work on it, comment \`/assign\` on this issue to claim it, and \`/unassign\` to release it. [Open an issue first](${contributing}#open-an-issue-first) in CONTRIBUTING.md explains how issues and pull requests fit together.`,
+              `- Once a pull request is open, a maintainer aims to give a first response within 5 business days. See [Turnaround](${contributing}#turnaround).`,
+            ].join('\n');
+            await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body });
+            core.info(`Welcomed the author of issue #${issue.number}`);
+
+  pull-request:
+    name: Welcome a first-time pull request author
+    # Pull request events only, and upstream only, so a fork with Actions
+    # enabled never comments on its own pull requests.
+    if: github.event_name == 'pull_request_target' && github.repository == 'dsx-ai-factory/topograph'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # comment on the pull request through the issues comments endpoint
+    steps:
+      - name: Welcome a first-time pull request author
+        id: welcome
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const association = pr.author_association;
+
+            if (pr.user.type === 'Bot') {
+              core.info(`Pull request #${pr.number} was opened by a bot; no welcome`);
+              return;
+            }
+            // FIRST_TIME_CONTRIBUTOR: no commit in this repository yet.
+            // FIRST_TIMER: no commit anywhere on GitHub yet. A pull request
+            // has one association, so an owner, member or collaborator
+            // (OWNER, MEMBER, COLLABORATOR) never matches and is skipped here.
+            if (!['FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER'].includes(association)) {
+              core.info(`Pull request #${pr.number} author is ${association}; no welcome`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const blob = 'https://github.com/dsx-ai-factory/topograph/blob/main';
+            const body = [
+              'Thanks for your first pull request to Topograph. A few things help it through review:',
+              '',
+              `- Every commit needs a DCO sign-off. \`git commit -s -S\` adds the sign-off and also signs the commit, which is recommended. [Sign your work](${blob}/CONTRIBUTING.md#sign-your-work) in CONTRIBUTING.md explains the sign-off and how to add it to commits you have already made.`,
+              `- Fill in the [pull request template](${blob}/.github/PULL_REQUEST_TEMPLATE.md).`,
+              `- A maintainer aims to give a first response within 5 business days. See [Turnaround](${blob}/CONTRIBUTING.md#turnaround).`,
+            ].join('\n');
+            await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+            core.info(`Welcomed the author of pull request #${pr.number}`);
