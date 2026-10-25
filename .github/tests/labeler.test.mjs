@@ -14,9 +14,10 @@
 // limitations under the License.
 
 // Tests for .github/labeler.yml and .github/workflows/labeler.yaml. The area
-// map is checked against the files git tracks, so a glob that matches nothing
-// fails here instead of never labeling a pull request. The size step's script
-// runs against a recorded fake of the GitHub API.
+// map is checked against the files git tracks, with the labeler's own glob
+// rules, so a glob that matches nothing fails here instead of never labeling
+// a pull request. The size step's script runs against a recorded fake of the
+// GitHub API.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -56,13 +57,49 @@ const AREAS = {
   'area/tests': ['tests/**', 'pkg/test/**', 'demos/**'],
 };
 
-// The tracked files a git pathspec glob matches. With :(glob), `*` does not
-// cross a `/` and `**/` spans directories, as in the labeler's minimatch.
-function trackedFiles(glob) {
-  const result = spawnSync('git', ['-C', REPO_ROOT, 'ls-files', '-z', '--', `:(glob)${glob}`], { encoding: 'utf8' });
+// Every file git tracks. The list is taken without a pathspec, because a git
+// pathspec also matches every file under a bare directory name such as
+// `charts`, and the labeler does not.
+function trackedFiles() {
+  const result = spawnSync('git', ['-C', REPO_ROOT, 'ls-files', '-z'], { encoding: 'utf8' });
   if (result.error) throw new Error(`cannot run git: ${result.error.message}`);
-  if (result.status !== 0) throw new Error(`git ls-files failed for ${glob}: ${result.stderr.trim()}`);
+  if (result.status !== 0) throw new Error(`git ls-files failed: ${result.stderr.trim()}`);
   return result.stdout.split('\0').filter(Boolean);
+}
+
+// Whether the labeler matches the changed file `file` with `glob`.
+// actions/labeler v7.0.0 (bf12e9b) calls new Minimatch(glob, { dot }).match(file)
+// (src/changedFiles.ts:229 and 239), and dot defaults to true (action.yml:19);
+// labeler.yaml does not set it. Node's path.matchesGlob is no substitute: it
+// fixes dot at false, and on macOS its wildcards ignore case. This matcher
+// knows only the syntax labeler.yml uses and throws on the rest, so a glob
+// written in any other syntax fails here until the matcher learns it.
+function globMatches(glob, file) {
+  const pattern = glob.split('/');
+  if (/[?[\]{}()!#\\]/.test(glob) || pattern.some((s) => ['', '.', '..'].includes(s) || (s.includes('**') && s !== '**'))) {
+    throw new Error(`globMatches does not implement ${glob}: it handles literal segments, * inside a segment, and ** as a whole segment`);
+  }
+  const segment = (s) => new RegExp(`^${s.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
+  const matchFrom = (rest, parts) => {
+    if (rest.length === 0) return parts.length === 0;
+    const [head, ...tail] = rest;
+    if (head === '**') {
+      // A trailing ** needs at least one segment and any other ** may match
+      // none: in minimatch 10.2.5 `a/**` misses `a` but `a/**/b` matches `a/b`.
+      for (let skip = tail.length === 0 ? 1 : 0; skip <= parts.length; skip++) {
+        if (matchFrom(tail, parts.slice(skip))) return true;
+      }
+      return false;
+    }
+    return parts.length > 0 && segment(head).test(parts[0]) && matchFrom(tail, parts.slice(1));
+  };
+  return matchFrom(pattern, file.split('/'));
+}
+
+// The entries in `globs` that match no tracked file, as "label: glob".
+function unmatchedGlobs(globs) {
+  const files = trackedFiles();
+  return globs.filter(({ glob }) => !files.some((file) => globMatches(glob, file))).map(({ label, glob }) => `${label}: ${glob}`);
 }
 
 // Every any-glob-to-any-file entry in labeler.yml, with its label.
@@ -116,15 +153,65 @@ function writes(calls) {
 }
 
 test('every labeler glob matches a tracked file', () => {
-  // Controls: the helper finds a known file and finds nothing for a path
-  // that does not exist, so an empty result below means the glob is wrong.
-  assert.deepEqual(trackedFiles('Makefile'), ['Makefile']);
-  assert.deepEqual(trackedFiles('pkg/no-such-directory/**'), []);
+  // Controls: a known file is matched and a path that does not exist is
+  // not, so an entry reported below means the glob is wrong.
+  assert.deepEqual(
+    unmatchedGlobs([
+      { label: 'control', glob: 'Makefile' },
+      { label: 'control', glob: 'pkg/no-such-directory/**' },
+    ]),
+    ['control: pkg/no-such-directory/**'],
+  );
 
   const globs = labelerGlobs(loadWorkflow(LABELER));
   assert.ok(globs.length > 0, 'no any-glob-to-any-file entry found in labeler.yml');
-  const unmatched = globs.filter(({ glob }) => trackedFiles(glob).length === 0).map(({ label, glob }) => `${label}: ${glob}`);
-  assert.deepEqual(unmatched, []);
+  assert.deepEqual(unmatchedGlobs(globs), []);
+});
+
+test('a glob naming a directory matches none of the files under it', () => {
+  // charts/ holds tracked files, but the labeler compares each glob with
+  // whole file paths, so `charts` never labels a pull request.
+  assert.deepEqual(
+    unmatchedGlobs([
+      { label: 'area/chart', glob: 'charts' },
+      { label: 'area/chart', glob: 'charts/**' },
+    ]),
+    ['area/chart: charts'],
+  );
+});
+
+test('globMatches follows the labeler: minimatch with dot: true', () => {
+  const cases = [
+    // A directory name is not a prefix.
+    ['charts', 'charts/topograph/Chart.yaml', false],
+    ['charts/**', 'charts/topograph/Chart.yaml', true],
+    // A trailing ** needs at least one segment; an inner ** may match none.
+    ['charts/**', 'charts', false],
+    ['docs/**/index.md', 'docs/index.md', true],
+    ['docs/**/index.md', 'docs/engines/index.md', true],
+    // * stays inside one segment and must cover all of it.
+    ['*.md', 'README.md', true],
+    ['*.md', 'docs/overview.md', false],
+    ['pkg/test/**', 'pkg/testing/fake.go', false],
+    ['Dockerfile', 'Dockerfile.dev', false],
+    // dot: true, the action's default, lets wildcards match a leading dot.
+    ['**/labels.yml', '.github/labels.yml', true],
+    ['*', '.gitignore', true],
+    // Case matters, as it does on the Linux runner.
+    ['MAKE*', 'Makefile', false],
+  ];
+  assert.deepEqual(
+    cases.map(([glob, file]) => [glob, file, globMatches(glob, file)]),
+    cases,
+  );
+});
+
+test('globMatches rejects glob syntax it does not implement', () => {
+  for (const glob of ['docs/{api,overview}.md', '!docs/**', 'docs/?.md', 'docs/[a-z]*.md', '#docs/**', 'docs/**.md', 'charts/', './charts/**']) {
+    assert.throws(() => globMatches(glob, 'docs/api.md'), {
+      message: `globMatches does not implement ${glob}: it handles literal segments, * inside a segment, and ** as a whole segment`,
+    });
+  }
 });
 
 test('labeler.yml maps each area to its globs in the v5+ changed-files syntax', () => {
