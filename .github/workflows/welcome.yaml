@@ -14,21 +14,33 @@
 # limitations under the License.
 
 # Posts one welcome comment on a first-time author's first issue and on a
-# first-time author's first pull request. Nobody else gets a comment: bots are
-# skipped first, and the repository's owner, org members and collaborators
+# first-time contributor's first pull request. Nobody else gets a comment: bots
+# are skipped first, and the repository's owner, org members and collaborators
 # never count as first-time authors.
 #
+# Both jobs list the author's items with the issues list filtered by creator,
+# not with the search API, whose index can lag behind an item opened seconds
+# ago. The list returns issues and pull requests together; pull requests carry
+# a pull_request key. Issues and pull requests share one number sequence that
+# only grows, so "first" means no earlier item of the same kind has a lower
+# number. That holds however late the job runs and whatever the author opens
+# after the triggering item, and it does not need the triggering item to be
+# in the list yet.
+#
 # First issue: the issue's author_association is not OWNER, MEMBER or
-# COLLABORATOR, and the author has opened exactly one issue here, the one that
-# triggered the run. The count comes from the issues list filtered by creator,
-# not from the search API, whose index can lag behind an issue opened seconds
-# ago. The list returns pull requests too; they carry a pull_request key and
-# are not counted, so someone who has only sent pull requests is still welcomed
-# on their first issue.
+# COLLABORATOR, and no issue by the author has a lower number. Pull requests
+# do not count, so someone who has only sent pull requests is still welcomed
+# on their first issue. When a new author opens two issues seconds apart, only
+# the lower number is welcomed.
 #
 # First pull request: GitHub's author_association on the pull request is
 # FIRST_TIME_CONTRIBUTOR (no commit in this repository yet) or FIRST_TIMER (no
-# commit anywhere on GitHub yet).
+# commit anywhere on GitHub yet), and no pull request by the author has a lower
+# number, whether it is open, merged or closed unmerged. The association alone
+# is not enough: it stays FIRST_TIME_CONTRIBUTOR on every pull request until
+# one of the author's commits merges. Checking it first spares the listing
+# call for everyone else. Issues do not count, so an author who filed issues
+# before is still welcomed on their first pull request.
 #
 # The issue comment points to CONTRIBUTING.md "Open an issue first" and to
 # /assign (assign.yaml). The pull request comment points to the DCO sign-off,
@@ -51,7 +63,10 @@
 # Permissions: each job holds one write permission. Listing the author's issues
 # and commenting on an issue need issues write. Commenting on a pull request
 # goes through the issues comments endpoint, which accepts pull-requests write
-# on a pull request.
+# on a pull request. The pull request job also holds issues read, because the
+# author's earlier pull requests are listed through the issues list endpoint.
+# GitHub lets a public repository be listed without it; it is declared anyway
+# so the job keeps working if the repository's visibility changes.
 
 name: Welcome
 
@@ -92,9 +107,9 @@ jobs:
               return;
             }
 
-            // Every item this author created here, including the issue that
-            // triggered this run. Pull requests are listed too and carry a
-            // pull_request key; only issues count.
+            // Every item this author created here, as of now. Pull requests
+            // are listed too and carry a pull_request key; only issues count.
+            // Numbers only grow, so an issue with a lower number came first.
             const { owner, repo } = context.repo;
             const items = await github.paginate(github.rest.issues.listForRepo, {
               owner,
@@ -103,9 +118,9 @@ jobs:
               state: 'all',
               per_page: 100,
             });
-            const issues = items.filter((item) => !item.pull_request);
-            if (issues.length !== 1) {
-              core.info(`Issue #${issue.number} author has opened ${issues.length} issues; no welcome`);
+            const earlier = items.filter((item) => !item.pull_request && item.number < issue.number);
+            if (earlier.length > 0) {
+              core.info(`Issue #${issue.number} author has ${earlier.length} earlier issues; no welcome`);
               return;
             }
 
@@ -127,6 +142,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      issues: read # list the author's earlier pull requests
       pull-requests: write # comment on the pull request through the issues comments endpoint
     steps:
       - name: Welcome a first-time pull request author
@@ -150,7 +166,26 @@ jobs:
               return;
             }
 
+            // The association stays FIRST_TIME_CONTRIBUTOR on every pull
+            // request until one of the author's commits merges, so look for
+            // an earlier pull request: open, merged or closed unmerged.
+            // Issues are listed too and have no pull_request key; they do
+            // not count. Numbers only grow, so a lower number came first.
             const { owner, repo } = context.repo;
+            const items = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              creator: pr.user.login,
+              state: 'all',
+              per_page: 100,
+            });
+            const pulls = items.filter((item) => item.pull_request);
+            const earlier = pulls.filter((item) => item.number < pr.number);
+            if (earlier.length > 0) {
+              core.info(`Pull request #${pr.number} author has ${earlier.length} earlier pull requests; no welcome`);
+              return;
+            }
+
             const blob = 'https://github.com/dsx-ai-factory/topograph/blob/main';
             const body = [
               'Thanks for your first pull request to Topograph. A few things help it through review:',
