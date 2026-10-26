@@ -21,8 +21,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { Worker } from 'node:worker_threads';
 
 import {
   GITHUB_DIR,
@@ -102,6 +106,62 @@ async function check(body, { userType = 'User', env = { BODY: body } } = {}) {
   return log;
 }
 
+// The source of a worker thread that runs the check step once, the way
+// check() does, and posts back what the step reported and how long the
+// script ran. It posts { started: true } just before the script starts.
+const DEADLINE_WORKER = `
+const { parentPort, workerData } = require('node:worker_threads');
+import(workerData.harness).then(async ({ fakeCore, recordingGithub, runGithubScript }) => {
+  const { github, calls } = recordingGithub({});
+  const { core, log } = fakeCore();
+  parentPort.postMessage({ started: true });
+  const started = performance.now();
+  await runGithubScript(workerData.script, {
+    github,
+    context: workerData.context,
+    core,
+    env: { BODY: workerData.body },
+  });
+  parentPort.postMessage({ ms: performance.now() - started, log, calls });
+});
+`;
+
+// Runs the check step on `body` in a worker thread and rejects if the script
+// has not finished `limitMs` after it started. A regular expression that
+// backtracks holds the thread it runs on, so neither a timer nor node:test's
+// own timeout can fire on that thread until it is done; a worker can be
+// stopped from here.
+function checkWithDeadline(body, limitMs) {
+  const { script } = extractStep(WORKFLOW, 'pr-description', 'check');
+  const context = {
+    eventName: 'pull_request_target',
+    repo: { owner: 'dsx-ai-factory', repo: 'topograph' },
+    payload: { pull_request: { number: 7, body, user: { login: 'contributor', type: 'User' } } },
+  };
+  const harness = pathToFileURL(join(GITHUB_DIR, 'tests', 'lib', 'harness.mjs')).href;
+  const worker = new Worker(DEADLINE_WORKER, { eval: true, workerData: { harness, script, context, body } });
+  return new Promise((resolve, reject) => {
+    let timer;
+    const settle = (fn, value) => {
+      clearTimeout(timer);
+      worker.terminate();
+      fn(value);
+    };
+    worker.on('message', (message) => {
+      if (message.started) {
+        timer = setTimeout(
+          () => settle(reject, new Error(`the check did not finish within ${limitMs} ms`)),
+          limitMs,
+        );
+      } else {
+        settle(resolve, message);
+      }
+    });
+    worker.on('error', (error) => settle(reject, error));
+    worker.on('exit', (code) => settle(reject, new Error(`the worker exited with code ${code} before reporting`)));
+  });
+}
+
 test('untouched template fails all four rules', async () => {
   const log = await check(readFileSync(TEMPLATE, 'utf8'));
   assert.deepEqual(log.error, ALL_FOUR);
@@ -156,6 +216,63 @@ test('trivial fix with no issue passes', async () => {
   assert.deepEqual(await check(body), PASS_LOG);
 });
 
+// Task list item prefixes, each up to and including the character after the
+// box. GitHub renders a ticked box for a list item whose text starts with
+// [x] or [X] and then a space or tab (GFM spec 0.29-gfm, 5.3 "Task list
+// items"; cmark-gfm's tasklist scanner). The item can use any list marker
+// (5.2: -, +, *, or 1 to 9 digits and . or )), can be indented up to three
+// spaces, and has one to four spaces between the marker and the box. Four
+// spaces of indentation, or five after the marker, make an indented code
+// block or paragraph text instead, which renders no box.
+const TICKED_ACCEPTED = ['- [X] ', '* [x] ', '+ [X] ', '1. [x] ', '1) [x] ', '   - [x] ', '- [x]\t', '-  [x] '];
+const TICKED_REJECTED = ['-[x] ', '    - [x] ', '-     [x] '];
+
+test('type of change accepts every ticked task list form GitHub renders', async (t) => {
+  // The ticked item is the only item in the section, right after its guidance
+  // comment, so an indented line there is a code block, not a nested item.
+  const complete = fixture('complete.md');
+  const list =
+    '- [ ] Bug fix\n- [ ] New feature\n- [ ] Breaking change\n- [ ] Documentation\n' +
+    '- [ ] Refactoring (no behavior change)\n- [x] Build or CI\n';
+  for (const prefix of TICKED_ACCEPTED) {
+    await t.test(`accepts ${JSON.stringify(prefix)}`, async () => {
+      assert.deepEqual(await check(edit(complete, list, `${prefix}Build or CI\n`)), PASS_LOG);
+    });
+  }
+  for (const prefix of TICKED_REJECTED) {
+    await t.test(`rejects ${JSON.stringify(prefix)}`, async () => {
+      const log = await check(edit(complete, list, `${prefix}Build or CI\n`));
+      assert.deepEqual(log.error, [TYPE_OF_CHANGE]);
+    });
+  }
+});
+
+test('trivial fix accepts every ticked task list form GitHub renders', async (t) => {
+  // trivial-fix.md has no issue reference, so only its Trivial fix box can
+  // satisfy the rule. The box follows the Related: line, so an indented line
+  // there is paragraph text.
+  const trivial = fixture('trivial-fix.md');
+  for (const prefix of TICKED_ACCEPTED) {
+    await t.test(`accepts ${JSON.stringify(prefix)}`, async () => {
+      assert.deepEqual(await check(edit(trivial, '- [x] Trivial fix', `${prefix}Trivial fix`)), PASS_LOG);
+    });
+  }
+  for (const prefix of TICKED_REJECTED) {
+    await t.test(`rejects ${JSON.stringify(prefix)}`, async () => {
+      const log = await check(edit(trivial, '- [x] Trivial fix', `${prefix}Trivial fix`));
+      assert.deepEqual(log.error, [LINKED_ISSUE]);
+    });
+  }
+  // The label has to start the ticked item's text; another ticked box under
+  // Linked issue does not exempt the change.
+  for (const line of ['- [x] Not a Trivial fix', '- [x] Bug fix']) {
+    await t.test(`rejects ${JSON.stringify(line)}`, async () => {
+      const log = await check(edit(trivial, '- [x] Trivial fix', line));
+      assert.deepEqual(log.error, [LINKED_ISSUE]);
+    });
+  }
+});
+
 test('N/A as the issue fails linked issue only', async () => {
   const log = await check(fixture('na-issue.md'));
   assert.deepEqual(log.error, [LINKED_ISSUE]);
@@ -177,6 +294,8 @@ test('linked issue accepts the documented reference forms only', async (t) => {
     'Fixes: other-org/topograph#612',
     'Fixes: https://github.com/other-org/topograph/issues/612',
     'Fixes: https://github.com/dsx-ai-factory/topograph/pull/612',
+    // The keyword has to start the line.
+    'see Fixes: #12',
   ];
   for (const line of accepted) {
     await t.test(`accepts ${line}`, async () => {
@@ -230,6 +349,46 @@ test('heading match is case and whitespace tolerant', async () => {
   assert.deepEqual(await check(body), PASS_LOG);
 });
 
+test('sections are read by heading', async (t) => {
+  const complete = fixture('complete.md');
+  const template = readFileSync(TEMPLATE, 'utf8');
+  const everyPart = 'A summary.\nFixes: #612\n- [x] Bug fix\nRan the tests.\n';
+
+  await t.test('a section with another name is ignored', async () => {
+    assert.deepEqual(await check(`${complete}\n## Notes\nAnything.\n`), PASS_LOG);
+    const log = await check(`${template}\n## Notes\n${everyPart}`);
+    assert.deepEqual(log.error, ALL_FOUR);
+  });
+
+  await t.test('sections in another order are still found', async () => {
+    const reversed = complete.split(/^(?=## )/m).reverse().join('');
+    assert.match(reversed, /^## Checklist\n[\s\S]*\n## Testing\n[\s\S]*\n## Type of change\n[\s\S]*\n## Summary\n/);
+    assert.deepEqual(await check(reversed), PASS_LOG);
+  });
+
+  await t.test('a repeated heading adds to the same section', async () => {
+    // A second, empty Testing section keeps what the first one holds, and a
+    // second, filled one counts when the first is empty.
+    assert.deepEqual(await check(`${complete}\n## Testing\n`), PASS_LOG);
+    const log = await check(`${template}\n## Testing\nRan the tests.\n`);
+    assert.deepEqual(log.error, [SUMMARY, LINKED_ISSUE, TYPE_OF_CHANGE]);
+  });
+
+  await t.test('text before the first heading belongs to no section', async () => {
+    const log = await check(`${everyPart}\n${template}`);
+    assert.deepEqual(log.error, ALL_FOUR);
+  });
+
+  await t.test('a ### subheading is text in its section', async () => {
+    const body = edit(
+      complete,
+      '<!-- What this PR changes and why, in a few sentences a reviewer can follow without opening the diff. -->\n',
+      '### Why\n',
+    );
+    assert.deepEqual(await check(body), PASS_LOG);
+  });
+});
+
 test('crlf body behaves like lf', async () => {
   const crlf = fixture('crlf-complete.md');
   // Guard the fixture itself: if git or an editor rewrote it to LF, this test
@@ -245,19 +404,52 @@ test('crlf body behaves like lf', async () => {
   assert.deepEqual(log.failed, [FAILED]);
 });
 
+test('adversarial heading line finishes fast', { timeout: 5000 }, async () => {
+  // Each line after Summary is "##", 20000 spaces and a short tail. The
+  // second and third tails put a character that \s matches and . does not
+  // (U+2028, a bare \r) between two letters, so a heading pattern whose
+  // quantifiers can share the spaces, such as /^##\s+(.+?)\s*$/, tries every
+  // way to split them before it fails. The first tail starts with U+2028,
+  // which that pattern's \s+ takes along with the spaces, so it matches at
+  // once.
+  const spaces = ' '.repeat(20000);
+  const body = `## Summary\nx\n##${spaces}\u2028a b\n##${spaces}a\u2028b\n##${spaces}a\rb\n`;
+
+  const { ms, log, calls } = await checkWithDeadline(body, 1000);
+
+  assert.ok(ms < 1000, `the check took ${ms} ms`);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(log.error, [LINKED_ISSUE, TYPE_OF_CHANGE, TESTING]);
+});
+
 test('injection text is data', async () => {
-  const marker = `/tmp/gov-pwned-${process.pid}`;
-  const body = fixture('injection.md').replaceAll('<pid>', String(process.pid));
-  for (const text of [`$(touch ${marker})`, `\`touch ${marker}\``, '${{ secrets.GITHUB_TOKEN }}', '::set-output name=x::y']) {
-    assert.ok(body.includes(text), `injection.md does not contain ${text}`);
+  const dir = mkdtempSync(join(tmpdir(), 'pr-description-injection-'));
+  try {
+    const marker = join(dir, 'pwned');
+    const body = fixture('injection.md').replaceAll('<marker>', marker);
+    const payloads = [`$(touch ${marker})`, `\`touch ${marker}\``];
+    for (const text of [...payloads, '${{ secrets.GITHUB_TOKEN }}', '::set-output name=x::y']) {
+      assert.ok(body.includes(text), `injection.md does not contain ${text}`);
+    }
+
+    // Positive control: a shell that runs a payload creates the marker where
+    // this test looks for it. Without it, a marker directory the test cannot
+    // write to would make a script that shells out look harmless.
+    for (const payload of payloads) {
+      execFileSync('sh', ['-c', `true ${payload}`]);
+      assert.equal(existsSync(marker), true, `sh ran ${payload} but ${marker} does not exist`);
+      rmSync(marker);
+    }
+    assert.equal(existsSync(marker), false, `${marker} exists before the run`);
+
+    const log = await check(body);
+
+    assert.equal(existsSync(marker), false, `${marker} was created`);
+    assert.deepEqual(log, PASS_LOG);
+    assert.deepEqual(Object.values(log).flat().filter((entry) => entry.includes('::')), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
-  assert.equal(existsSync(marker), false, `${marker} exists before the run`);
-
-  const log = await check(body);
-
-  assert.equal(existsSync(marker), false, `${marker} was created`);
-  assert.deepEqual(log, PASS_LOG);
-  assert.deepEqual(Object.values(log).flat().filter((entry) => entry.includes('::')), []);
 });
 
 test('bot author is skipped', async () => {

@@ -1,7 +1,7 @@
 ## Summary
 <!-- What this PR changes and why, in a few sentences a reviewer can follow without opening the diff. -->
-$(touch /tmp/gov-pwned-<pid>)
-`touch /tmp/gov-pwned-<pid>`
+$(touch <marker>)
+`touch <marker>`
 ${{ secrets.GITHUB_TOKEN }}
 ::set-output name=x::y
 ::error title=PR description::forged annotation
@@ -18,7 +18,7 @@ Related: <!-- #123 if this PR is partial work -->
 
 ## Testing
 <!-- The commands you ran and their results: `make qualify`, plus `make chart-test` when charts/topograph/ changed. Add any manual or end-to-end check and what it showed. -->
-$(touch /tmp/gov-pwned-<pid>)
+$(touch <marker>)
 
 ## Checklist
 - [x] All commits are signed off per DCO (`git commit -s`).
