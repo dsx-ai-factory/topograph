@@ -1,0 +1,14 @@
+# Test-only parent chart that depends on charts/topograph under an alias, so
+# helm-unittest renders the chart with a .Chart.Name other than "topograph".
+# Never packaged or published.
+apiVersion: v2
+name: aliased-dependency
+description: Test fixture that installs the topograph chart under an alias.
+type: application
+version: 0.0.0
+dependencies:
+  - name: topograph
+    # Accepts every chart version, prereleases included, so release bumps
+    # need no change here.
+    version: ">=0.0.0-0"
+    alias: topo

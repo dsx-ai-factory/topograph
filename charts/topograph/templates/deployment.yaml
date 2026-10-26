@@ -44,7 +44,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ .Chart.Name }}
+        - name: topograph
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: {{ include "topograph.image" . | quote }}

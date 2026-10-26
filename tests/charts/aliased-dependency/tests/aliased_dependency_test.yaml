@@ -1,0 +1,35 @@
+suite: topograph installed under an alias
+# The chart's own suites always render with .Chart.Name "topograph". This parent
+# chart aliases it as "topo", so every name derived from .Chart.Name changes.
+# configmap.yml is rendered because the API Deployment includes it for its
+# checksum/config pod annotation.
+release:
+  name: chart-ci
+  namespace: topograph
+templates:
+  - charts/topo/templates/service.yaml
+  - charts/topo/templates/deployment.yaml
+  - charts/topo/templates/configmap.yml
+  - charts/topo/templates/nodeObserver/configmap.yml
+tests:
+  - it: points node-observer at the aliased API Service
+    asserts:
+      - equal:
+          path: metadata.name
+          value: chart-ci-topo
+        template: charts/topo/templates/service.yaml
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: 'generateTopologyUrl: "http://chart-ci-topo.topograph.svc.cluster.local:49021/v1/generate"'
+        template: charts/topo/templates/nodeObserver/configmap.yml
+
+  - it: names the API container the way node-observer watches it
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: topograph
+        template: charts/topo/templates/deployment.yaml
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: "containerName: topograph"
+        template: charts/topo/templates/nodeObserver/configmap.yml

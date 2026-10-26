@@ -1,5 +1,6 @@
 # Helm chart tests: lints the umbrella chart and runs the helm-unittest suites
-# under charts/topograph/tests/ (assertions + full-render snapshots).
+# under charts/topograph/tests/ (assertions + full-render snapshots) and
+# tests/charts/aliased-dependency/ (the chart rendered under an alias).
 
 name: Chart Test
 

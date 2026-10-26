@@ -100,11 +100,14 @@ helm-unittest-plugin:
 	fi
 
 # Lint the umbrella chart and run the helm-unittest suites under
-# charts/topograph/tests/ (assertions + full-render snapshots).
+# charts/topograph/tests/ (assertions + full-render snapshots), then the suite
+# under tests/charts/aliased-dependency/, which renders the chart under an alias.
+# --with-subchart=false keeps that run from repeating the chart's own suites.
 .PHONY: chart-test
 chart-test: helm-unittest-plugin
 	$(HELM_BIN) lint charts/topograph
 	$(HELM_BIN) unittest charts/topograph
+	$(HELM_BIN) unittest --with-subchart=false tests/charts/aliased-dependency
 
 # Refresh the helm-unittest snapshots under charts/topograph/tests/__snapshot__/
 # after intentional template or values changes (review before commit).

@@ -83,7 +83,7 @@ Only needed when you change `charts/topograph/`; CI runs `make chart-test` on
 every workflow trigger regardless.
 
 ```bash
-make chart-test                  # helm lint + helm-unittest suites (charts/topograph/tests/)
+make chart-test                  # helm lint + helm-unittest suites (charts/topograph/tests/, tests/charts/)
 make chart-test-update-snapshot  # refresh snapshots after an intentional template/values change — review the diff before committing
 ```
 

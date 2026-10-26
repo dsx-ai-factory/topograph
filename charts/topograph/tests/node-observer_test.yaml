@@ -79,6 +79,28 @@ tests:
             value: topograph
         template: templates/nodeObserver/deployment.yaml
 
+  - it: targets the API Service when its name and port are overridden
+    templates:
+      - templates/service.yaml
+      - templates/nodeObserver/configmap.yml
+    set:
+      fullnameOverride: shared-topograph
+      service:
+        port: 30000
+    asserts:
+      - equal:
+          path: metadata.name
+          value: shared-topograph
+        template: templates/service.yaml
+      - equal:
+          path: spec.ports[0].port
+          value: 30000
+        template: templates/service.yaml
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: 'generateTopologyUrl: "http://shared-topograph.topograph.svc.cluster.local:30000/v1/generate"'
+        template: templates/nodeObserver/configmap.yml
+
   - it: omits the node-data-broker coordinates when disabled
     templates:
       - templates/nodeObserver/deployment.yaml
