@@ -263,6 +263,18 @@ test('trivial fix accepts every ticked task list form GitHub renders', async (t)
       assert.deepEqual(log.error, [LINKED_ISSUE]);
     });
   }
+  // With the reference lines deleted, the box is the section's first line,
+  // right after the guidance comment: three spaces still make a list item,
+  // four make an indented code block.
+  const references =
+    'Fixes: <!-- #123 if this PR closes the issue -->\nRelated: <!-- #123 if this PR is partial work -->\n- [x] Trivial fix';
+  await t.test('accepts "   - [x] " as the first line', async () => {
+    assert.deepEqual(await check(edit(trivial, references, '   - [x] Trivial fix')), PASS_LOG);
+  });
+  await t.test('rejects "    - [x] " as the first line', async () => {
+    const log = await check(edit(trivial, references, '    - [x] Trivial fix'));
+    assert.deepEqual(log.error, [LINKED_ISSUE]);
+  });
   // The label has to start the ticked item's text; another ticked box under
   // Linked issue does not exempt the change.
   for (const line of ['- [x] Not a Trivial fix', '- [x] Bug fix']) {
