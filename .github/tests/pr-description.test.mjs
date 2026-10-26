@@ -79,10 +79,18 @@ function failureSummary(messages) {
 
 // Runs the check step for a pull request with `body`. `env` is what the
 // step's env: block hands the script; by default BODY is the body itself.
+// fakeCore records only an annotation's message, so core.error is wrapped to
+// also check that every error annotation carries the check's title.
 async function check(body, { userType = 'User', env = { BODY: body } } = {}) {
   const { script } = extractStep(WORKFLOW, 'pr-description', 'check');
   const { github, calls } = recordingGithub({});
   const { core, log } = fakeCore();
+  const errorOptions = [];
+  const recordError = core.error;
+  core.error = (message, options) => {
+    errorOptions.push(options);
+    recordError(message);
+  };
   const context = {
     eventName: 'pull_request_target',
     repo: { owner: 'dsx-ai-factory', repo: 'topograph' },
@@ -90,6 +98,7 @@ async function check(body, { userType = 'User', env = { BODY: body } } = {}) {
   };
   await runGithubScript(script, { github, context, core, env });
   assert.deepEqual(calls, []);
+  assert.deepEqual(errorOptions, log.error.map(() => ({ title: 'PR description' })));
   return log;
 }
 
@@ -174,6 +183,14 @@ test('linked issue accepts the documented reference forms only', async (t) => {
       assert.deepEqual(await check(edit(complete, 'Fixes: #612', line)), PASS_LOG);
     });
   }
+  // The template puts Fixes: on the section's first line and Related: on the
+  // second. Partial work leaves Fixes: empty and fills in Related:, so a
+  // reference on any line of the section counts, not only on the first.
+  await t.test('accepts Related: #612 under an empty Fixes:', async () => {
+    const body = edit(edit(complete, 'Fixes: #612 <!--', 'Fixes: <!--'), 'Related: <!--', 'Related: #612 <!--');
+    assert.match(body, /^Fixes: <!--[^\n]*-->\nRelated: #612 <!--/m);
+    assert.deepEqual(await check(body), PASS_LOG);
+  });
   for (const line of rejected) {
     await t.test(`rejects ${line}`, async () => {
       const log = await check(edit(complete, 'Fixes: #612', line));
