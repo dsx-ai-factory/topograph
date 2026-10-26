@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- License headers: `make license-headers` adds NVIDIA's standard SPDX and Apache 2.0 header to files that have none, and `make license-header-check`, run by `license-scan.yml`, fails on any file without a copyright or license header. Files that had no header now carry one.
+
 ## [v1.1.0] - 2026-10-23
 
 ### Added

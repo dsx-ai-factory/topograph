@@ -132,6 +132,29 @@ qualify: fmt vet lint test
 mod:
 	go mod tidy
 
+# License headers, through addlicense at a pinned version. New headers use the
+# standard NVIDIA SPDX and Apache 2.0 notice in scripts/license-header.tmpl;
+# the check accepts any existing copyright or license header, so older forms
+# keep passing.
+# Files are listed through git, so untracked trees such as localdev/ and other
+# worktrees are never walked; `grep -v '/$$'` drops nested repositories, which
+# git lists as directories. vendor/, testdata/ and the helm-unittest snapshots
+# are skipped. Helm templates are skipped by license-headers only: a `#` header
+# renders into the manifest, so they carry a {{/* */}} header added by hand,
+# which the check still recognizes.
+ADDLICENSE ?= go run github.com/google/addlicense@v1.2.0
+LICENSE_HEADER_FILES = git ls-files --cached --others --exclude-standard | grep -v '/$$'
+LICENSE_HEADER_IGNORE := -ignore 'vendor/**' -ignore '**/testdata/**' -ignore '**/__snapshot__/**'
+
+.PHONY: license-headers
+license-headers:
+	$(LICENSE_HEADER_FILES) | xargs $(ADDLICENSE) -f scripts/license-header.tmpl \
+	  $(LICENSE_HEADER_IGNORE) -ignore 'charts/topograph/templates/**'
+
+.PHONY: license-header-check
+license-header-check:
+	$(LICENSE_HEADER_FILES) | xargs $(ADDLICENSE) -check $(LICENSE_HEADER_IGNORE)
+
 .PHONY: coverage
 coverage: test
 	go tool cover -func=coverage.out

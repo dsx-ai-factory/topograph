@@ -96,6 +96,26 @@ missing (pinned version in `Makefile` via `HELM_UNITTEST_VERSION`).
 make mod        # go mod tidy
 ```
 
+### License headers
+
+```bash
+make license-headers       # add the standard license header to files that have none
+make license-header-check  # list files without a header; CI runs this
+```
+
+Both run [addlicense](https://github.com/google/addlicense) at a pinned
+version through `go run`, over the files git tracks plus new files it does not
+ignore, so a new file is covered before you `git add` it. The header
+text is `scripts/license-header.tmpl`. `make license-headers` skips Helm
+templates (`charts/topograph/templates/`), which take the header by hand as a
+`{{- /* ... */ -}}` comment so it does not render into the manifest.
+
+The header is NVIDIA's combined SPDX and Apache 2.0 notice. Its year is the
+year the file was created: `make license-headers` uses the current year, which
+is right for new files. When adding a header to an older file by hand, use the
+year of its first commit (`git log --diff-filter=A --format=%ad -- <file>`).
+NVIDIA's copyright guidance warns against post-dating a notice.
+
 ## Running a Binary Locally
 
 The three long-running service binaries (`topograph`, `node-observer`,
@@ -207,7 +227,8 @@ pushes for each PR; the first three also run on `main`:
   it isn't affected by the local `master`-ref issue above); `make vet`; a
   `go fmt` check; and `govulncheck ./...`
 - `.github/workflows/license-scan.yml`: `go-licenses check ./...` against
-  the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list
+  the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list, and
+  `make license-header-check`
 - `.github/workflows/workflow-lint.yaml`: when `.github/**` changes, plus
   weekly and on demand so zizmor's online audits catch new advisories
   against pinned actions. actionlint fails the run on any finding; zizmor

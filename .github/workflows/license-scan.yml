@@ -10,6 +10,10 @@
 # shows up as a failing check and gets a deliberate decision instead of arriving
 # silently. Widening the list is a maintainer call. Weak copyleft (MPL-2.0) and
 # copyleft (GPL, LGPL, AGPL) are absent on purpose.
+#
+# The license-headers job runs `make license-header-check`, which fails when a
+# tracked file has no copyright or license header. `make license-headers` adds
+# the standard NVIDIA license header to the files it reports.
 
 name: License Scan
 
@@ -43,3 +47,21 @@ jobs:
       run: |
         go run github.com/google/go-licenses@v1.6.0 check ./... \
           --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MIT
+
+  license-headers:
+    runs-on: linux-amd64-cpu8
+    timeout-minutes: 10
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Check license headers
+      run: make license-header-check
