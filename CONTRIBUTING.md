@@ -331,7 +331,12 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
   empty. The template's guidance is in HTML comments, so a section left as
   the template has it counts as empty. Editing the description re-runs the
   check, and PRs opened by a bot account are skipped. It becomes a required
-  check only when maintainers add it to the `main-enforced` ruleset.
+  check only when maintainers add it to the `main-enforced` ruleset. A PR
+  opened with a workflow's `GITHUB_TOKEN`, such as the release PR that
+  `publish-fern-docs.yml` opens, starts no workflow run, so this check never
+  reports on it; once the check is required, such a PR is blocked until a
+  maintainer closes and reopens it or the workflow opens it with a GitHub App
+  token.
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)

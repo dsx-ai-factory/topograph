@@ -32,7 +32,13 @@
 # It reports; it does not yet gate. Maintainers make it required by adding
 # `PR description` (this job's name) to the required status checks of the
 # `main-enforced` ruleset. The ruleset matches checks by name, so renaming the
-# job would silently drop it from there.
+# job would silently drop it from there. A pull request opened with
+# GITHUB_TOKEN, such as the release pull request publish-fern-docs.yml opens,
+# starts no workflow run, because GitHub starts no workflow for events that
+# token causes, so this check never reports on it and the bot skip never
+# runs. Once the check is required, such a pull request is blocked until a
+# maintainer closes and reopens it, or until the workflow that opens it uses
+# a GitHub App token.
 #
 # The trigger is pull_request_target, not pull_request, so that a pull request
 # from a fork is checked without a maintainer approving the run. This
@@ -47,7 +53,11 @@
 #   - no reference to the secrets context anywhere in this file;
 #   - the body reaches the script only through the BODY environment variable,
 #     never through an expression inside the script, and the script never
-#     prints it.
+#     prints it;
+#   - no pattern in the script has two quantifiers that can match the same
+#     characters, so a crafted body cannot hold the runner until
+#     timeout-minutes (pinned by pr-description.test.mjs "adversarial
+#     heading line finishes fast").
 # .github/tests/security-invariants.test.mjs enforces, for every
 # pull_request_target workflow, no checkout or cache, no reference to secrets,
 # and no untrusted context such as the body in an expression inside a run: or
@@ -120,37 +130,50 @@ jobs:
               .replace(/\r\n/g, '\n')
               .replace(/<!--[\s\S]*?-->/g, '');
 
-            // A section runs from its "## " heading to the next one. Headings
-            // compare case-insensitively; a repeated heading adds to the same
-            // section. Text before the first heading belongs to none.
+            // A section runs from its "## " heading to the next one; a "###"
+            // line, or a "##" line with no name, is text inside it. Headings
+            // compare case-insensitively and may come in any order; a section
+            // with another name is ignored, a repeated heading adds to the
+            // same section, and text before the first heading belongs to
+            // none.
+            // The heading name is cut with slice and trim rather than a
+            // capturing pattern: quantifiers that can share a run of spaces
+            // make a crafted line take minutes to reject, and anyone can
+            // start this job.
             const sections = new Map();
             let current = null;
             for (const line of body.split('\n')) {
-              const heading = line.match(/^##\s+(.+?)\s*$/);
-              if (heading) {
-                current = heading[1].toLowerCase();
+              const name = /^##[ \t]/.test(line) ? line.slice(2).trim() : '';
+              if (name) {
+                current = name.toLowerCase();
               } else if (current !== null) {
                 sections.set(current, `${sections.get(current) ?? ''}${line}\n`);
               }
             }
-            const section = (name) => (sections.get(name) ?? '').trim();
+            // `text` keeps each line's indentation, which decides whether
+            // GitHub renders a line as a task list item.
+            const text = (name) => sections.get(name) ?? '';
+            const section = (name) => text(name).trim();
 
             const issueLink =
               /^(fixes|related):\s*(#\d+|dsx-ai-factory\/topograph#\d+|https:\/\/github\.com\/dsx-ai-factory\/topograph\/issues\/\d+)\b/im;
-            const trivialFix = /^- \[[xX]\] Trivial fix/m;
-            const ticked = /^- \[[xX]\] /m;
+            // A ticked task list item as GitHub renders one: up to three
+            // spaces of indentation, a -, * or + marker or 1 to 9 digits and
+            // . or ), one to four spaces or tabs, [x] or [X], then a space or
+            // a tab. More indentation makes a code block or paragraph text.
+            const trivialFix = /^ {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]{1,4}\[[xX]\][ \t]+Trivial fix/m;
+            const ticked = /^ {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]{1,4}\[[xX]\][ \t]/m;
 
             const failures = [];
             if (!section('summary')) {
               failures.push('Summary is empty or missing.');
             }
-            const linkedIssue = section('linked issue');
-            if (!issueLink.test(linkedIssue) && !trivialFix.test(linkedIssue)) {
+            if (!issueLink.test(section('linked issue')) && !trivialFix.test(text('linked issue'))) {
               failures.push(
                 'Linked issue: add "Fixes: #N" or "Related: #N", or tick "Trivial fix" when CONTRIBUTING.md exempts the change.',
               );
             }
-            if (!ticked.test(section('type of change'))) {
+            if (!ticked.test(text('type of change'))) {
               failures.push('Type of change: tick at least one box.');
             }
             if (!section('testing')) {
