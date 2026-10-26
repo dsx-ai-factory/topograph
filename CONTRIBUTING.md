@@ -321,6 +321,17 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
   workflow security rules, and the label list in `.github/labels.yml`) run too.
   The `PR title` check (`pr-title.yaml`) runs when the PR is opened, pushed
   to, or edited.
+  The `PR description` check (`pr-description.yaml`) runs when the PR is
+  opened, edited, reopened, or pushed to, and fails until the description
+  fills in four parts of the
+  [pull request template](.github/PULL_REQUEST_TEMPLATE.md): Summary is not
+  empty; Linked issue has `Fixes: #N` or `Related: #N`, or the "Trivial fix"
+  box is ticked for a change [Open an issue first](#open-an-issue-first)
+  exempts; at least one Type of change box is ticked; and Testing is not
+  empty. The template's guidance is in HTML comments, so a section left as
+  the template has it counts as empty. Editing the description re-runs the
+  check, and PRs opened by a bot account are skipped. It becomes a required
+  check only when maintainers add it to the `main-enforced` ruleset.
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)
