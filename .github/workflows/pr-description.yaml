@@ -48,8 +48,12 @@
 #   - the body reaches the script only through the BODY environment variable,
 #     never through an expression inside the script, and the script never
 #     prints it.
-# .github/tests/security-invariants.test.mjs enforces the last three for every
-# pull_request_target workflow. The injection fixture in pr-description.test.mjs
+# .github/tests/security-invariants.test.mjs enforces, for every
+# pull_request_target workflow, no checkout or cache, no reference to secrets,
+# and no untrusted context such as the body in an expression inside a run: or
+# script: block. pr-description.test.mjs pins the BODY env entry, and its
+# fixture tests compare everything the script reports through core with fixed
+# text, so a body printed through core fails them. Its injection fixture
 # shows that $(...), backticks, expressions and workflow commands in the body
 # are read as plain text. GitHub blocks pull_request_target in public
 # repositories by default from December 2, 2026, unless an Actions policy
