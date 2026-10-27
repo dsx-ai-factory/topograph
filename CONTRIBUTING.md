@@ -358,9 +358,10 @@ up on quiet threads:
 
 - **Waiting on review.** After 5 business days (Monday to Friday, UTC) with no
   activity, the PR gets a comment that mentions its requested reviewers.
-- **Waiting on the author.** A draft, or a PR whose reviewer's latest review
-  requests changes, gets a comment that mentions its author after 14 days with
-  no activity.
+- **Waiting on the author.** A draft, or a PR where a reviewer has requested
+  changes, gets a comment that mentions its author after 14 days with no
+  activity. A reply in a review thread leaves a request for changes in place;
+  the reviewer's approval or a dismissed review clears it.
 - **Idle for 30 days.** The PR gets the `lifecycle/stale` label, which comes
   off on the first daily run after new activity. Pull requests are never
   closed automatically.
@@ -369,8 +370,11 @@ up on quiet threads:
   open. Once it is closed, comment to ask a maintainer to reopen it, or open a
   new issue that links to it.
 - **Old closed threads.** An issue or PR that has been closed with no activity
-  for 90 days is locked with a one-line comment. Open a new issue that links
-  to it instead.
+  for 90 days is locked, without a comment, at most 50 a day and oldest
+  first. Open a new issue that links to it instead.
+
+Closing questions and locking threads start as a dry run: the workflow only
+logs what it would do until a maintainer has read a week of those logs.
 
 Activity means a comment, review, push, or label change by a person; events
 from bots do not count. Each reminder is posted once per quiet period. To opt
