@@ -353,6 +353,30 @@ merge `main` into your branch, and push. The check runs after every push to
 `main`, so the label comes off on the first run that finds the PR merges
 cleanly, not when you push the fix. Draft PRs are not checked.
 
+A daily workflow ([`stale.yaml`](.github/workflows/stale.yaml)) also follows
+up on quiet threads:
+
+- **Waiting on review.** After 5 business days (Monday to Friday, UTC) with no
+  activity, the PR gets a comment that mentions its requested reviewers.
+- **Waiting on the author.** A draft, or a PR whose reviewer's latest review
+  requests changes, gets a comment that mentions its author after 14 days with
+  no activity.
+- **Idle for 30 days.** The PR gets the `lifecycle/stale` label, which comes
+  off on the first daily run after new activity. Pull requests are never
+  closed automatically.
+- **Questions.** An issue labeled `question` is marked `lifecycle/stale` after
+  90 days with no activity and closed 30 days later. Comment on it to keep it
+  open. Once it is closed, comment to ask a maintainer to reopen it, or open a
+  new issue that links to it.
+- **Old closed threads.** An issue or PR that has been closed with no activity
+  for 90 days is locked with a one-line comment. Open a new issue that links
+  to it instead.
+
+Activity means a comment, review, push, or label change by a person; events
+from bots do not count. Each reminder is posted once per quiet period. To opt
+an issue or PR out, a maintainer adds the `lifecycle/frozen` label;
+`do-not-merge` also stops the reminders and the label on a PR.
+
 Keep the PR in draft while you're still reshaping it — draft PRs don't page
 reviewers, so that's the cheapest phase to rework history or force-push in.
 Once a PR is open for review, prefer pushing new commits over amending or
