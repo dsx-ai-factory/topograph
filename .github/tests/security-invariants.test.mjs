@@ -343,6 +343,8 @@ test('the upstream guard must gate the whole job condition', () => {
     [guard, true],
     [`  ${guard}\n`, true],
     [`\${{ ${guard} }}`, true],
+    // A }} inside a string literal does not end the expression.
+    [`\${{ ${guard} && github.actor != '}}' }}`, true],
     [`github.event_name == 'issues' && ${guard}`, true],
     [`${guard} && (github.event.action == 'opened' || github.event.action == 'edited')`, true],
     // The shape of assign.yaml's condition, with || inside parentheses.
@@ -362,6 +364,13 @@ test('the upstream guard must gate the whole job condition', () => {
     // A ${{ }} that wraps only part of the condition is string interpolation,
     // and a non-empty string is truthy.
     [`\${{ ${guard} }} && true`, false],
+    [`\${{ true }} && ${guard} && \${{ true }}`, false],
+    // So is a whole-condition ${{ }} with any text outside it, such as the
+    // newline that `if: |` leaves at the end, or a leading space.
+    [`\${{ ${guard} }}\n`, false],
+    [` \${{ ${guard} }}`, false],
+    // A second ${{ inside the expression is a syntax error.
+    [`\${{ ${guard} && \${{ true }}`, false],
     // Unbalanced parentheses or quotes.
     [`${guard} && (github.event_name == 'issues'`, false],
     [`${guard} && github.actor == 'a`, false],
