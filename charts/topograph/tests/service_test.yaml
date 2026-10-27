@@ -71,3 +71,11 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "at '/service/port': maximum: got 65,536, want 65,535"
+
+  - it: rejects a service port below 1
+    set:
+      service:
+        port: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/service/port': minimum: got 0, want 1"
