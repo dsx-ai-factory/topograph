@@ -72,7 +72,6 @@ CHANGELOG.md          # Release history (Keep a Changelog format); update [Unrel
 docs/                 # Public-facing docs: overview.md, architecture.md, api.md + providers/, engines/, reference/ subdirectories
 demos/                # Interactive Kubernetes/KWOK deployment demos
 tests/models/         # YAML simulation fixtures
-tests/charts/         # Parent-chart fixtures for helm-unittest; aliased-dependency/ renders charts/topograph under an alias
 config/               # Sample topograph-config.yaml
 scripts/              # Build scripts (deb, rpm, SSL, clean)
 .claude/skills/       # Agent skills; topograph-managing-openvex triages image scan findings into .openvex.json
@@ -95,7 +94,7 @@ carries the doc updates named in the Documentation Impact Evaluation table below
 | Command-line entry points and flags | `cmd/` |
 | Helm chart templates, values, and the helm-unittest suites and snapshots | `charts/topograph/` |
 | Documentation, release notes, simulation fixtures, demos, build scripts | `docs/`, `CHANGELOG.md`, `tests/models/`, `demos/`, `scripts/` |
-| Tests for any of the above | any `*_test.go`, `charts/topograph/tests/`, `tests/charts/` |
+| Tests for any of the above | any `*_test.go`, `charts/topograph/tests/` |
 
 Stay inside the directories the task names. A change that starts in one provider and
 ends up editing `pkg/topology/` is a signal that the task was scoped wrongly, not a

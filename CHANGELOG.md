@@ -6,13 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-
-- **BREAKING:** When the chart is installed as an aliased dependency, the Topograph API container is now named `topograph` instead of the alias, matching node-observer's default `nodeObserver.topograph.apiServer.containerName`. Before, node-observer never saw the aliased API pod as ready and did not request topology when it became ready or its container restarted. Update anything that refers to the container by the alias, such as `kubectl logs -c`, dashboards, or patches that merge on the container name, and remove any `containerName` override set to the alias. Installs without an alias are unchanged.
-
 ### Fixed
 
-- Helm node-observer's `generateTopologyUrl` now always matches the Topograph Service. An integer `service.port` from `--set` previously rendered as `%!f(int64=<port>)`, and installing the chart as an aliased dependency could point node-observer at a `<release>-topograph` Service that does not exist.
+- Helm node-observer's `generateTopologyUrl` now prints an integer `service.port` as a number. A port set with `--set`, an Argo CD Helm parameter, or a Terraform `helm_release` `set` block previously produced an invalid URL ending in `:%!f(int64=<port>)/v1/generate`.
 
 ## [v1.1.0] - 2026-10-23
 
