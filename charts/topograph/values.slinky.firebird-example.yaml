@@ -1,0 +1,51 @@
+# Firebird fabric discovery with Slinky topology/tree output.
+# Replace the API URL and create the credentials Secret before deploying.
+
+provider:
+  name: firebird
+  params:
+    apiUrl: https://firebird.example.com
+
+engine:
+  name: slinky
+  params:
+    namespace: slurm
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/component: compute
+    plugin: topology/tree
+    topologyConfigPath: topology.conf
+    topologyConfigmapName: slurm-config-extra
+
+config:
+  requestAggregationDelay: 15s
+  # Existing Secret in the Topograph release namespace. Its credentials.yaml
+  # key must contain the Firebird clientId and clientSecret credentials.
+  credentialsSecret: firebird-credentials
+  # Read node identity from existing Kubernetes Node labels and annotations.
+  # Replace these example keys with your cluster's metadata keys. Both sources
+  # are required when nodeMetadata is set; missing values do not fall back to
+  # the default Topograph annotations.
+  nodeMetadata:
+    instanceID:
+      # Annotation containing the provider's instance ID.
+      type: annotation
+      key: example.com/instance-id
+    region:
+      # Label containing the node's region.
+      type: label
+      key: example.com/region
+
+nodeObserver:
+  topograph:
+    trigger:
+      # Keep topology refresh triggers aligned with the Slinky worker pods.
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: compute
+
+nodeDataBroker:
+  # Topology generation uses existing node labels and annotations configured
+  # in config.nodeMetadata, with refreshes triggered by nodeObserver above.
+  # No node-local discovery is needed, so the broker is disabled.
+  enabled: false

@@ -6,24 +6,21 @@ name: Docker
 # documentation.
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions: {}
 
 env:
-  REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
-  IMAGE_NAME: ${{ github.repository }}
+  REGISTRY: nvcr.io
+  # NGC <organization>/<team>/<image>
+  IMAGE_NAME: 1070195845945670/topograph/topograph
 
 jobs:
   build:
     runs-on: linux-amd64-cpu16
+    environment: ngc-publish
     permissions:
       contents: read
-      packages: write
       id-token: write
       attestations: write
       artifact-metadata: write
@@ -34,26 +31,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate manual branch
-        if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'
-        env:
-          BRANCH_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "${BRANCH_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Branch ${BRANCH_NAME} conflicts with the official release tag namespace."
-            echo "::error::Publish official releases by pushing the matching Git tag instead."
-            exit 1
-          fi
-
-      - name: Validate release tag
-        if: github.ref_type == 'tag'
+      - name: Validate release version
+        if: github.ref_type == 'tag' || startsWith(github.ref_name, 'v')
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
           if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Release tag must match vX.Y.Z; got ${RELEASE_TAG}"
+            echo "::error::Release version must match vX.Y.Z; got ${RELEASE_TAG}"
             exit 1
           fi
 
@@ -73,11 +59,11 @@ jobs:
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
 
       - name: Normalize image name
         id: image

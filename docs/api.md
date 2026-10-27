@@ -4,7 +4,7 @@
 
 Topograph accepts its configuration file path using the `-c` command-line parameter. The configuration file is a YAML document. A sample configuration file is located at `config/topograph-config.yaml`.
 
-The configuration file supports the following parameters:
+Choose a provider name from the [supported providers](./overview.md#supported-providers). The configuration file supports the following parameters:
 
 ```yaml
 # serving topograph endpoint
@@ -15,7 +15,7 @@ http:
   ssl: false
 
 # provider: the provider that topograph will use (optional)
-# Valid options include "aws", "oci", "gcp", "nebius", "nscale", "netq", "dra", "infiniband-k8s", "infiniband-bm" or "test".
+# See the supported providers table in overview.md#supported-providers.
 # Can be overridden if the provider is specified in a topology request to topograph
 provider: test
 
@@ -110,7 +110,7 @@ Topograph exposes five endpoints for interacting with the service. Below are the
 - **Payload:** The request body is a JSON object organized into three top-level sections:
 
   - **provider**: (optional) Selects the topology source and provides any provider-specific authentication or parameters.
-    - **name**: (optional) A string specifying the Service Provider, such as `aws`, `oci`, `gcp`, `nebius`, `nscale`, `netq`, `dra`, `infiniband-k8s`, `infiniband-bm` or `test`. This parameter will override the provider set in the topograph config.
+    - **name**: (optional) A name from the [supported providers](./overview.md#supported-providers). This parameter will override the provider set in the topograph config.
     - **creds**: (optional) A key-value map with provider-specific parameters for authentication.
     - **params**: (optional) A key-value map with provider-specific parameters. The `test` provider uses these parameters for response simulation; for complete behavior and examples, see [Test Mode and Test Provider](./providers/test.md).
       - **accelerator**: (optional) Used in: [`dra`, `infiniband-k8s`, `infiniband-bm`]. Configures accelerator-domain discovery independently of network-fabric discovery. For InfiniBand, omitting this section or setting it to an empty object disables accelerator-domain discovery. DRA supports only `kubernetes-label` and retains its legacy `nvidia.com/gpu.clique` default when the section is omitted.

@@ -3,11 +3,11 @@
 
 # Topograph for the TAS lab: the test provider replays tests/models/tas-lab.yaml (two leaf
 # switches under one spine) and the k8s engine writes fabric.topograph.run/tier-N on the
-# four kind workers. The image is built from this checkout so the model is embedded in it.
+# four kind workers. setup/topograph.sh pulls the image named by TOPOGRAPH_IMG_URL and
+# TOPOGRAPH_IMG_TAG (versions.env), loads it into kind, and adds image.repository and image.tag
+# to a copy of this file before installing; the image must embed the tas-lab model.
 image:
-  repository: ghcr.io/dsx-ai-factory/topograph
-  tag: tas-lab
-  pullPolicy: Never
+  pullPolicy: IfNotPresent
 
 provider:
   name: test

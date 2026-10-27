@@ -9,7 +9,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [--push] <vX.Y.Z>
 
-Resolve the current tip of the matching release-X.Y branch. By default, the
+Resolve the current tip of the matching vX.Y.Z branch. By default, the
 script only validates and displays the commit. With --push, it creates and
 pushes the annotated release tag.
 
@@ -49,7 +49,7 @@ if [[ ! "${release_tag}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
     exit 2
 fi
 
-release_branch="release-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+release_branch="${release_tag}"
 
 if ! command -v git >/dev/null 2>&1; then
     echo "required command not found: git" >&2
@@ -74,7 +74,7 @@ fi
 
 local_tag_exists=false
 if git rev-parse --verify --quiet "refs/tags/${release_tag}" >/dev/null; then
-    local_tag_commit=$(git rev-parse "${release_tag}^{commit}")
+    local_tag_commit=$(git rev-parse "refs/tags/${release_tag}^{commit}")
     local_tag_type=$(git cat-file -t "refs/tags/${release_tag}")
     if [[ "${local_tag_commit}" != "${release_head}" ]]; then
         echo "local tag ${release_tag} targets ${local_tag_commit}, not ${release_head}" >&2

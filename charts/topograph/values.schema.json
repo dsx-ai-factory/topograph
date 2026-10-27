@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "topograph Helm chart values",
-  "description": "Schema for the topograph chart's values.yaml. Validates the most error-prone fields (provider and engine enums, replicaCount, image.pullPolicy, service settings, verbosity). Per-provider credential-field requirements are documented in docs/providers/<name>.md rather than enforced here, because the credential field sets vary with upstream provider changes and are better kept in prose.",
+  "description": "Schema for the topograph chart's values.yaml. Validates the most error-prone fields (provider and engine name types, replicaCount, image.pullPolicy, service settings, verbosity). Per-provider credential-field requirements are documented in docs/providers/<name>.md rather than enforced here, because the credential field sets vary with upstream provider changes and are better kept in prose.",
   "type": "object",
   "properties": {
     "provider": {
@@ -9,30 +9,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Topology-discovery provider. Must match a registered provider in pkg/registry/registry.go.",
-          "enum": [
-            "aws",
-            "aws-sim",
-            "crusoe",
-            "crusoe-sim",
-            "dra",
-            "gcp",
-            "gcp-sim",
-            "dsx-sim",
-            "infiniband-bm",
-            "infiniband-k8s",
-            "lambdai",
-            "lambdai-sim",
-            "nebius",
-            "nebius-sim",
-            "netq",
-            "nscale",
-            "nscale-sim",
-            "oci",
-            "oci-imds",
-            "oci-sim",
-            "test"
-          ]
+          "description": "Topology-discovery provider. The application validates the name against its registered providers at runtime."
         },
         "params": {
           "type": "object",
@@ -46,8 +23,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Scheduler-output engine. Must match a registered engine in pkg/registry/registry.go.",
-          "enum": ["graph", "k8s", "nfd", "slinky", "slurm"]
+          "description": "Scheduler-output engine. The application validates the name against its registered engines at runtime."
         },
         "params": {
           "type": "object",

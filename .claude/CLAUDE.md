@@ -17,7 +17,7 @@ it and is not repeated here:
 | Issue-first workflow, DCO sign-off, commit and branch conventions, review process, AI-assisted contribution policy | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | What each runtime component does and how a request flows between them | [docs/architecture.md](../docs/architecture.md) |
 | Every label and annotation key the Kubernetes engine writes | [docs/reference/node-labels.md](../docs/reference/node-labels.md) |
-| Provider selection, supported providers, the "Choosing a Provider" scenario table | `docs/overview.md` |
+| Supported providers and engines | `docs/overview.md` |
 | API endpoints, request parameters, response fields, config schema | `docs/api.md` |
 | How to report a suspected vulnerability | `SECURITY.md` |
 | Release history and operator-facing migration notes | `CHANGELOG.md` |
@@ -88,7 +88,7 @@ carries the doc updates named in the Documentation Impact Evaluation table below
 
 | Task in scope | Files an agent may modify |
 |---|---|
-| Add a provider, or fix or extend an existing one | `pkg/providers/<name>/`, the one-line registry entry in `pkg/registry/registry.go`, and the docs the provider checklist requires: `docs/providers/<name>.md`, the provider list and "Choosing a Provider" table in `docs/overview.md`, and a `docs/index.yml` entry when the page is new |
+| Add a provider, or fix or extend an existing one | `pkg/providers/<name>/`, the one-line registry entry in `pkg/registry/registry.go`, and the docs the provider checklist requires: `docs/providers/<name>.md`, the supported providers table in `docs/overview.md`, and a `docs/index.yml` entry when the page is new |
 | Fix a bug or add tests inside an existing engine, without changing its output format | `pkg/engines/<engine>/`, `pkg/translate/` |
 | Server plumbing, config parsing, metrics, shared helpers | `pkg/server/`, `pkg/config/`, `pkg/metrics/`, `pkg/ib/`, `pkg/node_observer/`, `internal/` |
 | Command-line entry points and flags | `cmd/` |
@@ -246,8 +246,8 @@ spine := &topology.Vertex{ID: node.SpineID, Vertices: map[string]*topology.Verte
 2. Expose a `NamedLoader` function with signature `func NamedLoader() (string, providers.Loader)`; this is how the registry wires the provider
 3. Register in `pkg/registry/registry.go` by adding `<name>.NamedLoader` to the `providers.NewRegistry(...)` call list
 4. Add `docs/providers/<name>.md` following the shape of `aws.md` / `netq.md` (prerequisites, credentials, parameters, how it works, verification)
-5. Update `docs/overview.md`: add the provider to the "Currently supported providers" list and the "Choosing a Provider" scenario table
-6. If the provider has a simulated variant for testing, export a second `NamedLoaderSim` and register it alongside (see `aws`, `gcp`, `oci`, `lambdai`)
+5. Update `docs/overview.md`: add the provider to the "Supported Providers" table
+6. If the provider has a simulated variant for testing, export a second `NamedLoaderSim` and register it alongside; see the [simulation variants](../docs/overview.md#supported-providers)
 
 ### Adding a new engine
 
@@ -338,7 +338,7 @@ The following changes imply specific doc updates in the same PR:
 
 | Change | Docs update required |
 |---|---|
-| New / changed / removed provider | `docs/providers/<name>.md` + `docs/overview.md` provider list + "Choosing a Provider" scenario table |
+| New / changed / removed provider | `docs/providers/<name>.md` + `docs/overview.md` supported providers table |
 | New / changed / removed engine | `docs/engines/<engine>.md` |
 | New / changed chart template (Ingress, HTTPRoute, NetworkPolicy, ServiceMonitor, etc.) | `docs/engines/k8s.md` "Exposing the Topograph API" section |
 | New / changed chart values schema | `charts/topograph/values.yaml` comments, `NOTES.txt` output, and any docs that reference the values |

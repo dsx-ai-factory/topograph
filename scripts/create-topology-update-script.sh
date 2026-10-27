@@ -14,7 +14,7 @@ fi
 SCRIPT_PATH="update-topology-config.sh"
 PROVIDER=""
 TOPOLOGY_CONFIG_PATH=""
-SUPPORTED_PROVIDERS=(aws gcp oci nebius netq nscale lambdai infiniband-bm)
+SUPPORTED_PROVIDERS=(aws gcp oci nebius netq nscale lambdai firebird infiniband-bm)
 if [[ ! -z "$SLURM_CONF" ]]; then 
   TOPOLOGY_CONFIG_PATH="$(dirname $SLURM_CONF)/topology.conf"
 fi

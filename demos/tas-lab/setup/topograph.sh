@@ -5,7 +5,8 @@
 
 # Setup step 2: install Topograph, which labels the workers, and show the labels.
 #
-#   setup/topograph.sh install    build the image, load it into kind, helm install, wait for labels
+#   setup/topograph.sh install    pull $TOPOGRAPH_IMG_URL:$TOPOGRAPH_IMG_TAG (versions.env), load it into
+#                                 kind, helm install, wait for labels
 #   setup/topograph.sh generate [model] [engine-params-json]
 #                                 ask the API server to regenerate and re-apply the labels,
 #                                 optionally from another model in tests/models (default
@@ -16,7 +17,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-image=ghcr.io/dsx-ai-factory/topograph:tas-lab
+image=$TOPOGRAPH_IMG_URL:$TOPOGRAPH_IMG_TAG
 topograph_ns=topograph
 
 labels() {
@@ -42,17 +43,21 @@ wait_for_api 30
 
 case "${1:-}" in
 install)
-    # The test provider only reads models embedded in the binary, so build from this checkout.
-    # The image runs in kind nodes, so build for the container engine's architecture, not the host's.
-    arch="${GOARCH:-$(docker info --format '{{.Architecture}}' | sed 's/aarch64/arm64/; s/x86_64/amd64/')}"
-    (cd "$repo_root" && make image-build GOOS=linux GOARCH="$arch" \
-        IMAGE_REPO=ghcr.io/dsx-ai-factory/topograph IMAGE_TAG=tas-lab)
+    # Pull the published image and load it into kind, so the nodes need no registry access.
+    # The test provider reads models embedded in the binary, so the image must already contain
+    # tests/models/tas-lab.yaml; pick a TOPOGRAPH_IMG_TAG that does.
+    docker pull "$image"
     archive_dir="$(mktemp -d)"
     docker save -o "$archive_dir/topograph.tar" "$image"
     kind load image-archive "$archive_dir/topograph.tar" --name tas-lab
     rm -rf "$archive_dir"
-    KUBE_CONTEXT=$ctx "$repo_root/scripts/install-topograph.sh" "$lab_dir/setup/values.topograph.yaml"
-    # The image tag is fixed, so a re-install with a rebuilt image needs the pods restarted.
+    # install-topograph.sh takes one values file, so add the image from versions.env to a copy of the lab values.
+    values_file="$(mktemp)"
+    awk -v repo="$TOPOGRAPH_IMG_URL" -v tag="$TOPOGRAPH_IMG_TAG" \
+        '{ print } /^image:$/ { printf "  repository: %s\n  tag: \"%s\"\n", repo, tag }' \
+        "$lab_dir/setup/values.topograph.yaml" >"$values_file"
+    KUBE_CONTEXT=$ctx "$repo_root/scripts/install-topograph.sh" "$values_file"
+    rm -f "$values_file"
     kubectl -n $topograph_ns rollout restart deploy
     kubectl -n $topograph_ns rollout status deploy --timeout=120s
     wait_for_labels

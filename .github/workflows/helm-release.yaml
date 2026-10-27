@@ -8,11 +8,19 @@ concurrency:
 
 permissions: {}
 
+env:
+  NGC_CLI_ORG: "1070195845945670"
+  NGC_CLI_TEAM: topograph
+
 jobs:
   release:
     runs-on: linux-amd64-cpu8
+    environment: ngc-publish
+    defaults:
+      run:
+        shell: bash
     permissions:
-      contents: write
+      contents: read
       id-token: write
       attestations: write
 
@@ -28,54 +36,95 @@ jobs:
           version: v3.14.0
 
       - name: Package Helm chart
+        id: chart
         run: |
+          set -euo pipefail
           mkdir -p packaged
           helm lint charts/topograph
           helm package charts/topograph --destination packaged
+          version=$(helm show chart charts/topograph | awk '$1 == "version:" {print $2}')
+          printf 'version=%s\n' "${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up NGC CLI
+        # Keep the version and linux/amd64 archive checksum in sync. These pins
+        # are maintained manually, like the workflow linters.
+        env:
+          NGC_CLI_VERSION: '4.36.6'
+          NGC_CLI_SHA256: '2972dbe54e80cedae18e82923a9a67a60aef23d041c5790336f8f4b51752bab6'
+        run: |
+          set -euo pipefail
+          ngc_dir=$(mktemp -d "${RUNNER_TEMP}/ngc-cli.XXXXXX")
+          ngc_home=$(mktemp -d "${RUNNER_TEMP}/topograph-ngc.XXXXXX")
+          printf 'NGC_CLI_HOME=%s\n' "${ngc_home}" >> "${GITHUB_ENV}"
+          archive="${ngc_dir}/ngccli_linux.zip"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o "${archive}" \
+            "https://api.ngc.nvidia.com/v2/resources/nvidia/ngc-apps/ngc_cli/versions/${NGC_CLI_VERSION}/files/ngccli_linux.zip"
+          printf '%s  %s\n' "${NGC_CLI_SHA256}" "${archive}" | sha256sum --check -
+          unzip -q "${archive}" -d "${ngc_dir}"
+          chmod +x "${ngc_dir}/ngc-cli/ngc"
+          printf '%s\n' "${ngc_dir}/ngc-cli" >> "${GITHUB_PATH}"
+          NGC_CLI_HOME="${ngc_home}" "${ngc_dir}/ngc-cli/ngc" --version
 
       - name: Generate SHA-256 checksum
+        env:
+          CHART_VERSION: ${{ steps.chart.outputs.version }}
         run: |
           set -euo pipefail
           cd packaged
-          for chart in topograph-*.tgz; do
-            sha256sum "${chart}" > "${chart}.sha256"
-            sha256sum --check "${chart}.sha256"
-          done
+          chart="topograph-${CHART_VERSION}.tgz"
+          sha256sum "${chart}" > "${chart}.sha256"
+          sha256sum --check "${chart}.sha256"
 
       - name: Generate SLSA provenance
+        id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: packaged/topograph-*.tgz
+          subject-path: packaged/topograph-${{ steps.chart.outputs.version }}.tgz
 
-      - name: Fetch existing Helm repo index
+      - name: Save attestation bundle
+        env:
+          CHART_VERSION: ${{ steps.chart.outputs.version }}
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
         run: |
           set -euo pipefail
-          if ! remote_ref=$(git ls-remote --heads origin refs/heads/gh-pages); then
-            echo "::error::Failed to check for the existing gh-pages branch."
+          cp "${ATTESTATION_BUNDLE}" "packaged/topograph-${CHART_VERSION}.tgz.sigstore.json"
+
+      - name: Retain chart, checksum, and provenance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: topograph-chart-${{ steps.chart.outputs.version }}
+          path: |
+            packaged/topograph-${{ steps.chart.outputs.version }}.tgz
+            packaged/topograph-${{ steps.chart.outputs.version }}.tgz.sha256
+            packaged/topograph-${{ steps.chart.outputs.version }}.tgz.sigstore.json
+          if-no-files-found: error
+
+      - name: Publish Helm chart to NGC
+        env:
+          NGC_CLI_API_KEY: ${{ secrets.NGC_API_KEY }}
+          CHART_VERSION: ${{ steps.chart.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NGC_CLI_API_KEY}" ]]; then
+            echo "::error::The NGC_API_KEY secret is required to publish Helm charts."
             exit 1
           fi
-          if [[ -n "${remote_ref}" ]]; then
-            git fetch origin refs/heads/gh-pages:refs/remotes/origin/gh-pages
-            git checkout origin/gh-pages -- index.yaml
+          cd packaged
+          chart="topograph-${CHART_VERSION}.tgz"
+          sha256sum --check "${chart}.sha256"
+          target="${NGC_CLI_ORG}/${NGC_CLI_TEAM}/topograph"
+          # NGC requires a chart metadata record before its first version.
+          # If lookup fails, creation must succeed before attempting upload.
+          if ! ngc registry chart info "${target}"; then
+            ngc registry chart create "${target}" \
+              --short-desc "Discovers the physical network topology of a cluster and exposes it to schedulers."
           fi
+          ngc registry chart push "${target}:${CHART_VERSION}"
 
-      - name: Generate Helm repo index
-        # Pass context values through env rather than expanding ${{ }} inside
-        # the script, so the shell never parses them as code.
-        env:
-          REPO_OWNER: ${{ github.repository_owner }}
-          REPO_NAME: ${{ github.event.repository.name }}
+      - name: Remove NGC CLI state
+        if: always()
         run: |
-          if [ -f index.yaml ]; then
-            helm repo index packaged --url "https://${REPO_OWNER}.github.io/${REPO_NAME}" --merge index.yaml
-          else
-            helm repo index packaged --url "https://${REPO_OWNER}.github.io/${REPO_NAME}"
+          if [[ -n "${NGC_CLI_HOME:-}" ]]; then
+            rm -rf "${NGC_CLI_HOME}"
           fi
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./packaged
-          publish_branch: gh-pages
-          keep_files: true

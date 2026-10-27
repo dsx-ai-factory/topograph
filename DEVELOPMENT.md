@@ -230,21 +230,19 @@ no local equivalent.
 
 Release and maintenance workflows:
 
-- `.github/workflows/docker.yml`: on a `v*` tag push or manual dispatch,
-  builds the `linux/amd64` and `linux/arm64` image, pushes it to GHCR, and
+- `.github/workflows/docker.yml`: on manual dispatch, builds the
+  `linux/amd64` and `linux/arm64` image, uploads it to NVIDIA staging, and
   attests its provenance
-- `.github/workflows/release.yml`: on a `v*` tag push, or a manual re-run
-  for an existing tag, checks the tag against `charts/topograph/Chart.yaml`
-  and `CHANGELOG.md`, packages and attests the Helm chart, updates the Helm
-  repository on `gh-pages`, and creates the GitHub release
 - `.github/workflows/publish-fern-docs.yml`: on a `vX.Y.Z` tag push or
   manual dispatch, publishes the versioned docs site
-- `.github/workflows/helm-release.yaml`: manual Helm chart publication to
-  `gh-pages`
+- `.github/workflows/helm-release.yaml`: on manual dispatch, packages the Helm
+  chart and uploads it to NGC
 - `.github/workflows/scorecard.yaml`: OpenSSF Scorecard analysis on pushes
   to `main`, weekly, and on demand
-- `.github/workflows/cleanup-untagged-images.yml`: nightly removal of
-  untagged GHCR images older than 30 days
+
+After internal security approval, the chart is promoted unchanged to the public
+Helm repository at `https://helm.ngc.nvidia.com/nvidia/topograph`, as described in
+[RELEASE.md](RELEASE.md).
 
 Every `actions/setup-go` step reads the Go version from `go.mod`, so a
 toolchain bump there also moves the CI jobs that use it. The container
