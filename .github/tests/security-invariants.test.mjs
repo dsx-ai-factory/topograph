@@ -53,6 +53,14 @@ const UNTRUSTED_CONTEXTS = [
 // actions/cache/save sub-actions.
 const CHECKOUT_OR_CACHE = /^actions\/(checkout|cache)(\/[^@]*)?@/;
 
+// Text on a run: or script: line that checks out or fetches the pull request
+// head.
+const PR_HEAD_FETCHES = ['gh pr checkout', 'refs/pull/', 'pull/${{'];
+
+// References to the pull request head. On the same line as `git fetch`, or in
+// a with.ref expression, they bring the head's code into the job.
+const HEAD_REFERENCES = ['head.sha', 'head.ref', 'head_ref'];
+
 const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
 
 const workflows = readdirSync(WORKFLOWS_DIR)
@@ -86,13 +94,46 @@ function holdsIssueOrPrWrite(permissions) {
   return permissions.issues === 'write' || permissions['pull-requests'] === 'write';
 }
 
+// Rewrites bracket property access, ['x'] or ["x"] with any spaces inside the
+// brackets, as .x and lowercases the result, so the spellings GitHub reads as
+// one context compare equal. Expression syntax is case-insensitive.
+function normalizeContext(text) {
+  return text.replace(/\[\s*(?:'([^']*)'|"([^"]*)")\s*\]/g, (_, single, double) => `.${single ?? double}`).toLowerCase();
+}
+
+// The lines of a run: or script: body, with backslash-continued lines joined,
+// normalized as contexts are.
+function commandLines(body) {
+  return normalizeContext(body.replace(/\\\r?\n/g, ' ')).split('\n');
+}
+
 // The steps of a pull_request_target workflow that check out or restore
-// code, which would then run with the base repository's token.
+// code, or fetch the pull request head, which would then run with the base
+// repository's token.
 function prHeadCheckouts({ file, wf }) {
   if (!triggers(wf).includes('pull_request_target')) return [];
   const found = [];
   for (const { step, where } of steps(wf)) {
     if (CHECKOUT_OR_CACHE.test(step.uses ?? '')) found.push(`${file}: ${where} uses ${step.uses}`);
+    for (const [field, body] of [['run', step.run], ['with.script', step.with?.script]]) {
+      if (typeof body !== 'string') continue;
+      for (const line of commandLines(body)) {
+        for (const pattern of PR_HEAD_FETCHES) {
+          if (line.includes(pattern)) found.push(`${file}: ${where} ${field} contains "${pattern}"`);
+        }
+        if (!line.includes('git fetch')) continue;
+        for (const reference of HEAD_REFERENCES) {
+          if (line.includes(reference)) found.push(`${file}: ${where} ${field} contains "git fetch" with "${reference}"`);
+        }
+      }
+    }
+    if (typeof step.with?.ref !== 'string') continue;
+    for (const [, expression] of step.with.ref.matchAll(EXPRESSION)) {
+      const normalized = normalizeContext(expression);
+      for (const reference of HEAD_REFERENCES) {
+        if (normalized.includes(reference)) found.push(`${file}: ${where} with.ref expands "${reference}"`);
+      }
+    }
   }
   return found;
 }
@@ -100,8 +141,8 @@ function prHeadCheckouts({ file, wf }) {
 // The untrusted contexts that `expression`, the text inside one `${{ }}`,
 // reads.
 function untrustedContextsIn(expression) {
-  const lowered = expression.toLowerCase();
-  return UNTRUSTED_CONTEXTS.filter((context) => lowered.includes(context));
+  const normalized = normalizeContext(expression);
+  return UNTRUSTED_CONTEXTS.filter((context) => normalized.includes(context));
 }
 
 // Every untrusted context that `${{ }}` expands inside a run: or script: block.
@@ -118,9 +159,49 @@ function untrustedExpansions({ file, wf }) {
   return found;
 }
 
-// True when a job's if: lets the job run only in the upstream repository.
+// Splits an expression at its top-level && and || operators, those outside
+// parentheses and outside single-quoted string literals, the only literals
+// GitHub expressions have. Toggling at every quote also handles the ''
+// escape, which closes and reopens the literal. Returns null when the
+// parentheses or quotes do not balance.
+function splitTopLevel(expression) {
+  const operands = [];
+  const operators = [];
+  let depth = 0;
+  let quoted = false;
+  let start = 0;
+  for (let i = 0; i < expression.length; i += 1) {
+    const char = expression[i];
+    if (char === "'") {
+      quoted = !quoted;
+      continue;
+    }
+    if (quoted) continue;
+    if (char === '(') depth += 1;
+    else if (char === ')') depth -= 1;
+    else if (depth === 0 && (expression.startsWith('&&', i) || expression.startsWith('||', i))) {
+      operands.push(expression.slice(start, i).trim());
+      operators.push(expression.slice(i, i + 2));
+      start = i + 2;
+      i += 1;
+    }
+    if (depth < 0) return null;
+  }
+  if (quoted || depth !== 0) return null;
+  operands.push(expression.slice(start).trim());
+  return { operands, operators };
+}
+
+// True when a job's if: lets the job run only in the upstream repository:
+// trimmed, and without a ${{ }} wrapping the whole of it, the condition is
+// the guard, or a top-level && conjunction with the guard as one operand and
+// no top-level ||.
 function guardGatesWholeCondition(condition) {
-  return String(condition ?? '').includes(UPSTREAM_GUARD);
+  let expression = String(condition ?? '').trim();
+  if (expression.startsWith('${{') && expression.endsWith('}}')) expression = expression.slice(3, -2).trim();
+  const split = splitTopLevel(expression);
+  if (split === null) return false;
+  return split.operators.every((operator) => operator === '&&') && split.operands.includes(UPSTREAM_GUARD);
 }
 
 // The jobs of a workflow on a guarded trigger that hold issues or
