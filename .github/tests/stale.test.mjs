@@ -26,6 +26,9 @@
 //     github-actions[bot], is followed a second or two later by `mentioned`
 //     and `subscribed` events whose actor is the mentioned user (issue #263).
 //   - pulls.listReviews returns reviews oldest first, with upper-case states.
+//     A reply in a review thread is a COMMENTED review. A dismissed review
+//     keeps its id and shows as DISMISSED (PR #569), and the timeline adds a
+//     `review_dismissed` event whose actor is the person who dismissed it.
 //   - issues.listForRepo returns pull requests too, marked by `pull_request`.
 
 import { test } from 'node:test';
@@ -150,7 +153,26 @@ async function runStep(github, jobId, stepId) {
 }
 
 const runNudge = (github) => runStep(github, 'pull-requests', 'nudge');
+
+// Runs the lock script as shipped, which is a dry run.
 const runLock = (github) => runStep(github, 'lock', 'lock');
+
+// Runs the lock script with its dry run switched off. The switch must occur
+// exactly once, so a renamed or reworded constant fails here instead of
+// leaving the test on the shipped dry run.
+async function runLockLive(github) {
+  const { script } = extractStep(WORKFLOW, 'lock', 'lock');
+  const shipped = 'const LOCK_DRY_RUN = true;';
+  assert.equal(script.split(shipped).length - 1, 1, `the lock script must contain "${shipped}" exactly once`);
+  const { core, log } = fakeCore();
+  await runGithubScript(script.replace(shipped, 'const LOCK_DRY_RUN = false;'), { github, context: { repo: REPO }, core });
+  return log;
+}
+
+const FOOTER =
+  'These reminders and the `lifecycle/stale` label are explained under ' +
+  '[Following up](https://github.com/dsx-ai-factory/topograph/blob/main/CONTRIBUTING.md#following-up). ' +
+  'Pull requests are never closed automatically.';
 
 function writes(calls) {
   return calls.filter(({ route }) => WRITE_ROUTES.has(route));
@@ -196,6 +218,81 @@ test('changes requested at 14 days nudges the author', async (t) => {
   assert.ok(body.includes('no activity for 14 days'), body);
   assert.ok(!body.includes('@ravisoundar') && !body.includes('@dmitsh'), body);
   assert.ok(body.endsWith(marker('2026-10-09T10:00:00.000Z')), body);
+});
+
+test('commented reply keeps changes requested', async (t) => {
+  clock(t, FRIDAY);
+  // dmitsh requested changes, then replied in a review thread, which is a
+  // COMMENTED review. GitHub still lists the PR under
+  // review:changes_requested in that case, so it waits on its author.
+  const { github, calls } = fakeRepo({
+    pulls: [pull(181, { login: 'quinn', requested: ['ravisoundar'] })],
+    timelines: {
+      181: [
+        reviewed(account('dmitsh'), '2026-10-02T10:00:00Z', 'changes_requested'),
+        reviewed(account('dmitsh'), '2026-10-09T10:00:00Z', 'commented'),
+      ],
+    },
+    reviews: {
+      181: [review('dmitsh', 'CHANGES_REQUESTED', '2026-10-02T10:00:00Z'), review('dmitsh', 'COMMENTED', '2026-10-09T10:00:00Z')],
+    },
+  });
+
+  await runNudge(github);
+
+  assert.deepEqual(writes(calls), [
+    {
+      route: 'rest.issues.createComment',
+      params: {
+        ...REPO,
+        issue_number: 181,
+        body:
+          '@quinn a reviewer requested changes on this pull request, and it has had no activity for 14 days. ' +
+          'Push an update or reply to the review when you are ready.\n\n' +
+          `${FOOTER}\n\n` +
+          '<!-- topograph-idle-nudge:2026-10-09T10:00:00.000Z -->',
+      },
+    },
+  ]);
+});
+
+test('dismissed review clears changes requested', async (t) => {
+  clock(t, FRIDAY);
+  // dmitsh requested changes, and his later review was dismissed. The
+  // dismissal is the newest activity, 5 business days ago, and nothing waits
+  // on the author any more.
+  const { github, calls } = fakeRepo({
+    pulls: [pull(191, { login: 'rosa', requested: ['ravisoundar'] })],
+    timelines: {
+      191: [
+        reviewed(account('dmitsh'), '2026-10-12T10:00:00Z', 'changes_requested'),
+        reviewed(account('dmitsh'), '2026-10-14T10:00:00Z', 'dismissed'),
+        acted('review_dismissed', account('dmitsh'), '2026-10-16T10:00:00Z', {
+          dismissed_review: { state: 'changes_requested', review_id: 2, dismissal_message: 'Addressed in the last push.' },
+        }),
+      ],
+    },
+    reviews: {
+      191: [review('dmitsh', 'CHANGES_REQUESTED', '2026-10-12T10:00:00Z'), review('dmitsh', 'DISMISSED', '2026-10-14T10:00:00Z')],
+    },
+  });
+
+  await runNudge(github);
+
+  assert.deepEqual(writes(calls), [
+    {
+      route: 'rest.issues.createComment',
+      params: {
+        ...REPO,
+        issue_number: 191,
+        body:
+          '@ravisoundar this pull request has waited 5 business days for a review. ' +
+          'Please review it, or reply here with when you expect to.\n\n' +
+          `${FOOTER}\n\n` +
+          '<!-- topograph-idle-nudge:2026-10-16T10:00:00.000Z -->',
+      },
+    },
+  ]);
 });
 
 test('awaiting review at 5 business days across a weekend nudges the reviewer', async (t) => {
@@ -511,7 +608,8 @@ test('second page of open PRs is processed', async (t) => {
 
 // A fake repository of closed issues and pull requests for the lock job.
 // issues.listForRepo sorts the current state on every call, and a comment or
-// a lock moves the item's updated_at to now, as on GitHub.
+// a lock moves the item's updated_at to now, as on GitHub. createComment is
+// recorded rather than rejected, so a comment attempt shows up in calls.
 function closedRepo(items) {
   const state = items.map((item) => ({ ...item }));
   const find = (number) => state.find((item) => item.number === number);
@@ -553,7 +651,7 @@ test('lock locks 91-day closed items and stops at the first recent one', async (
   for (let number = 151; number <= 210; number += 1) items.push(closed(number, '2026-07-26T10:00:00Z'));
   const { github, calls } = closedRepo(items);
 
-  await runLock(github);
+  const log = await runLockLive(github);
 
   assert.deepEqual(
     calls.filter(({ route }) => route === 'rest.issues.listForRepo').map(({ params }) => params),
@@ -562,19 +660,65 @@ test('lock locks 91-day closed items and stops at the first recent one', async (
       { ...REPO, state: 'closed', sort: 'updated', direction: 'asc', per_page: 100, page: 2 },
     ],
   );
+  // The 50 oldest, and the count of the rest shows every page up to the
+  // first recent item was read before the first lock.
   const expected = [];
-  for (let number = 1; number <= 150; number += 1) {
-    expected.push(['rest.issues.createComment', number], ['rest.issues.lock', number]);
+  for (let number = 1; number <= 50; number += 1) {
+    expected.push({ route: 'rest.issues.lock', params: { ...REPO, issue_number: number, lock_reason: 'resolved' } });
   }
-  const changed = writes(calls);
-  assert.deepEqual(changed.map(({ route, params }) => [route, params.issue_number]), expected);
-  for (const { route, params } of changed) {
-    if (route === 'rest.issues.lock') assert.deepEqual(params, { ...REPO, issue_number: params.issue_number, lock_reason: 'resolved' });
-  }
-  const bodies = new Set(changed.filter(({ route }) => route === 'rest.issues.createComment').map(({ params }) => params.body));
-  assert.equal(bodies.size, 1);
-  const [body] = bodies;
-  assert.ok(!body.includes('\n') && body.includes('open a new issue'), body);
+  assert.deepEqual(writes(calls), expected);
+  assert.ok(log.info.includes('Locked 50 of 150 eligible threads; 100 left for later runs.'), log.info.join('\n'));
+});
+
+test('lock never comments', async (t) => {
+  clock(t, FRIDAY);
+  // An issue and a pull request, each closed 91 days ago.
+  const { github, calls } = closedRepo([closed(7, '2026-07-24T10:00:00Z'), closed(8, '2026-07-24T10:00:00Z')]);
+
+  await runLockLive(github);
+
+  assert.deepEqual(writes(calls), [
+    { route: 'rest.issues.lock', params: { ...REPO, issue_number: 7, lock_reason: 'resolved' } },
+    { route: 'rest.issues.lock', params: { ...REPO, issue_number: 8, lock_reason: 'resolved' } },
+  ]);
+  assert.deepEqual(calls.filter(({ route }) => route === 'rest.issues.createComment'), []);
+});
+
+test('lock stops at the cap', async (t) => {
+  clock(t, FRIDAY);
+  const items = [];
+  // Already locked, so neither locked again nor counted against the cap.
+  for (let number = 1; number <= 5; number += 1) items.push(closed(number, '2026-06-25T10:00:00Z', { locked: true }));
+  // 120 eligible, across both list pages.
+  for (let number = 6; number <= 125; number += 1) items.push(closed(number, '2026-07-24T10:00:00Z'));
+  for (let number = 126; number <= 130; number += 1) items.push(closed(number, '2026-10-13T10:00:00Z'));
+  const { github, calls } = closedRepo(items);
+
+  const log = await runLockLive(github);
+
+  const locked = calls.filter(({ route }) => route === 'rest.issues.lock').map(({ params }) => params.issue_number);
+  assert.deepEqual(locked, Array.from({ length: 50 }, (_, i) => i + 6));
+  // Locks only: no comment and no other write.
+  assert.equal(writes(calls).length, 50);
+  assert.ok(log.info.includes('Locked 50 of 120 eligible threads; 70 left for later runs.'), log.info.join('\n'));
+});
+
+test('lock dry run makes no write call', async (t) => {
+  clock(t, FRIDAY);
+  const items = [];
+  for (let number = 1; number <= 120; number += 1) items.push(closed(number, '2026-07-24T10:00:00Z'));
+  for (let number = 121; number <= 125; number += 1) items.push(closed(number, '2026-10-13T10:00:00Z'));
+  const { github, calls } = closedRepo(items);
+
+  // The script as shipped.
+  const log = await runLock(github);
+
+  assert.deepEqual([...new Set(calls.map(({ route }) => route))], ['rest.issues.listForRepo']);
+  assert.deepEqual(
+    log.info.filter((line) => /^#\d+: /.test(line)),
+    Array.from({ length: 50 }, (_, i) => `#${i + 1}: would lock (dry run)`),
+  );
+  assert.ok(log.info.includes('Dry run: would lock 50 of 120 eligible threads; 70 left for later runs.'), log.info.join('\n'));
 });
 
 test('lock skips already locked items', async (t) => {
@@ -585,13 +729,10 @@ test('lock skips already locked items', async (t) => {
     closed(3, '2026-10-13T10:00:00Z'),
   ]);
 
-  await runLock(github);
+  await runLockLive(github);
 
   assert.equal(calls.filter(({ route }) => route === 'rest.issues.listForRepo').length, 1);
-  assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [
-    ['rest.issues.createComment', 2],
-    ['rest.issues.lock', 2],
-  ]);
+  assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [['rest.issues.lock', 2]]);
 });
 
 test('questions job runs actions/stale as a dry run on question issues only', () => {
