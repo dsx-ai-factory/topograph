@@ -192,13 +192,32 @@ function splitTopLevel(expression) {
   return { operands, operators };
 }
 
-// True when a job's if: lets the job run only in the upstream repository:
-// trimmed, and without a ${{ }} wrapping the whole of it, the condition is
-// the guard, or a top-level && conjunction with the guard as one operand and
-// no top-level ||.
+// The text inside `condition` when the whole value, untrimmed, is one
+// ${{ }}: it opens the value, no second ${{ follows, and the first }}
+// outside a string literal is its last two characters. Otherwise null.
+function soleExpression(condition) {
+  const open = condition.indexOf('${{');
+  if (open !== 0 || condition.includes('${{', open + 3)) return null;
+  let quoted = false;
+  for (let i = open + 3; i < condition.length - 1; i += 1) {
+    if (condition[i] === "'") quoted = !quoted;
+    else if (!quoted && condition.startsWith('}}', i)) return i === condition.length - 2 ? condition.slice(open + 3, i) : null;
+  }
+  return null;
+}
+
+// True when a job's if: lets the job run only in the upstream repository.
+// A condition that contains ${{ must be exactly one ${{ }}: with any text
+// around it, even the newline `if: |` leaves, GitHub reads the value as a
+// string template, and a non-empty string is truthy. The expression inside
+// it, or a condition without ${{, must then be the guard, or a top-level &&
+// conjunction with the guard as one operand and no top-level ||.
+// splitTopLevel trims each operand, so outer whitespace does not matter
+// there.
 function guardGatesWholeCondition(condition) {
-  let expression = String(condition ?? '').trim();
-  if (expression.startsWith('${{') && expression.endsWith('}}')) expression = expression.slice(3, -2).trim();
+  const raw = String(condition ?? '');
+  const expression = raw.includes('${{') ? soleExpression(raw) : raw;
+  if (expression === null) return false;
   const split = splitTopLevel(expression);
   if (split === null) return false;
   return split.operators.every((operator) => operator === '&&') && split.operands.includes(UPSTREAM_GUARD);
