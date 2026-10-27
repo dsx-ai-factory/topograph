@@ -51,6 +51,17 @@ tests:
       - failedTemplate:
           errorMessage: "workloadIdentityFederation requires both credentialsConfigmap and audience"
 
+  - it: rejects GCP workload identity federation without an audience
+    set:
+      provider:
+        name: gcp
+        params:
+          workloadIdentityFederation:
+            credentialsConfigmap: cm
+    asserts:
+      - failedTemplate:
+          errorMessage: "workloadIdentityFederation requires both credentialsConfigmap and audience"
+
   - it: rejects overriding the chart-managed NFD namespace environment variable
     set:
       engine:
@@ -121,6 +132,19 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: "provider.params.accelerator.kubernetesLabel.key must be set for source kubernetes-label"
+
+  - it: rejects the Kubernetes label accelerator source for infiniband-bm
+    set:
+      provider:
+        name: infiniband-bm
+        params:
+          accelerator:
+            source: kubernetes-label
+            kubernetesLabel:
+              key: nvidia.com/gpu.clique
+    asserts:
+      - failedTemplate:
+          errorMessage: "provider.params.accelerator.source kubernetes-label is not supported by infiniband-bm"
 
   - it: rejects a DRA label accelerator source without a key
     set:

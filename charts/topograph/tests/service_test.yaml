@@ -55,3 +55,19 @@ tests:
       - equal:
           path: spec.selector["app.kubernetes.io/instance"]
           value: chart-ci
+
+  - it: rejects an unknown service type
+    set:
+      service:
+        type: ExternalName
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/service/type': value must be one of"
+
+  - it: rejects a service port above 65535
+    set:
+      service:
+        port: 65536
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/service/port': maximum: got 65,536, want 65,535"

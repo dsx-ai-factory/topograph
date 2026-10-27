@@ -37,3 +37,13 @@ tests:
       - equal:
           path: spec.rules[0].backendRefs[0].name
           value: chart-ci-topograph
+
+  - it: rejects a parentRefs entry without a name
+    set:
+      gatewayAPI:
+        enabled: true
+        parentRefs:
+          - namespace: gateway-system
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/gatewayAPI/parentRefs/0': missing property 'name'"

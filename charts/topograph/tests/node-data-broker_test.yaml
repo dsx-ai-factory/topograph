@@ -194,3 +194,43 @@ tests:
       - matchRegex:
           path: data["ibdiag.conf"]
           pattern: "Port=1"
+
+  # Helm reports a missing name from the DaemonSet, which renders first, and
+  # helm-unittest assigns the error to the template named in it.
+  - it: rejects a configMapMounts entry without a name
+    templates:
+      - templates/nodeDataBroker/daemonset.yaml
+    set:
+      nodeDataBroker:
+        configMapMounts:
+          - mountPath: /etc/infiniband-diags/ibdiag.conf
+            data:
+              ibdiag.conf: CA=smi0
+    asserts:
+      - failedTemplate:
+          errorMessage: "nodeDataBroker.configMapMounts[].name is required"
+
+  - it: rejects a configMapMounts entry without a mountPath
+    templates:
+      - templates/nodeDataBroker/daemonset.yaml
+    set:
+      nodeDataBroker:
+        configMapMounts:
+          - name: ibdiag
+            data:
+              ibdiag.conf: CA=smi0
+    asserts:
+      - failedTemplate:
+          errorMessage: "nodeDataBroker.configMapMounts[].mountPath is required"
+
+  - it: rejects a configMapMounts entry without data
+    templates:
+      - templates/nodeDataBroker/configmap-mounts.yaml
+    set:
+      nodeDataBroker:
+        configMapMounts:
+          - name: ibdiag
+            mountPath: /etc/infiniband-diags/ibdiag.conf
+    asserts:
+      - failedTemplate:
+          errorMessage: "nodeDataBroker.configMapMounts[].data is required"

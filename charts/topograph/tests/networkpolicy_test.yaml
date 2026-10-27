@@ -142,3 +142,79 @@ tests:
       - equal:
           path: spec.ingress[1].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
           value: ingress-nginx
+
+  # An empty rule object matches all traffic in its direction, and an empty
+  # from, to, or ports list matches every peer or every port for that rule,
+  # so the values schema rejects both.
+  - it: rejects an empty extraIngress rule
+    set:
+      networkPolicy:
+        enabled: true
+        extraIngress:
+          - {}
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/networkPolicy/extraIngress/0': minProperties: got 0, want 1"
+
+  - it: rejects an empty extraEgress rule
+    set:
+      networkPolicy:
+        enabled: true
+        extraEgress:
+          - {}
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/networkPolicy/extraEgress/0': minProperties: got 0, want 1"
+
+  - it: rejects an extraIngress rule with an empty from list
+    set:
+      networkPolicy:
+        enabled: true
+        extraIngress:
+          - from: []
+            ports:
+              - protocol: TCP
+                port: 49021
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/networkPolicy/extraIngress/0/from': minItems: got 0, want 1"
+
+  - it: rejects an extraIngress rule with an empty ports list
+    set:
+      networkPolicy:
+        enabled: true
+        extraIngress:
+          - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: ingress-nginx
+            ports: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/networkPolicy/extraIngress/0/ports': minItems: got 0, want 1"
+
+  - it: rejects an extraEgress rule with an empty to list
+    set:
+      networkPolicy:
+        enabled: true
+        extraEgress:
+          - to: []
+            ports:
+              - protocol: TCP
+                port: 8081
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/networkPolicy/extraEgress/0/to': minItems: got 0, want 1"
+
+  - it: rejects an extraEgress rule with an empty ports list
+    set:
+      networkPolicy:
+        enabled: true
+        extraEgress:
+          - to:
+              - ipBlock:
+                  cidr: 10.1.2.0/24
+            ports: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/networkPolicy/extraEgress/0/ports': minItems: got 0, want 1"
