@@ -237,9 +237,9 @@ Release and maintenance workflows:
 - `.github/workflows/docker.yml`: on manual dispatch, builds the
   `linux/amd64` and `linux/arm64` image, uploads it to NVIDIA staging, and
   attests its provenance; from a `vX.Y.Z` branch it also signs the image with
-  cosign, attests a CycloneDX SBOM to each platform and the OpenVEX document
-  to the index, and verifies them; `.github/tests/docker-release.test.mjs`
-  tests those steps
+  cosign, attests a CycloneDX SBOM to each platform and, when `.openvex.json`
+  exists, the OpenVEX document to the index, and verifies them;
+  `.github/tests/docker-release.test.mjs` tests those steps
 - `.github/workflows/publish-fern-docs.yml`: on a `vX.Y.Z` tag push or
   manual dispatch, publishes the versioned docs site
 - `.github/workflows/helm-release.yaml`: on manual dispatch, packages the Helm

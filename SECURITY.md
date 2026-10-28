@@ -135,9 +135,9 @@ SBOM is attached to its platform manifest rather than the index. Verifying the s
 platform digest, or looking for the SBOM on the index digest, finds nothing. That is expected.
 
 The OpenVEX attestation is `.openvex.json` as committed at the release's source commit; its
-statements name the product `pkg:oci/topograph`. It may contain no statements at all: an empty
-document asserts that the maintainers claim no exceptions to what a scanner reports, not that the
-image has no vulnerabilities.
+statements name the product `pkg:oci/topograph`. It may contain no statements at all. An empty
+document makes no claims: no reported vulnerability is marked as not affecting the image, and it
+does not mean the image has no vulnerabilities.
 
 The certificate identity is the Docker workflow run that signed the image:
 `https://github.com/dsx-ai-factory/topograph/.github/workflows/docker.yml@refs/heads/vX.Y.Z`,
