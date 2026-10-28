@@ -763,6 +763,8 @@ func captureKlog(t *testing.T) *bytes.Buffer {
 func TestReadRequestRejectsWithoutLoggingClientInput(t *testing.T) {
 	srv = &HttpServer{cfg: &config.Config{}}
 	logs := captureKlog(t)
+	// At -v=4 so a verbose dump logged before validate would show up too.
+	setKlogVerbosity(t, "4")
 
 	// A provider name carrying a line break and a fake klog header.
 	payload := `{"provider":{"name":"test\nE1027 00:00:00.000000 1 forged.go:1] FORGED"},"engine":{"name":"slurm"}}`
