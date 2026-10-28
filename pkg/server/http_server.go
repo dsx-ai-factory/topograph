@@ -209,7 +209,9 @@ func readRequest(w http.ResponseWriter, r *http.Request) *topology.Request {
 		}
 	}
 
-	klog.Info(tr.String())
+	// The request comes from the client; %q escapes its line breaks so it
+	// cannot forge log lines.
+	klog.Infof("Topology request: %q", tr.String())
 
 	if err = validate(tr); err != nil {
 		return httpError(w, tr.Provider.Name, tr.Engine.Name, err.Error(), http.StatusBadRequest, time.Since(start))
@@ -271,10 +273,25 @@ func getresult(w http.ResponseWriter, r *http.Request) {
 func writeResultResponse(uid string, w http.ResponseWriter) {
 	res := srv.async.queue.Get(uid)
 
+	// The result is plain text (or JSON) and never meant to be rendered, so
+	// say so instead of letting the client sniff the content type. http.Error
+	// sets the same headers for the error branch.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
 	switch res.Status {
 	case http.StatusOK:
+		// The queue stores whatever its handler returns, so check the type
+		// rather than panic on a handler that returns something else.
+		data, ok := res.Ret.([]byte)
+		if !ok {
+			msg := fmt.Sprintf("request ID %s has an unexpected result type %T", uid, res.Ret)
+			klog.Error(msg)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(res.Status)
-		_, _ = w.Write(res.Ret.([]byte))
+		_, _ = w.Write(data)
 	case http.StatusAccepted:
 		w.WriteHeader(res.Status)
 		_, _ = w.Write([]byte(res.Message))

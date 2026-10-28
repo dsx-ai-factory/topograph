@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/pkg/config"
 	"github.com/dsx-ai-factory/topograph/pkg/test"
@@ -710,4 +712,80 @@ func TestHttpServerStopIdempotent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestWriteResultResponseIsPlainText(t *testing.T) {
+	queue := NewTrailingDelayQueue(nil, time.Hour)
+	defer queue.Shutdown()
+	// Bodies that content sniffing would take for HTML.
+	queue.store.Add("done", &Completion{Status: http.StatusOK, Ret: []byte("<html><body>topology</body></html>")})
+	queue.store.Add("pending", &Completion{Status: http.StatusAccepted, Message: "<html>pending"})
+
+	saved := srv
+	defer func() { srv = saved }()
+	srv = &HttpServer{async: &asyncController{queue: queue}}
+
+	testCases := []struct {
+		uid    string
+		status int
+		body   string
+	}{
+		{uid: "done", status: http.StatusOK, body: "<html><body>topology</body></html>"},
+		{uid: "pending", status: http.StatusAccepted, body: "<html>pending"},
+		{uid: "<html>missing", status: http.StatusNotFound, body: "request ID <html>missing not found\n"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.uid, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			writeResultResponse(tc.uid, rec)
+			require.Equal(t, tc.status, rec.Code)
+			require.Equal(t, tc.body, rec.Body.String())
+			require.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
+			require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+		})
+	}
+}
+
+// captureKlog sends klog output to a buffer for the rest of the test.
+func captureKlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	klog.LogToStderr(false)
+	klog.SetOutput(&buf)
+	t.Cleanup(func() {
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	})
+	return &buf
+}
+
+func TestReadRequestLogCannotForgeLines(t *testing.T) {
+	srv = &HttpServer{cfg: &config.Config{}}
+	logs := captureKlog(t)
+
+	// A provider name carrying a line break and a fake klog header.
+	payload := `{"provider":{"name":"test\nE1027 00:00:00.000000 1 forged.go:1] FORGED"},"engine":{"name":"slurm"}}`
+	r := &http.Request{Method: http.MethodPost, Body: io.NopCloser(strings.NewReader(payload))}
+	_ = readRequest(httptest.NewRecorder(), r)
+	klog.Flush()
+
+	require.Contains(t, logs.String(), "FORGED", "the request is still logged")
+	for _, line := range strings.Split(logs.String(), "\n") {
+		require.False(t, strings.HasPrefix(line, "E1027"), "client input started a log line: %q", line)
+	}
+}
+
+func TestWriteResultResponseRejectsUnexpectedResultType(t *testing.T) {
+	queue := NewTrailingDelayQueue(nil, time.Hour)
+	defer queue.Shutdown()
+	queue.store.Add("done", &Completion{Status: http.StatusOK, Ret: "not bytes"})
+
+	saved := srv
+	defer func() { srv = saved }()
+	srv = &HttpServer{async: &asyncController{queue: queue}}
+
+	rec := httptest.NewRecorder()
+	require.NotPanics(t, func() { writeResultResponse("done", rec) })
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "request ID done has an unexpected result type string\n", rec.Body.String())
 }

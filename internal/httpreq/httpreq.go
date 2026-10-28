@@ -89,7 +89,9 @@ func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, 
 	if httpErr != nil {
 		return nil, nil, httpErr
 	}
-	klog.V(4).Infof("Sending HTTP request %s", req.URL.String())
+	// URL.String() keeps RawQuery as is; %q escapes any line break in it so
+	// the URL cannot forge log lines.
+	klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
 	client := &http.Client{}
 	if insecureSkipVerify {
 		client.Transport = &http.Transport{
