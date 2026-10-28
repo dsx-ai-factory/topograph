@@ -61,6 +61,20 @@ spec:
           lifecycle:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.nodeObserver.port }}
+              protocol: TCP
+          # /healthz answers as long as the process runs; the Node Observer
+          # has no state that a restart would not rebuild.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
           resources:
             {{- toYaml .Values.nodeObserver.resources | nindent 12 }}
           volumeMounts:

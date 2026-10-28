@@ -208,3 +208,69 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].lifecycle.preStop.exec.command[2]
           value: "true"
+
+  - it: serves /healthz on nodeObserver.port and probes it
+    templates:
+      - templates/nodeObserver/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: http
+            containerPort: 8080
+            protocol: TCP
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value:
+            path: /healthz
+            port: http
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+          value:
+            path: /healthz
+            port: http
+
+  - it: passes nodeObserver.port to the Node Observer as healthzPort
+    templates:
+      - templates/nodeObserver/configmap.yml
+    set:
+      nodeObserver:
+        port: 9090
+    asserts:
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: "(?m)^healthzPort: 9090$"
+
+  - it: exposes a custom nodeObserver.port on the container
+    templates:
+      - templates/nodeObserver/deployment.yaml
+    set:
+      nodeObserver:
+        port: 9090
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: http
+            containerPort: 9090
+            protocol: TCP
+
+  - it: rejects nodeObserver.port 0
+    templates:
+      - templates/nodeObserver/deployment.yaml
+    set:
+      nodeObserver:
+        port: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/nodeObserver/port': minimum: got 0, want 1"
+
+  - it: rejects a nodeObserver.port above 65535
+    templates:
+      - templates/nodeObserver/deployment.yaml
+    set:
+      nodeObserver:
+        port: 65536
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/nodeObserver/port': maximum: got 65,536, want 65,535"

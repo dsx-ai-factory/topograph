@@ -265,6 +265,7 @@ renders default values.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: test
         engine:
@@ -309,7 +310,7 @@ renders default values.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: ce1893e4c0757528265ccc6126f8267f7dcfab70208b237990c5fc187c3bc453
+            checksum/config: e152b74c2332fa6348fa942c97cc4c7df8f6f83a08db935815e03564570f56c5
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -329,7 +330,19 @@ renders default values.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m
@@ -862,6 +875,7 @@ renders values.k8s.gateway-api-example.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: test
         engine:
@@ -906,7 +920,7 @@ renders values.k8s.gateway-api-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: ce1893e4c0757528265ccc6126f8267f7dcfab70208b237990c5fc187c3bc453
+            checksum/config: e152b74c2332fa6348fa942c97cc4c7df8f6f83a08db935815e03564570f56c5
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -926,7 +940,19 @@ renders values.k8s.gateway-api-example.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m
@@ -1461,6 +1487,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: gcp
           params:
@@ -1510,7 +1537,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: ab9e684e4fe6d8559973e231b610449f5fcb157903352e7d217b7624a7f7f4a1
+            checksum/config: d11bceb712108debbcccc12c33a9953061487007ebe4219a0387fda68b3c6ab0
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -1530,7 +1557,19 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m
@@ -2060,6 +2099,7 @@ renders values.k8s.gcp-service-account-example.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: gcp
           params:
@@ -2107,7 +2147,7 @@ renders values.k8s.gcp-service-account-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 34b5154f7f45009200945b31fc5a82f2c81e895c842cb7263f22fb0510e24dd0
+            checksum/config: 6e8bb23a8ac278333df787a778c1b885905454ebb0742213aebea30e097aa1fe
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -2127,7 +2167,19 @@ renders values.k8s.gcp-service-account-example.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m
@@ -2662,6 +2714,7 @@ renders values.k8s.ib-example.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: infiniband-k8s
           params:
@@ -2712,7 +2765,7 @@ renders values.k8s.ib-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 9e19c577f18b59e7b090e402b725767d075607550a9eff0a5ec763eb31f1717d
+            checksum/config: aeaa87c42ebcc74664ae78538c71e6f1215a90f3405713f1861cbadf9cc295e2
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -2732,7 +2785,19 @@ renders values.k8s.ib-example.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m
@@ -3275,6 +3340,7 @@ renders values.slinky.block-example.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: aws
           params:
@@ -3337,7 +3403,7 @@ renders values.slinky.block-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 7e2d3da5fcebb1ad73540cdeea400e6b5b3580c427dae006587cc40c46c31b01
+            checksum/config: 3e4f9bcbe6ad90ec68ecc01083041bf6ac4f30846c368ea5f384bcd43d2d6f17
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -3357,7 +3423,19 @@ renders values.slinky.block-example.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m
@@ -3886,6 +3964,7 @@ renders values.slinky.partition-example.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: aws
         engine:
@@ -3965,7 +4044,7 @@ renders values.slinky.partition-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 665f27c8c6095b211f8df2f68171dbe62731459459aaf3f4e5170c49ea98ab25
+            checksum/config: 7f569e5c97079411366edafa3ea22ebdd74bb0def270732cc77af61439e7037b
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -3985,7 +4064,19 @@ renders values.slinky.partition-example.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m
@@ -4515,6 +4606,7 @@ renders values.slinky.tree-example.yaml:
     data:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
+        healthzPort: 8080
         provider:
           name: aws
         engine:
@@ -4569,7 +4661,7 @@ renders values.slinky.tree-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 5828aa0fcd7ba3f91e124680c8825c4fa19617f126dd4a459666249ef947ec85
+            checksum/config: 39873cd9b3c7e05569ebd56414b31dec86c22e929b096b276f89c4ef851ee2b3
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -4589,7 +4681,19 @@ renders values.slinky.tree-example.yaml:
                   value: topograph
               image: nvcr.io/nvidia/topograph/topograph:v0.0.0
               imagePullPolicy: IfNotPresent
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               name: node-observer
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
               resources:
                 limits:
                   cpu: 1000m

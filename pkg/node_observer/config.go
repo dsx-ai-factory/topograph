@@ -23,12 +23,15 @@ const (
 )
 
 type Config struct {
-	GenerateTopologyURL string            `yaml:"generateTopologyUrl"`
-	Trigger             Trigger           `yaml:"trigger"`
-	APIServer           APIServer         `yaml:"apiServer,omitempty"`
-	Provider            topology.Provider `yaml:"provider"`
-	Engine              topology.Engine   `yaml:"engine"`
-	RetryDelay          metav1.Duration   `yaml:"retryDelay"`
+	GenerateTopologyURL string `yaml:"generateTopologyUrl"`
+	// HealthzPort serves /healthz for the liveness and readiness probes.
+	// 0 (the default) serves nothing.
+	HealthzPort int               `yaml:"healthzPort,omitempty"`
+	Trigger     Trigger           `yaml:"trigger"`
+	APIServer   APIServer         `yaml:"apiServer,omitempty"`
+	Provider    topology.Provider `yaml:"provider"`
+	Engine      topology.Engine   `yaml:"engine"`
+	RetryDelay  metav1.Duration   `yaml:"retryDelay"`
 }
 
 type Trigger struct {
@@ -64,6 +67,10 @@ func NewConfigFromFile(fname string) (*Config, error) {
 
 	if len(cfg.Trigger.NodeSelector) == 0 && cfg.Trigger.PodSelector == nil && cfg.APIServer.PodSelector == nil {
 		return nil, fmt.Errorf("must specify nodeSelector and/or podSelector in trigger, or apiServer.podSelector")
+	}
+
+	if cfg.HealthzPort < 0 {
+		return nil, fmt.Errorf("healthzPort must not be negative")
 	}
 
 	if cfg.RetryDelay.Duration == 0 {

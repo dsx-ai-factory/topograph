@@ -66,7 +66,7 @@ pkg/
   models/             # Go types and loader for YAML simulation models (the YAML files live in tests/models/)
   test/               # Cross-package test helpers
 internal/             # Shared utilities not part of the public API
-  cluset, component, config, exec, files, httperr, httpreq, k8s, kwok, version
+  cluset, component, config, exec, files, healthz, httperr, httpreq, k8s, kwok, version
 charts/topograph/     # Helm chart for all Kubernetes components; tests/ holds the helm-unittest suites + snapshots
 CHANGELOG.md          # Release history (Keep a Changelog format); update [Unreleased] for user-facing PRs
 docs/                 # Public-facing docs: overview.md, architecture.md, api.md + providers/, engines/, reference/ subdirectories

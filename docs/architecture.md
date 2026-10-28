@@ -133,7 +133,7 @@ The API Server serves everything on one port (`http.port` in the config, `49021`
 
 `/healthz` answers as soon as the HTTP server is listening. It does not test provider reachability, credentials, or the last generation result, so a healthy pod tells you nothing about whether topology generation is working. Use the metrics and logs below for that.
 
-The Helm chart wires `/healthz` into both `livenessProbe` and `readinessProbe` on the API Server Deployment. The node-data-broker DaemonSet serves its own `/healthz` on `nodeDataBroker.port` (`8080` by default) and uses it for its startup, liveness, and readiness probes. The broker applies its node annotations first and only then starts that endpoint, so a Ready broker pod means the annotations for that node have been written.
+The Helm chart wires `/healthz` into both `livenessProbe` and `readinessProbe` on the API Server Deployment. The node-data-broker DaemonSet serves its own `/healthz` on `nodeDataBroker.port` (`8080` by default) and uses it for its startup, liveness, and readiness probes. The broker applies its node annotations first and only then starts that endpoint, so a Ready broker pod means the annotations for that node have been written. The node-observer Deployment likewise serves `/healthz` on `nodeObserver.port` (`8080` by default) for its liveness and readiness probes; it answers while the process runs.
 
 ### Metrics
 

@@ -7,15 +7,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"maps"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +22,7 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 
+	"github.com/dsx-ai-factory/topograph/internal/healthz"
 	"github.com/dsx-ai-factory/topograph/internal/version"
 	"github.com/dsx-ai-factory/topograph/pkg/accelerator"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/aws"
@@ -39,11 +37,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
-const (
-	defaultConfigPath = "/etc/topograph/node-data-broker-config.yaml"
-	readHeaderTimeout = 5 * time.Second
-	shutdownTimeout   = 5 * time.Second
-)
+const defaultConfigPath = "/etc/topograph/node-data-broker-config.yaml"
 
 type nodeBroker struct {
 	clientset  kubernetes.Interface
@@ -124,7 +118,7 @@ func mainInternal(brokerConfig nodeDataBrokerConfig) error {
 
 	// Keep the DaemonSet pod Running by serving a health endpoint until the pod
 	// is terminated.
-	return serveHealth(ctx, brokerConfig.HealthzPort)
+	return healthz.Serve(ctx, brokerConfig.HealthzPort)
 }
 
 func newInClusterClientset() (kubernetes.Interface, *rest.Config, error) {
@@ -163,44 +157,6 @@ func (b *nodeBroker) apply(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// serveHealth runs a minimal HTTP server exposing /healthz so the DaemonSet
-// pod stays Running after node annotations have been applied. It blocks until
-// the context is cancelled (SIGTERM/SIGINT), then shuts down gracefully.
-func serveHealth(ctx context.Context, port int) error {
-	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           healthHandler(),
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		klog.Infof("Serving health endpoint on %s", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		klog.Info("Shutting down health endpoint")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		return srv.Shutdown(shutdownCtx)
-	case err := <-errCh:
-		return err
-	}
-}
-
-func healthHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	return mux
 }
 
 func (b *nodeBroker) getAnnotations(ctx context.Context) (map[string]string, error) {

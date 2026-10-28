@@ -187,6 +187,39 @@ apiServer:
 				RetryDelay: metav1.Duration{Duration: defaultRetryDelay},
 			},
 		},
+		{
+			name: "Case 8: valid with health endpoint port",
+			data: `
+generateTopologyUrl: "http://topograph.default.svc.cluster.local:49021/v1/generate"
+healthzPort: 49022
+provider:
+  name: test
+engine:
+  name: test
+trigger:
+  nodeSelector:
+    a: b
+`,
+			cfg: &Config{
+				GenerateTopologyURL: "http://topograph.default.svc.cluster.local:49021/v1/generate",
+				HealthzPort:         49022,
+				Provider:            topology.Provider{Name: "test"},
+				Engine:              topology.Engine{Name: "test"},
+				Trigger:             Trigger{NodeSelector: map[string]string{"a": "b"}},
+				RetryDelay:          metav1.Duration{Duration: defaultRetryDelay},
+			},
+		},
+		{
+			name: "Case 9: negative health endpoint port",
+			data: `
+generateTopologyUrl: "http://topograph.default.svc.cluster.local:49021/v1/generate"
+healthzPort: -1
+trigger:
+  nodeSelector:
+    a: b
+`,
+			err: "healthzPort must not be negative",
+		},
 	}
 
 	for _, tc := range testCases {

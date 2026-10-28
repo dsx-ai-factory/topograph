@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
+	"github.com/dsx-ai-factory/topograph/internal/healthz"
 	"github.com/dsx-ai-factory/topograph/internal/version"
 	"github.com/dsx-ai-factory/topograph/pkg/node_observer"
 )
@@ -84,6 +85,12 @@ func mainInternal(c string) error {
 	g.Add(run.SignalHandler(ctx, os.Interrupt, syscall.SIGTERM))
 	// Controller
 	g.Add(controller.Start, controller.Stop)
+
+	// Health endpoint for the liveness and readiness probes
+	if cfg.HealthzPort > 0 {
+		healthCtx, healthCancel := context.WithCancel(ctx)
+		g.Add(func() error { return healthz.Serve(healthCtx, cfg.HealthzPort) }, func(error) { healthCancel() })
+	}
 
 	return g.Run()
 }

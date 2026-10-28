@@ -347,6 +347,10 @@ tests:
 nodeObserver:
   replicaCount: 1
 
+  # Port serving the /healthz endpoint that the liveness and readiness probes
+  # call.
+  port: 8080
+
   serviceAccount:
     create: true
     automount: true

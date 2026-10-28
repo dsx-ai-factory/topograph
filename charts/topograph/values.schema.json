@@ -244,6 +244,7 @@
       "description": "Node Observer settings. The component is rendered directly by the main chart.",
       "properties": {
         "replicaCount": { "type": "integer", "minimum": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "serviceAccount": { "type": "object" },
         "rbac": { "type": "object" },
         "env": { "type": "object" },
