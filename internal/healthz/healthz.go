@@ -17,8 +17,11 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
+// Variables so tests can shorten them.
+var (
 	readHeaderTimeout = 5 * time.Second
+	readTimeout       = 5 * time.Second
+	idleTimeout       = 5 * time.Second
 	shutdownTimeout   = 5 * time.Second
 )
 
@@ -30,6 +33,8 @@ func Serve(ctx context.Context, port int) error {
 		Addr:              fmt.Sprintf(":%d", port),
 		Handler:           Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 
 	errCh := make(chan error, 1)
