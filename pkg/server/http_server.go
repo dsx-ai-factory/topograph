@@ -209,18 +209,21 @@ func readRequest(w http.ResponseWriter, r *http.Request) *topology.Request {
 		}
 	}
 
-	// The full request lists every node, so only a summary is logged by
-	// default. String escapes line breaks in the client's values so the
-	// verbose dump cannot forge log lines.
+	if err = validate(tr); err != nil {
+		return httpError(w, tr.Provider.Name, tr.Engine.Name, err.Error(), http.StatusBadRequest, time.Since(start))
+	}
+
+	// Logged after validate, so the provider and engine names are registered
+	// names, not raw client input. The full request lists every node, so only
+	// a summary is logged by default; String escapes line breaks in the
+	// client's values so the verbose dump cannot forge log lines.
 	nodes := 0
 	for _, ci := range tr.Nodes {
 		nodes += len(ci.Instances)
 	}
 	klog.InfoS("Topology request", "provider", tr.Provider.Name, "engine", tr.Engine.Name, "regions", len(tr.Nodes), "nodes", nodes)
-	klog.V(4).Infof("Topology request: %s", tr.String())
-
-	if err = validate(tr); err != nil {
-		return httpError(w, tr.Provider.Name, tr.Engine.Name, err.Error(), http.StatusBadRequest, time.Since(start))
+	if v := klog.V(4); v.Enabled() {
+		v.Infof("Topology request: %s", tr.String())
 	}
 
 	return tr

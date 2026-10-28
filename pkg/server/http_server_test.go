@@ -769,9 +769,15 @@ func TestReadRequestLogCannotForgeLines(t *testing.T) {
 	_ = readRequest(httptest.NewRecorder(), r)
 	klog.Flush()
 
-	require.Contains(t, logs.String(), "FORGED", "the request is still logged")
-	for _, line := range strings.Split(logs.String(), "\n") {
+	// Every physical line must be a real klog entry: neither a forged header
+	// nor a continuation line carrying client input.
+	header := regexp.MustCompile(`^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d{6} +\d+ [^ ]+:\d+\] `)
+	for _, line := range strings.Split(strings.TrimSuffix(logs.String(), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
 		require.False(t, strings.HasPrefix(line, "E1027"), "client input started a log line: %q", line)
+		require.Regexp(t, header, line, "client input spilled onto its own line")
 	}
 }
 
