@@ -56,9 +56,6 @@ command:
 git fetch origin main:refs/remotes/origin/main
 ```
 
-Run `bash scripts/test-make-lint.sh` to check the lint target's revision
-selection and missing-reference handling without running the Go linter.
-
 Run a single package's tests directly with the standard Go toolchain while
 iterating, e.g.:
 
