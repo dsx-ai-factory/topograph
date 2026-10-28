@@ -11,7 +11,6 @@ contributors. For architecture and the provider/engine boundary, see
 git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 make build                    # produces bin/topograph, bin/node-observer, bin/node-data-broker, bin/kwok-nodes
-git fetch origin main:master  # make lint needs a local `master` ref — see "Local Test Loop" below
 make qualify                  # fmt + vet + lint + test — run this before every push
 ```
 
@@ -43,30 +42,10 @@ make clean                  # remove bin/
 ```bash
 make fmt        # go fmt ./...
 make vet        # go vet ./...
-make lint       # golangci-lint run --new-from-rev, computed from a local `master` ref
+make lint       # golangci-lint run --new-from-rev, computed from origin `main` ref
 make test       # go test -race -coverprofile=coverage.out ./...
 make coverage   # human-readable per-package summary (runs test first)
 make qualify    # fmt + vet + lint + test, in that order — run this before pushing
-```
-
-`make lint` computes its diff base from a local `master` ref
-(`git rev-list master.. --count`), but this repo's default branch is `main`
-— a fresh clone has no local `master` and the target fails with a revision
-error. Work around it by syncing a local `master` ref to `origin/main`
-before running `make lint` or `make qualify`. Keep this ref as a
-lint-only bookkeeping branch — don't check it out or commit on it:
-
-```bash
-git fetch origin main:master
-```
-
-This only works while `master` isn't checked out and hasn't diverged from
-`origin/main` (git fetch won't fetch into your current branch, and refuses
-a non-fast-forward update). If it fails for either reason, switch off
-`master` first, then reset it directly instead of fetching into it:
-
-```bash
-git branch -f master origin/main
 ```
 
 Run a single package's tests directly with the standard Go toolchain while
@@ -203,8 +182,7 @@ pushes for each PR; the first four also run on `main`:
 
 - `.github/workflows/go.yml`: build; `go test -v -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...`
   (coverage-instrumented, but _without_ `-race`, unlike `make test`);
-  golangci-lint through `golangci/golangci-lint-action` (not `make lint`, so
-  it isn't affected by the local `master`-ref issue above); `make vet`; a
+  golangci-lint through `golangci/golangci-lint-action`; `make vet`; a
   `go fmt` check; and `govulncheck ./...`
 - `.github/workflows/license-scan.yml`: `go-licenses check ./...` against
   the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list

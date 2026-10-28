@@ -122,7 +122,7 @@ vet:
 
 .PHONY: lint
 lint:
-	$(LINTER_BIN) run --new-from-rev "HEAD~$(git rev-list master.. --count)" ./...
+	$(LINTER_BIN) run --new-from-rev "$$(git merge-base HEAD origin/main)" ./...
 
 .PHONY: qualify
 qualify: fmt vet lint test
