@@ -122,7 +122,12 @@ vet:
 
 .PHONY: lint
 lint:
-	$(LINTER_BIN) run --new-from-rev "$$(git merge-base HEAD origin/main)" ./...
+	@if ! git rev-parse --verify --quiet 'refs/remotes/origin/main^{commit}' >/dev/null; then \
+	  echo "error: origin/main is unavailable; restore it with: git fetch origin main:refs/remotes/origin/main" >&2; \
+	  exit 1; \
+	fi; \
+	base=$$(git merge-base HEAD refs/remotes/origin/main) || exit 1; \
+	$(LINTER_BIN) run --new-from-rev "$$base" ./...
 
 .PHONY: qualify
 qualify: fmt vet lint test
