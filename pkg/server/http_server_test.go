@@ -19,6 +19,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -759,26 +760,57 @@ func captureKlog(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-func TestReadRequestLogCannotForgeLines(t *testing.T) {
+func TestReadRequestRejectsWithoutLoggingClientInput(t *testing.T) {
 	srv = &HttpServer{cfg: &config.Config{}}
 	logs := captureKlog(t)
 
 	// A provider name carrying a line break and a fake klog header.
 	payload := `{"provider":{"name":"test\nE1027 00:00:00.000000 1 forged.go:1] FORGED"},"engine":{"name":"slurm"}}`
 	r := &http.Request{Method: http.MethodPost, Body: io.NopCloser(strings.NewReader(payload))}
-	_ = readRequest(httptest.NewRecorder(), r)
+	rec := httptest.NewRecorder()
+	require.Nil(t, readRequest(rec, r))
 	klog.Flush()
 
-	// Every physical line must be a real klog entry: neither a forged header
-	// nor a continuation line carrying client input.
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.NotContains(t, logs.String(), "FORGED", "a rejected request is not logged")
+}
+
+func TestReadRequestVerboseDumpCannotForgeLines(t *testing.T) {
+	srv = &HttpServer{cfg: &config.Config{}}
+	logs := captureKlog(t)
+	setKlogVerbosity(t, "4")
+
+	// A valid request whose engine parameter carries a line break and a fake
+	// klog header.
+	payload := `{"provider":{"name":"test"},"engine":{"name":"slurm","params":{"plugin":"x\nE1027 00:00:00.000000 1 forged.go:1] FORGED"}}}`
+	r := &http.Request{Method: http.MethodPost, Body: io.NopCloser(strings.NewReader(payload))}
+	require.NotNil(t, readRequest(httptest.NewRecorder(), r))
+	klog.Flush()
+
+	// Each physical line is a klog entry or an indented line of the dump, and
+	// the forged text stays on its parameter's line.
 	header := regexp.MustCompile(`^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d{6} +\d+ [^ ]+:\d+\] `)
+	forged := 0
 	for _, line := range strings.Split(strings.TrimSuffix(logs.String(), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
 		require.False(t, strings.HasPrefix(line, "E1027"), "client input started a log line: %q", line)
-		require.Regexp(t, header, line, "client input spilled onto its own line")
+		if !strings.HasPrefix(line, "  ") {
+			require.Regexp(t, header, line)
+		}
+		if strings.Contains(line, "FORGED") {
+			forged++
+			require.True(t, strings.HasPrefix(line, "  Parameters: [plugin:x\\nE1027"), "unexpected line: %q", line)
+		}
 	}
+	require.Equal(t, 1, forged, "the verbose dump logs the parameter once")
+}
+
+// setKlogVerbosity sets klog's -v for the rest of the test.
+func setKlogVerbosity(t *testing.T, level string) {
+	t.Helper()
+	fs := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(fs)
+	require.NoError(t, fs.Set("v", level))
+	t.Cleanup(func() { _ = fs.Set("v", "0") })
 }
 
 func TestReadRequestLogsSummaryAtDefaultVerbosity(t *testing.T) {
