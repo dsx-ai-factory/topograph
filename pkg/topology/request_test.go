@@ -177,3 +177,29 @@ func TestGetNodeNames(t *testing.T) {
 	require.ElementsMatch(t, nodeList, GetNodeNameList(cis))
 	require.Equal(t, nodeMap, GetNodeNameMap(cis))
 }
+
+func TestRequestStringEscapesLineBreaks(t *testing.T) {
+	forged := "x\nE1027 forged\r"
+	req := &Request{
+		Provider: Provider{
+			Name:   forged,
+			Creds:  map[string]any{forged: "secret"},
+			Params: map[string]any{forged: forged},
+		},
+		Engine: Engine{
+			Name:   forged,
+			Params: map[string]any{"plugin": forged},
+		},
+		Nodes: []ComputeInstances{{Region: forged, Instances: map[string]string{forged: forged}}},
+	}
+
+	expected := `TopologyRequest:
+  Provider: x\nE1027 forged\r
+  Credentials: [x\nE1027 forged\r:***]
+  Parameters: [x\nE1027 forged\r:x\nE1027 forged\r]
+  Engine: x\nE1027 forged\r
+  Parameters: [plugin:x\nE1027 forged\r]
+  Nodes: x\nE1027 forged\r: [x\nE1027 forged\r:x\nE1027 forged\r]
+`
+	require.Equal(t, expected, req.String())
+}

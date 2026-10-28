@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - `GET /v1/topology` responses now carry `Content-Type: text/plain; charset=utf-8` and `X-Content-Type-Options: nosniff` for completed and pending requests, as error responses already did, instead of leaving the content type to sniffing. A result of an unexpected type returns HTTP 500 instead of panicking the handler.
-- The topology request log line and the outbound request URL logged at verbosity 4 are now quoted, so line breaks in client input cannot start new log entries.
+- The API server now logs a one-line summary of each topology request (provider, engine, region and node counts) instead of the full request, which lists every node; the full request is logged at verbosity 4. Line breaks in client input can no longer start new log entries: the full request escapes them in each value, and the outbound request URL logged at verbosity 4 is quoted.
 - Helm node-observer's `generateTopologyUrl` now prints an integer `service.port` as a number. An integer port, such as `--set service.port=8080`, previously produced an invalid URL ending in `:%!f(int64=8080)/v1/generate`.
 
 ## [v1.1.0] - 2026-10-23

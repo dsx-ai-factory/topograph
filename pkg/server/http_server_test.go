@@ -775,6 +775,20 @@ func TestReadRequestLogCannotForgeLines(t *testing.T) {
 	}
 }
 
+func TestReadRequestLogsSummaryAtDefaultVerbosity(t *testing.T) {
+	srv = &HttpServer{cfg: &config.Config{}}
+	logs := captureKlog(t)
+
+	payload := `{"provider":{"name":"test"},"engine":{"name":"slurm"},` +
+		`"nodes":[{"region":"r1","instances":{"i1":"n1","i2":"n2"}},{"region":"r2","instances":{"i3":"n3"}}]}`
+	r := &http.Request{Method: http.MethodPost, Body: io.NopCloser(strings.NewReader(payload))}
+	_ = readRequest(httptest.NewRecorder(), r)
+	klog.Flush()
+
+	require.Contains(t, logs.String(), `"Topology request" provider="test" engine="slurm" regions=2 nodes=3`)
+	require.NotContains(t, logs.String(), "TopologyRequest:", "the full request is only logged at verbosity 4")
+}
+
 func TestWriteResultResponseRejectsUnexpectedResultType(t *testing.T) {
 	queue := NewTrailingDelayQueue(nil, time.Hour)
 	defer queue.Shutdown()
