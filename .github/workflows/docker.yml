@@ -8,21 +8,35 @@ name: Docker
 on:
   workflow_dispatch:
 
+# Nothing at workflow level; the build job asks for what it needs.
 permissions: {}
 
 env:
   REGISTRY: nvcr.io
   # NGC <organization>/<team>/<image>
   IMAGE_NAME: 1070195845945670/topograph/topograph
+  # Platforms the image is built for. The attest and verify actions fail when
+  # the pushed index contains anything else, so every released platform gets
+  # its own SBOM.
+  PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   build:
     runs-on: linux-amd64-cpu16
     environment: ngc-publish
     permissions:
+      # Check out the repository.
       contents: read
+      # Mint the GitHub OIDC token that keyless cosign and actions/attest
+      # exchange with Sigstore Fulcio for a short-lived signing certificate.
+      # The image, signature and attestations are pushed to NGC with
+      # NGC_API_KEY, not the GITHUB_TOKEN.
       id-token: write
+      # actions/attest records the SLSA provenance in the GitHub attestations
+      # API, which is what `gh attestation verify` reads.
       attestations: write
+      # actions/attest records an artifact metadata storage record for the
+      # pushed image.
       artifact-metadata: write
 
     steps:
@@ -55,6 +69,25 @@ jobs:
             echo "::error::Chart appVersion ${app_version} does not match release tag ${RELEASE_TAG}."
             exit 1
           fi
+
+      # Only a release build, a dispatch from a vX.Y.Z release branch as
+      # RELEASE.md describes, is signed and gets an SBOM and VEX. Keep this
+      # pattern in step with the ClusterImagePolicy subjectRegExp in
+      # SECURITY.md and the per-release identity in the SECURITY.md and
+      # RELEASE.md verification commands.
+      - name: Decide whether to publish release evidence
+        id: evidence
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          publish=false
+          if [[ "${REF_TYPE}" == "branch" && "${REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            publish=true
+          fi
+          echo "publish=${publish}" >> "${GITHUB_OUTPUT}"
+          echo "Sign and attest SBOM and VEX for ${REF_TYPE} ${REF_NAME}: ${publish}"
 
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
@@ -103,10 +136,14 @@ jobs:
           context: .
           file: ./Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.PLATFORMS }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max,version=v1
+          # BuildKit provenance would add unsigned attestation manifests
+          # (platform unknown/unknown) to the index, beside the signed
+          # provenance actions/attest publishes below. The actions/attest
+          # provenance is the one RELEASE.md and SECURITY.md verify.
+          provenance: false
 
       - name: Generate SLSA provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
@@ -114,3 +151,156 @@ jobs:
           subject-name: ${{ steps.image.outputs.name }}
           subject-digest: ${{ steps.build-and-push.outputs.digest }}
           push-to-registry: true
+
+      - name: Install cosign
+        if: steps.evidence.outputs.publish == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pinned, not inherited from the installer: the cosign release decides
+          # the on-registry bundle layout. v3.1.0 is the first that labels each
+          # attestation with its own predicate type, so SBOM and VEX can be told
+          # apart in a referrers listing.
+          cosign-release: v3.1.3
+
+      - name: Install Syft
+        id: syft
+        if: steps.evidence.outputs.publish == 'true'
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.54.1
+
+      # One manifest per platform in PLATFORMS, read from the pushed index.
+      # BuildKit attestation entries (platform unknown/unknown) never match.
+      - name: Resolve platform manifests
+        id: platforms
+        if: steps.evidence.outputs.publish == 'true'
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          INDEX_DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          index="$(docker buildx imagetools inspect --raw "${IMAGE_NAME}@${INDEX_DIGEST}")"
+          pairs=""
+          for platform in ${PLATFORMS//,/ }; do
+            digest="$(jq -r --arg platform "${platform}" '
+              [.manifests[]? | select("\(.platform.os)/\(.platform.architecture)" == $platform) | .digest]
+              | if length == 1 then .[0] else "" end' <<<"${index}")"
+            if [[ ! "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::${IMAGE_NAME}@${INDEX_DIGEST} does not list exactly one ${platform} manifest"
+              exit 1
+            fi
+            echo "${platform} -> ${digest}"
+            pairs+="${platform}=${digest} "
+          done
+          echo "digests=${pairs% }" >> "${GITHUB_OUTPUT}"
+
+      # An SBOM describes one root filesystem, so each platform manifest gets
+      # its own; the OpenVEX document describes the image as a whole and goes
+      # on the index. Every SBOM is generated and checked before anything is
+      # published, and the index is signed last, so a run that fails part way
+      # leaves the index unsigned rather than signed with evidence missing.
+      # cosign and Syft reach NGC through the docker/login-action credentials.
+      # --new-bundle-format keeps the on-registry layout (OCI referrers, not
+      # legacy .sig/.att tags) this repository's choice rather than a default.
+      - name: Sign the image and attest SBOM and OpenVEX
+        id: attest
+        if: steps.evidence.outputs.publish == 'true'
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          INDEX_DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          PLATFORM_DIGESTS: ${{ steps.platforms.outputs.digests }}
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          OPENVEX_FILE: .openvex.json
+        run: |
+          set -euo pipefail
+          cosign_publish() {
+            timeout --foreground 120s cosign "$@" --yes --new-bundle-format=true
+          }
+          dir="${RUNNER_TEMP}/release-evidence"
+          mkdir -p "${dir}"
+
+          for pair in ${PLATFORM_DIGESTS}; do
+            platform="${pair%%=*}"
+            digest="${pair#*=}"
+            sbom="${dir}/${platform//\//-}.cdx.json"
+            # `registry:` makes Syft read the pushed manifest rather than the
+            # local daemon, which on an amd64 runner has no arm64 filesystem.
+            timeout --foreground 600s "${SYFT}" scan "registry:${IMAGE_NAME}@${digest}" \
+              -o "cyclonedx-json@1.6=${sbom}"
+            # Syft records the scanned manifest digest as the version of the
+            # top-level container component, which ties the SBOM to its subject.
+            if ! jq -e --arg digest "${digest}" '
+                .bomFormat == "CycloneDX" and .specVersion == "1.6"
+                and .metadata.component.type == "container"
+                and .metadata.component.version == $digest' "${sbom}" >/dev/null; then
+              echo "::error::${sbom} is not a CycloneDX 1.6 SBOM of ${IMAGE_NAME}@${digest}"
+              exit 1
+            fi
+          done
+
+          openvex=false
+          if [[ -f "${OPENVEX_FILE}" ]]; then
+            if ! jq -e '(."@context" | startswith("https://openvex.dev/ns")) and (.statements | type == "array")' \
+                "${OPENVEX_FILE}" >/dev/null; then
+              echo "::error::${OPENVEX_FILE} is not an OpenVEX document"
+              exit 1
+            fi
+            openvex=true
+          else
+            echo "::notice::${OPENVEX_FILE} does not exist; skipping the OpenVEX attestation"
+          fi
+
+          for pair in ${PLATFORM_DIGESTS}; do
+            platform="${pair%%=*}"
+            cosign_publish attest --type cyclonedx --predicate "${dir}/${platform//\//-}.cdx.json" \
+              "${IMAGE_NAME}@${pair#*=}"
+          done
+          if [[ "${openvex}" == "true" ]]; then
+            cosign_publish attest --type openvex --predicate "${OPENVEX_FILE}" "${IMAGE_NAME}@${INDEX_DIGEST}"
+          fi
+          cosign_publish sign "${IMAGE_NAME}@${INDEX_DIGEST}"
+          echo "openvex=${openvex}" >> "${GITHUB_OUTPUT}"
+
+      # The workflow checks its own output against the exact identity it signed
+      # with: this workflow file on the vX.Y.Z branch it ran from. SECURITY.md
+      # documents the same identity per release, and a pattern over all
+      # releases for admission.
+      - name: Verify signature and attestations
+        id: verify
+        if: steps.evidence.outputs.publish == 'true'
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          INDEX_DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          PLATFORM_DIGESTS: ${{ steps.platforms.outputs.digests }}
+          OPENVEX: ${{ steps.attest.outputs.openvex }}
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${GITHUB_WORKFLOW_REF}"
+          trust=(--certificate-identity "${identity}"
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            --new-bundle-format=true)
+          out="${RUNNER_TEMP}/verified-attestation.json"
+
+          # Payloads go to a file, not the log: an SBOM runs to megabytes. Each
+          # verified statement must also name the digest it was verified on.
+          verify_attestation() {
+            timeout --foreground 120s cosign verify-attestation --type "$1" "${trust[@]}" \
+              "${IMAGE_NAME}@$2" >"${out}"
+            if ! jq -s -e --arg hex "${2#sha256:}" 'length > 0 and all(.[];
+                .payload | @base64d | fromjson | any(.subject[]; .digest.sha256 == $hex))' \
+                "${out}" >/dev/null; then
+              echo "::error::a verified $1 attestation on ${IMAGE_NAME}@$2 does not name that digest"
+              exit 1
+            fi
+            echo "verified $1 on ${IMAGE_NAME}@$2"
+          }
+
+          timeout --foreground 120s cosign verify "${trust[@]}" "${IMAGE_NAME}@${INDEX_DIGEST}" >/dev/null
+          echo "verified signature on ${IMAGE_NAME}@${INDEX_DIGEST}"
+          verify_attestation slsaprovenance1 "${INDEX_DIGEST}"
+          if [[ "${OPENVEX}" == "true" ]]; then
+            verify_attestation openvex "${INDEX_DIGEST}"
+          fi
+          for pair in ${PLATFORM_DIGESTS}; do
+            verify_attestation cyclonedx "${pair#*=}"
+          done
