@@ -239,6 +239,21 @@ test('the paths step runs the pinned labeler with sync-labels on opened, synchro
   assert.deepEqual(paths.with, { 'sync-labels': true });
 });
 
+test('the size step runs after a failed paths step but not after a cancel', () => {
+  // Without a status function a step runs only on success(), so a failed
+  // paths step (an area/* label that does not exist) would also cost the
+  // pull request its size label. !cancelled() still skips the step when a
+  // newer run cancels this one; always() would not.
+  const steps = loadWorkflow(WORKFLOW).jobs.label.steps;
+  assert.deepEqual(
+    steps.map((step) => [step.id, step.if]),
+    [
+      ['paths', undefined],
+      ['size', '${{ !cancelled() }}'],
+    ],
+  );
+});
+
 test('size thresholds', async () => {
   const cases = [
     [9, 0, 'size/XS'],
