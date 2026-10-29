@@ -148,7 +148,7 @@ mod:
 # before the headers were standardized from bringing those forms back, and can
 # be removed once those pull requests have merged or been rebased.
 ADDLICENSE ?= go run github.com/google/addlicense@v1.2.0
-LICENSE_HEADER_OLD := Copyright (\(c\) )?[0-9-]+,? NVIDIA CORPORATION([.]|$$)
+LICENSE_HEADER_OLD := Copyright (\(c\) )?[0-9-]+,? NVIDIA CORPORATION([.]|[[:space:]]*$$)
 
 .PHONY: license-headers
 license-headers:
@@ -160,7 +160,7 @@ license-header-check:
 	git ls-files -z | xargs -0 $(ADDLICENSE) -check
 	@! git grep -l -E '$(LICENSE_HEADER_OLD)' || \
 	  { echo "Replace these older NVIDIA headers with scripts/license-header.tmpl, keeping the year."; exit 1; }
-	@! git grep -L 'SPDX-FileCopyrightText' -- 'charts/*.tpl' 'charts/*.txt' || \
+	@! git grep -L 'SPDX-FileCopyrightText' -- 'charts/*/templates/*.tpl' 'charts/*/templates/NOTES.txt' || \
 	  { echo "Add the license header to these Helm files."; exit 1; }
 
 .PHONY: coverage
