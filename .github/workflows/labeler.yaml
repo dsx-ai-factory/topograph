@@ -111,9 +111,17 @@ jobs:
               await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [size] });
               core.info(`${changed} lines changed, added ${size}`);
             }
+            // A 404 on removal means another run or a person removed the
+            // label after pulls.get read it; the right size label is on, so
+            // go on. Any other error fails the job.
             for (const name of names) {
               if (name.startsWith('size/') && name !== size) {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
-                core.info(`removed ${name}`);
+                try {
+                  await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+                  core.info(`removed ${name}`);
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                  core.info(`${name} was already removed`);
+                }
               }
             }
