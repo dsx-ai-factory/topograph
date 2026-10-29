@@ -42,6 +42,12 @@
 # call for everyone else. Issues do not count, so an author who filed issues
 # before is still welcomed on their first pull request.
 #
+# Reruns: re-running a run, or one of its jobs, delivers the same event, so
+# the checks above pass again. Every welcome ends with the hidden marker
+# <!-- welcome.yaml -->, and before commenting each job lists the item's
+# comments and posts nothing when a bot comment there carries it. Only a bot's
+# comment counts, so a person cannot stop a welcome by pasting the marker.
+#
 # The issue comment points to CONTRIBUTING.md "Open an issue first" and to
 # /assign (assign.yaml). The pull request comment points to the DCO sign-off,
 # `git commit -s -S`, and the PR template. Both give the 5-business-day
@@ -51,7 +57,8 @@
 # token, so it could not comment. pull_request_target runs this file as it is
 # on the base branch, with the base repository's token, so the job checks out
 # no code and runs nothing from the pull request: it reads only the event's
-# author fields and posts a fixed text. zizmor reports the trigger as
+# author fields and the item's comments, never prints a comment, and posts a
+# fixed text. zizmor reports the trigger as
 # dangerous-triggers; workflow-lint.yaml lists it as accepted.
 #
 # GitHub blocks pull_request_target in public repositories from 2026-12-02
@@ -61,9 +68,11 @@
 # on it.
 #
 # Permissions: each job holds one write permission. Listing the author's issues
-# and commenting on an issue need issues write. Commenting on a pull request
-# goes through the issues comments endpoint, which accepts pull-requests write
-# on a pull request. The pull request job also holds issues read, because the
+# and the issue's comments needs issues read and commenting on the issue needs
+# issues write, so the issue job holds issues write. Listing and posting
+# comments on a pull request go through the issues comments endpoints, which
+# accept pull-requests read and write on a pull request. The pull request job
+# also holds issues read, because the
 # author's earlier pull requests are listed through the issues list endpoint.
 # GitHub lets a public repository be listed without it; it is declared anyway
 # so the job keeps working if the repository's visibility changes.
@@ -88,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      issues: write # list the author's issues and comment on this one
+      issues: write # list the author's issues and this issue's comments, and comment on it
     steps:
       - name: Welcome a first-time issue author
         id: welcome
@@ -124,12 +133,29 @@ jobs:
               return;
             }
 
+            // A rerun gets the same event, so the checks above pass again.
+            // Every welcome ends with this hidden marker; a bot comment that
+            // carries it is the welcome an earlier attempt posted.
+            const marker = '<!-- welcome.yaml -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: issue.number,
+              per_page: 100,
+            });
+            if (comments.some((comment) => comment.user?.type === 'Bot' && (comment.body ?? '').includes(marker))) {
+              core.info(`Issue #${issue.number} already has the welcome; no second one`);
+              return;
+            }
+
             const contributing = 'https://github.com/dsx-ai-factory/topograph/blob/main/CONTRIBUTING.md';
             const body = [
               'Thanks for opening your first issue in Topograph.',
               '',
               `- If you would like to work on it, comment \`/assign\` on this issue to claim it, and \`/unassign\` to release it. [Open an issue first](${contributing}#open-an-issue-first) in CONTRIBUTING.md explains how issues and pull requests fit together.`,
               `- Once a pull request is open, a maintainer aims to give a first response within 5 business days. See [Turnaround](${contributing}#turnaround).`,
+              '',
+              marker,
             ].join('\n');
             await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body });
             core.info(`Welcomed the author of issue #${issue.number}`);
@@ -143,7 +169,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       issues: read # list the author's earlier pull requests
-      pull-requests: write # comment on the pull request through the issues comments endpoint
+      pull-requests: write # list and post the pull request's comments through the issues comments endpoints
     steps:
       - name: Welcome a first-time pull request author
         id: welcome
@@ -186,6 +212,21 @@ jobs:
               return;
             }
 
+            // A rerun gets the same event, so the checks above pass again.
+            // Every welcome ends with this hidden marker; a bot comment that
+            // carries it is the welcome an earlier attempt posted.
+            const marker = '<!-- welcome.yaml -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pr.number,
+              per_page: 100,
+            });
+            if (comments.some((comment) => comment.user?.type === 'Bot' && (comment.body ?? '').includes(marker))) {
+              core.info(`Pull request #${pr.number} already has the welcome; no second one`);
+              return;
+            }
+
             const blob = 'https://github.com/dsx-ai-factory/topograph/blob/main';
             const body = [
               'Thanks for your first pull request to Topograph. A few things help it through review:',
@@ -193,6 +234,8 @@ jobs:
               `- Every commit needs a DCO sign-off. \`git commit -s -S\` adds the sign-off and also signs the commit, which is recommended. [Sign your work](${blob}/CONTRIBUTING.md#sign-your-work) in CONTRIBUTING.md explains the sign-off and how to add it to commits you have already made.`,
               `- Fill in the [pull request template](${blob}/.github/PULL_REQUEST_TEMPLATE.md).`,
               `- A maintainer aims to give a first response within 5 business days. See [Turnaround](${blob}/CONTRIBUTING.md#turnaround).`,
+              '',
+              marker,
             ].join('\n');
             await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
             core.info(`Welcomed the author of pull request #${pr.number}`);
