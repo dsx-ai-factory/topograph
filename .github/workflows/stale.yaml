@@ -25,8 +25,10 @@
 #   lock           Locks issues and pull requests that have been closed with no
 #                  activity for 90 days, oldest first and at most 50 a run. It
 #                  posts no comment; the lock shows as an event in the
-#                  thread's timeline. It starts as a dry run (LOCK_DRY_RUN)
-#                  that only logs what it would lock.
+#                  thread's timeline. Just before each lock it reads the
+#                  thread again and skips it if it was updated since the
+#                  list. It starts as a dry run (LOCK_DRY_RUN) that only
+#                  logs what it would lock.
 #
 # Who a pull request is waiting on: a draft, or one where a reviewer has
 # requested changes, waits on its author (reminded after 14 days). Any other
@@ -384,15 +386,26 @@ jobs:
 
             // No comment: the lock alone shows in the thread's timeline.
             const batch = eligible.slice(0, LOCK_LIMIT);
+            let done = 0;
             for (const item of batch) {
               if (LOCK_DRY_RUN) {
                 core.info(`#${item.number}: would lock (dry run)`);
+                done += 1;
+                continue;
+              }
+              // Read the thread again just before locking it: a comment, a
+              // reopen or someone else's lock can land after the list was
+              // read. Each of them moves updated_at, so one check covers all.
+              const { data: current } = await github.rest.issues.get({ owner, repo, issue_number: item.number });
+              if (Date.parse(current.updated_at) > cutoff) {
+                core.info(`#${item.number}: updated since it was listed, not locked`);
                 continue;
               }
               await github.rest.issues.lock({ owner, repo, issue_number: item.number, lock_reason: 'resolved' });
               core.info(`#${item.number}: locked`);
+              done += 1;
             }
             core.info(
-              `${LOCK_DRY_RUN ? 'Dry run: would lock' : 'Locked'} ${batch.length} of ${eligible.length} eligible threads; ` +
+              `${LOCK_DRY_RUN ? 'Dry run: would lock' : 'Locked'} ${done} of ${eligible.length} eligible threads; ` +
                 `${eligible.length - batch.length} left for later runs.`,
             );
