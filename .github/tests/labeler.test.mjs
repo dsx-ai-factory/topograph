@@ -127,11 +127,11 @@ function fakeGithub({ additions, deletions, labels }, routes = {}) {
   });
 }
 
-// Runs the size step against `github`. `event` is the pull request as the
-// event reported it: its line counts and labels.
+// Runs the size step against `github` and returns what it logged. `event`
+// is the pull request as the event reported it: its line counts and labels.
 async function runSizeStep(github, event) {
   const { script } = extractStep(WORKFLOW, 'label', 'size');
-  const { core } = fakeCore();
+  const { core, log } = fakeCore();
   const context = {
     repo: REPO,
     payload: {
@@ -144,6 +144,7 @@ async function runSizeStep(github, event) {
     },
   };
   await runGithubScript(script, { github, context, core });
+  return { log };
 }
 
 // Runs the size step for a pull request that has these line counts and
@@ -361,4 +362,37 @@ test('missing size label surfaces as job failure', async () => {
   });
   // The add comes first, so a failed add leaves the old size label on.
   assert.deepEqual(writes(calls).map(({ route }) => route), ['rest.issues.addLabels']);
+});
+
+test('a size label already removed by someone else does not fail the job', async () => {
+  // Another run or a person removed size/S after pulls.get read the labels,
+  // so GitHub answers 404 (issues/remove-label). size/M is already on, so the
+  // step logs it and goes on to the next stale label.
+  const pr = { additions: 100, deletions: 0, labels: ['size/S', 'size/XL'] };
+  const { github, calls } = fakeGithub(pr, {
+    'rest.issues.removeLabel': ({ name }) => {
+      if (name === 'size/S') throw Object.assign(new Error('Label does not exist'), { status: 404 });
+      return { data: [] };
+    },
+  });
+
+  const { log } = await runSizeStep(github, pr);
+  assert.deepEqual(writes(calls), [
+    { route: 'rest.issues.addLabels', params: { ...REPO, issue_number: NUMBER, labels: ['size/M'] } },
+    { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: NUMBER, name: 'size/S' } },
+    { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: NUMBER, name: 'size/XL' } },
+  ]);
+  assert.deepEqual(log.info, ['100 lines changed, added size/M', 'size/S was already removed', 'removed size/XL']);
+});
+
+test('a failed size label removal other than a 404 fails the job', async () => {
+  const pr = { additions: 100, deletions: 0, labels: ['size/S'] };
+  const { github, calls } = fakeGithub(pr, {
+    'rest.issues.removeLabel': () => {
+      throw Object.assign(new Error('Server Error'), { status: 500 });
+    },
+  });
+
+  await assert.rejects(runSizeStep(github, pr), { status: 500, message: 'Server Error' });
+  assert.deepEqual(writes(calls).map(({ route }) => route), ['rest.issues.addLabels', 'rest.issues.removeLabel']);
 });
