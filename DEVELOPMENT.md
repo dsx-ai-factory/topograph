@@ -87,7 +87,7 @@ make mod        # go mod tidy
 
 ```bash
 make license-headers       # add the standard license header to files that have none
-make license-header-check  # list files without a header; CI runs this
+make license-header-check  # list files without a header, or with a non-standard one; CI runs this
 ```
 
 Both run [addlicense](https://github.com/google/addlicense) at a pinned
@@ -102,6 +102,11 @@ year the file was created: `make license-headers` uses the current year, which
 is right for new files. When adding a header to an older file by hand, use the
 year of its first commit (`git log --diff-filter=A --format=%ad -- <file>`).
 NVIDIA's copyright guidance warns against post-dating a notice.
+
+The check also fails on an NVIDIA header in another form, such as the older
+`Copyright <year> NVIDIA CORPORATION` block. Replace it with the standard
+header and keep its year or year range. A header naming another copyright
+holder is left as its author wrote it.
 
 ## Running a Binary Locally
 

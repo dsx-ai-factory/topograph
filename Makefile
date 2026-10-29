@@ -1,10 +1,11 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -137,27 +138,40 @@ mod:
 	go mod tidy
 
 # License headers, through addlicense at a pinned version. New headers use the
-# standard NVIDIA SPDX and Apache 2.0 notice in scripts/license-header.tmpl;
-# the check accepts any existing copyright or license header, so older forms
-# keep passing.
+# standard NVIDIA SPDX and Apache 2.0 notice in scripts/license-header.tmpl,
+# and the check fails on an NVIDIA header in any other form.
 # Files are listed through git, so untracked trees such as localdev/ and other
-# worktrees are never walked; `grep -v '/$$'` drops nested repositories, which
-# git lists as directories. vendor/, testdata/ and the helm-unittest snapshots
+# worktrees are never walked; `grep -zv '/$$'` drops nested repositories, which
+# git lists as directories. Names are NUL-separated so a path with a space
+# stays one argument. vendor/, testdata/ and the helm-unittest snapshots
 # are skipped. Helm templates are skipped by license-headers only: a `#` header
 # renders into the manifest, so they carry a {{/* */}} header added by hand,
 # which the check still recognizes.
 ADDLICENSE ?= go run github.com/google/addlicense@v1.2.0
-LICENSE_HEADER_FILES = git ls-files --cached --others --exclude-standard | grep -v '/$$'
+LICENSE_HEADER_FILES = git ls-files -z --cached --others --exclude-standard | grep -zv '/$$'
 LICENSE_HEADER_IGNORE := -ignore 'vendor/**' -ignore '**/testdata/**' -ignore '**/__snapshot__/**'
 
 .PHONY: license-headers
 license-headers:
-	$(LICENSE_HEADER_FILES) | xargs $(ADDLICENSE) -f scripts/license-header.tmpl \
+	$(LICENSE_HEADER_FILES) | xargs -0 $(ADDLICENSE) -f scripts/license-header.tmpl \
 	  $(LICENSE_HEADER_IGNORE) -ignore 'charts/topograph/templates/**'
 
 .PHONY: license-header-check
 license-header-check:
-	$(LICENSE_HEADER_FILES) | xargs $(ADDLICENSE) -check $(LICENSE_HEADER_IGNORE)
+	$(LICENSE_HEADER_FILES) | xargs -0 $(ADDLICENSE) -check $(LICENSE_HEADER_IGNORE)
+	@# addlicense has no handler for Helm's .tpl and NOTES.txt, so its check
+	@# passes them unread; check their hand-added headers here.
+	@missing=$$(git ls-files -z --cached --others --exclude-standard 'charts/*.tpl' 'charts/*.txt' \
+	  | xargs -0 -r grep -L -E 'Copyright|SPDX-License-Identifier'); \
+	if [ -n "$$missing" ]; then echo "missing license header:"; echo "$$missing"; exit 1; fi
+	@# Every NVIDIA header uses the standard form: the older short and long forms
+	@# fail, and so does an SPDX header without the Apache 2.0 notice. Headers of
+	@# other copyright holders are left to them.
+	@old=$$( { $(LICENSE_HEADER_FILES) | xargs -0 grep -l -E \
+	    'Copyright (\(c\) )?[0-9]{4}(-[0-9]{4})?,? NVIDIA CORPORATION([.]|$$)'; \
+	  $(LICENSE_HEADER_FILES) | xargs -0 grep -l --null 'SPDX-FileCopyrightText' \
+	    | xargs -0 -r grep -L 'Licensed under the Apache License'; } | sort -u); \
+	if [ -n "$$old" ]; then echo "license header not in the standard form (run make license-headers after removing the old header):"; echo "$$old"; exit 1; fi
 
 .PHONY: coverage
 coverage: test
