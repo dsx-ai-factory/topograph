@@ -35,9 +35,12 @@
 # before that date, or it stops running.
 #
 # Runs for the same pull request share a concurrency group and a new one
-# cancels the one in progress, so labels from an older push never land after
-# a newer push's. Each run recomputes every label, so a cancelled run loses
-# nothing.
+# cancels the one in progress. GitHub does not guarantee that the runs start
+# in event order, and a re-run replays its original event, so neither step
+# trusts the event: the labeler lists the changed files and the size step
+# reads the line counts and labels through the API when it runs. Each run
+# recomputes every label from the pull request as it is then, so a cancelled
+# run loses nothing.
 #
 # Permissions: the labeler reads .github/labeler.yml with contents read.
 # Listing changed files, reading labels and adding or removing them need
@@ -82,23 +85,22 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const pr = context.payload.pull_request;
-            const changed = pr.additions + pr.deletions;
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            // Read the line counts and labels as they are now, not from the
+            // event: a re-run replays its original event, and runs for the
+            // same pull request need not start in event order.
+            const { data: current } = await github.rest.pulls.get({ owner, repo, pull_number: issue_number });
+            const changed = current.additions + current.deletions;
+            const names = current.labels.map((label) => label.name);
+
             let size;
             if (changed < 10) size = 'size/XS';
             else if (changed < 50) size = 'size/S';
             else if (changed < 200) size = 'size/M';
             else if (changed < 500) size = 'size/L';
             else size = 'size/XL';
-
-            const { owner, repo } = context.repo;
-            const issue_number = pr.number;
-
-            // Read the labels as they are now, not from the event: they may
-            // have changed since it fired, for example when a run for an
-            // earlier push finished after this one was queued.
-            const { data: current } = await github.rest.pulls.get({ owner, repo, pull_number: issue_number });
-            const names = current.labels.map((label) => label.name);
 
             // Add before removing, so a failed add (the label was never
             // created) fails the job with the old size label still on. Not
