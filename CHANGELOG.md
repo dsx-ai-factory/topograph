@@ -9,7 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `k8s-node-labels` provider discovers fabric topology from configurable Node labels, with stable label-compatible switch IDs, optional readiness filtering, and provider-independent observer label triggers for Slinky and other engines.
-
+- Add Akamai Cloud topology discovery (`akamai`) and model-backed simulation (`akamai-sim`).
+  The live provider queries `/topology` at the required `apiUrl` with a supplied
+  `creds.token` bearer token; HTTPS is required except on loopback endpoints.
+  Discovery supports numbered pagination, tier trimming, and variable-depth uplinks,
+  preserving redundant host and parent paths for a later merge. Fabric and health
+  fields do not filter discovery. Fixed response, pagination, depth, and work limits
+  bound discovery. Region-scoped switch identifiers support Kubernetes labels and
+  unique Slurm switch names. Instance JSON retains API switch names and includes
+  missing requested hosts with empty network layers. Slurm and Node Data Broker
+  obtain `host_uuid` and region through an independent node-local IMDS token
+  exchange; Slurm uses `pdsh` and rejects duplicate host UUIDs. The broker rejects
+  incomplete metadata before writing `topograph.run/instance` and
+  `topograph.run/region` annotations. The simulator uses Topograph YAML models
+  with pagination, tier trimming, and failure injection.
 - The Node Observer serves `/healthz` on `nodeObserver.port` (default `8080`), and the chart gives its Deployment liveness and readiness probes on it, as the Node Data Broker already has. Set through `healthzPort` in the Node Observer config; without it, no endpoint is served.
 - License headers: `make license-headers` adds NVIDIA's standard SPDX and Apache 2.0 header to files that have none, and `make license-header-check`, run by `license-scan.yml`, fails on any file without a copyright or license header, or with an NVIDIA header in one of the two older forms. Every NVIDIA header now uses the standard form, keeping each file's original year; files that had no header now carry one.
 - Nautobot provider (`nautobot`) discovers switch fabric topology through the GraphQL API, with required `endpoint`, compute `deviceRole`, and `switchRoles` parameters, optional `location` and `platform` filters, status filters, and required `creds.token` authentication. Switch queries paginate using the configured `pageSize` (default `100`). Discovery starts at selected switches, collects compute endpoints from cable peers, follows connected switches outside the initial location and platform filters to infer fabric tiers, and groups redundant switches into a scheduler tree. Attached compute endpoints can also be in other locations or use other platforms. Duplicate device IDs and switch names fail with HTTP 502 identifying the conflicts; switch-name errors include both device UUIDs. Devices missing an ID or name are skipped with a warning. Oversized pages log a warning and advance the offset by the actual number of returned devices, including skipped records. Transport failures return HTTP 502 with the underlying error.
