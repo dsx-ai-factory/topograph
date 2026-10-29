@@ -22,6 +22,15 @@
 //   - Timeline events carry `actor` and `created_at`, except `reviewed`
 //     (`user` and `submitted_at`, no actor) and `committed` (no actor or
 //     user, only `committer.date`). `commented` carries both actor and user.
+//   - A commit's date is when it was made, not when it was pushed: on #643
+//     the head commit is dated 10:59:10 and was pushed at 11:00:01. Commits
+//     by bots carry a git identity only, such as `dependabot[bot]` (#631) or
+//     `github-actions[bot]` (#632, opened by publish-fern-docs.yml).
+//   - actions.listWorkflowRunsForRepo with event=pull_request and head_sha
+//     lists the runs a push to the pull request started for its head
+//     commit; pr-title.yaml runs on every push. A run carries `actor`, the
+//     account that pushed, and `created_at` (#643: ArangoGutierrez at
+//     11:00:06). copy-pr-bot's runs for the same commit are `push` runs.
 //   - A comment that @-mentions someone, including one from
 //     github-actions[bot], is followed a second or two later by `mentioned`
 //     and `subscribed` events whose actor is the mentioned user (issue #263).
@@ -33,6 +42,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { GITHUB_DIR, extractStep, fakeCore, loadWorkflow, recordingGithub, runGithubScript } from './lib/harness.mjs';
@@ -75,9 +85,24 @@ function reviewed(who, at, state) {
   return { event: 'reviewed', user: who, submitted_at: at, state };
 }
 
-function committed(at) {
-  const person = { name: 'A Contributor', email: 'contributor@example.com', date: at };
-  return { event: 'committed', sha: '0a1b2c3', author: person, committer: person, message: 'Address review' };
+function committed(at, { author = { name: 'A Contributor', email: 'contributor@example.com' }, committer = author } = {}) {
+  return {
+    event: 'committed',
+    sha: '0a1b2c3',
+    author: { ...author, date: at },
+    committer: { ...committer, date: at },
+    message: 'Address review',
+  };
+}
+
+const DEPENDABOT_GIT = { name: 'dependabot[bot]', email: '49699333+dependabot[bot]@users.noreply.github.com' };
+const ACTIONS_GIT = { name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com' };
+const WEB_FLOW_GIT = { name: 'GitHub', email: 'noreply@github.com' };
+
+// One workflow run as actions.listWorkflowRunsForRepo lists it. `sha`
+// defaults to the pull request's head commit.
+function workflowRun(who, at, { event = 'pull_request', sha } = {}) {
+  return { event, actor: who, triggering_actor: who, created_at: at, head_sha: sha };
 }
 
 function acted(event, who, at, extra = {}) {
@@ -96,6 +121,7 @@ function pull(number, { login = `author${number}`, draft = false, requested = []
     draft,
     user: account(login),
     created_at: created,
+    head: { sha: `head${number}` },
     requested_reviewers: requested.map((reviewer) => account(reviewer)),
     requested_teams: [],
     labels: labels.map((name) => ({ name })),
@@ -106,16 +132,28 @@ function page(items, { page: pageNumber = 1, per_page: perPage = 30 }) {
   return { data: items.slice((pageNumber - 1) * perPage, pageNumber * perPage) };
 }
 
-// A fake repository holding open pull requests, their timelines and their
-// reviews. Comments and label changes are written back the way GitHub records
-// them, so a second run sees what the first one did.
-function fakeRepo({ pulls, timelines = {}, reviews = {} }, extraRoutes = {}) {
+// A fake repository holding open pull requests, their timelines, their
+// reviews and the workflow runs on their commits. Comments and label changes
+// are written back the way GitHub records them, so a second run sees what the
+// first one did.
+function fakeRepo({ pulls, timelines = {}, reviews = {}, runs = {} }, extraRoutes = {}) {
   const timeline = (number) => (timelines[number] ??= []);
   const pr = (number) => pulls.find((p) => p.number === number);
+  const allRuns = () =>
+    Object.entries(runs).flatMap(([number, list]) => list.map((run) => ({ ...run, head_sha: run.head_sha ?? pr(Number(number)).head.sha })));
   return recordingGithub({
     'rest.pulls.list': (params) => page(pulls, params),
     'rest.issues.listEventsForTimeline': (params) => page(timeline(params.issue_number), params),
     'rest.pulls.listReviews': (params) => page(reviews[params.pull_number] ?? [], params),
+    // Filtered by head_sha and event as GitHub filters them. A page is the
+    // list paginate hands back: it unwraps GitHub's { total_count,
+    // workflow_runs } page into its items (plugin-paginate-rest,
+    // normalizePaginatedListResponse).
+    'rest.actions.listWorkflowRunsForRepo': (params) =>
+      page(
+        allRuns().filter((run) => run.head_sha === params.head_sha && (params.event === undefined || run.event === params.event)),
+        params,
+      ),
     'rest.issues.createComment': ({ issue_number: number, body }) => {
       const now = Date.now();
       timeline(number).push(commented(bot(ACTIONS_BOT), githubTime(now), body));
@@ -439,10 +477,12 @@ test('fresh activity removes lifecycle/stale', async (t) => {
       61: [
         acted('review_requested', account('gina'), '2026-09-01T10:00:00Z'),
         acted('labeled', bot(ACTIONS_BOT), '2026-10-01T06:20:00Z', { label: { name: 'lifecycle/stale' } }),
-        // A push: the only fresh event, and it has no actor.
+        // A push: the only fresh event. The timeline holds its commit, which
+        // has no actor; the run below is the push itself.
         committed('2026-10-21T10:00:00Z'),
       ],
     },
+    runs: { 61: [workflowRun(account('gina'), '2026-10-21T10:00:05Z')] },
   });
 
   await runNudge(github);
@@ -550,6 +590,80 @@ test('a new pull request with older commits is not idle', async (t) => {
   await runNudge(github);
 
   assert.deepEqual(writes(calls), []);
+});
+
+test('a push of old commits counts from when it was pushed', async (t) => {
+  clock(t, FRIDAY);
+  // Yesterday the author pushed a commit made on 2026-09-10. The timeline
+  // shows only the commit's date; the pull_request run shows the push.
+  const { github, calls } = fakeRepo({
+    pulls: [pull(201, { login: 'uma', requested: ['dmitsh'], labels: ['lifecycle/stale'] })],
+    timelines: {
+      201: [
+        commented(account('uma'), '2026-09-01T10:00:00Z', 'Rebased.'),
+        acted('labeled', bot(ACTIONS_BOT), '2026-10-01T06:20:00Z', { label: { name: 'lifecycle/stale' } }),
+        committed('2026-09-10T10:00:00Z'),
+      ],
+    },
+    runs: {
+      201: [
+        workflowRun(account('uma'), '2026-10-22T10:00:05Z'),
+        workflowRun(bot('copy-pr-bot[bot]'), '2026-10-22T10:01:00Z', { event: 'push' }),
+      ],
+    },
+  });
+
+  await runNudge(github);
+
+  assert.deepEqual(writes(calls), [
+    { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: 201, name: 'lifecycle/stale' } },
+  ]);
+  assert.deepEqual(
+    calls.filter(({ route }) => route === 'rest.actions.listWorkflowRunsForRepo').map(({ params }) => params),
+    [{ ...REPO, event: 'pull_request', head_sha: 'head201', per_page: 100, page: 1 }],
+  );
+});
+
+test('pushes by bots do not reset idleness', async (t) => {
+  clock(t, FRIDAY);
+  const { github, calls } = fakeRepo({
+    pulls: [pull(211, { login: 'vic', requested: ['dmitsh'] }), pull(212, { login: 'wes', requested: ['dmitsh'] })],
+    timelines: {
+      // Dependabot pushed its own commit, dated at the push.
+      211: [commented(account('vic'), '2026-10-16T10:00:00Z'), committed('2026-10-22T10:00:00Z', { author: DEPENDABOT_GIT, committer: WEB_FLOW_GIT })],
+      // A workflow pushed with GITHUB_TOKEN, as publish-fern-docs.yml does.
+      212: [commented(account('wes'), '2026-10-16T10:00:00Z'), committed('2026-10-22T10:00:00Z', { author: ACTIONS_GIT, committer: WEB_FLOW_GIT })],
+    },
+    // A GITHUB_TOKEN push starts runs that wait for approval, by
+    // github-actions[bot] (GitHub's "Events that trigger workflows").
+    runs: {
+      211: [workflowRun(bot('dependabot[bot]'), '2026-10-22T10:00:05Z')],
+      212: [workflowRun(bot(ACTIONS_BOT), '2026-10-22T10:00:05Z')],
+    },
+  });
+
+  await runNudge(github);
+
+  const posted = comments(calls);
+  assert.deepEqual(posted.map((c) => c.issue_number), [211, 212]);
+  for (const { body } of posted) assert.ok(body.endsWith(marker('2026-10-16T10:00:00.000Z')), body);
+});
+
+test('a pull_request workflow runs on every push, so each push leaves a run', () => {
+  // The pull-requests job dates pushes from these runs. Default activity
+  // types include synchronize; branch and path filters would skip pushes.
+  const dir = join(GITHUB_DIR, 'workflows');
+  const onEveryPush = readdirSync(dir)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .filter((name) => {
+      const { on } = loadWorkflow(join(dir, name));
+      if (on === 'pull_request' || (Array.isArray(on) && on.includes('pull_request'))) return true;
+      if (on === null || typeof on !== 'object' || !('pull_request' in on)) return false;
+      const trigger = on.pull_request ?? {};
+      const types = trigger.types ?? ['opened', 'synchronize', 'reopened'];
+      return types.includes('synchronize') && !['branches', 'branches-ignore', 'paths', 'paths-ignore'].some((key) => key in trigger);
+    });
+  assert.ok(onEveryPush.length > 0, 'no workflow runs on pull_request synchronize for every pull request');
 });
 
 test('exempt label is skipped', async (t) => {
@@ -765,7 +879,7 @@ test('runs daily and on demand, upstream only, with only the permissions each jo
   const jobs = Object.fromEntries(Object.entries(wf.jobs).map(([id, job]) => [id, { if: job.if, permissions: job.permissions }]));
   assert.deepEqual(jobs, {
     questions: { if: GUARD, permissions: { issues: 'write' } },
-    'pull-requests': { if: GUARD, permissions: { 'pull-requests': 'write' } },
+    'pull-requests': { if: GUARD, permissions: { actions: 'read', 'pull-requests': 'write' } },
     lock: { if: GUARD, permissions: { issues: 'write', 'pull-requests': 'write' } },
   });
 });
