@@ -321,9 +321,10 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
   adds an `area/*` label for each part of the repository a PR changes (the
   paths are in `.github/labeler.yml`) and one `size/*` label from its added
   plus deleted lines: `size/XS` under 10, `size/S` under 50, `size/M` under
-  200, `size/L` under 500, `size/XL` otherwise. It updates them on every push
-  and removes an `area/*` label once the PR no longer touches that area, even
-  one added by hand, so you do not need to label your PR.
+  200, `size/L` under 500, `size/XL` otherwise. It sets them when the PR is
+  opened or reopened, updates them on each push to the PR branch, and removes
+  an `area/*` label once the PR no longer touches that area, even one added
+  by hand, so you do not need to label your PR.
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)
