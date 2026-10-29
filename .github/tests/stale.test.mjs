@@ -336,6 +336,45 @@ test('dismissed review clears changes requested', async (t) => {
   ]);
 });
 
+test('re-requesting a review from the reviewer who requested changes waits on that reviewer', async (t) => {
+  clock(t, FRIDAY);
+  // GitHub drops a reviewer from requested_reviewers once they review, so
+  // dmitsh being listed after his changes request means the author asked him
+  // to review again.
+  const { github, calls } = fakeRepo({
+    pulls: [
+      pull(231, { login: 'zoe', requested: ['dmitsh'] }),
+      // ravisoundar's request still stands, so this one waits on its author.
+      pull(232, { login: 'abe', requested: ['dmitsh'] }),
+    ],
+    timelines: {
+      231: [
+        reviewed(account('dmitsh'), '2026-10-09T10:00:00Z', 'changes_requested'),
+        acted('review_requested', account('zoe'), '2026-10-16T10:00:00Z', { requested_reviewer: account('dmitsh') }),
+      ],
+      232: [
+        reviewed(account('ravisoundar'), '2026-10-08T10:00:00Z', 'changes_requested'),
+        reviewed(account('dmitsh'), '2026-10-09T09:00:00Z', 'changes_requested'),
+        acted('review_requested', account('abe'), '2026-10-09T10:00:00Z', { requested_reviewer: account('dmitsh') }),
+      ],
+    },
+    reviews: {
+      231: [review('dmitsh', 'CHANGES_REQUESTED', '2026-10-09T10:00:00Z')],
+      232: [review('ravisoundar', 'CHANGES_REQUESTED', '2026-10-08T10:00:00Z'), review('dmitsh', 'CHANGES_REQUESTED', '2026-10-09T09:00:00Z')],
+    },
+  });
+
+  await runNudge(github);
+
+  const posted = comments(calls);
+  assert.deepEqual(posted.map((c) => c.issue_number), [231, 232]);
+  assert.ok(posted[0].body.startsWith('@dmitsh this pull request has waited 5 business days for a review.'), posted[0].body);
+  assert.ok(
+    posted[1].body.startsWith('@abe a reviewer requested changes on this pull request, and it has had no activity for 14 days.'),
+    posted[1].body,
+  );
+});
+
 test('awaiting review at 5 business days across a weekend nudges the reviewer', async (t) => {
   clock(t, FRIDAY);
   const { github, calls } = fakeRepo({
