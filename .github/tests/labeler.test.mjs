@@ -113,37 +113,45 @@ function labelerGlobs(config) {
   );
 }
 
-// A fake GitHub whose pulls.get serves the pull request with `labels`, the
-// labels it has when the step runs. `routes` replaces individual handlers.
-function fakeGithub(labels, routes = {}) {
+// A fake GitHub whose pulls.get serves the pull request as it is when the
+// step runs: `additions` and `deletions` lines changed, carrying `labels`.
+// `routes` replaces individual handlers.
+function fakeGithub({ additions, deletions, labels }, routes = {}) {
   return recordingGithub({
-    'rest.pulls.get': ({ pull_number: number }) => ({ data: { number, labels: labels.map((name) => ({ name })) } }),
+    'rest.pulls.get': ({ pull_number: number }) => ({
+      data: { number, additions, deletions, labels: labels.map((name) => ({ name })) },
+    }),
     'rest.issues.addLabels': ({ labels: added }) => ({ data: [...labels, ...added].map((name) => ({ name })) }),
     'rest.issues.removeLabel': () => ({ data: [] }),
     ...routes,
   });
 }
 
-// Runs the size step against `github` for a pull request with these line
-// counts. `eventLabels` is the label list the event reported.
-async function runSizeStep(github, { additions, deletions, eventLabels }) {
+// Runs the size step against `github`. `event` is the pull request as the
+// event reported it: its line counts and labels.
+async function runSizeStep(github, event) {
   const { script } = extractStep(WORKFLOW, 'label', 'size');
   const { core } = fakeCore();
   const context = {
     repo: REPO,
     payload: {
-      pull_request: { number: NUMBER, additions, deletions, labels: eventLabels.map((name) => ({ name })) },
+      pull_request: {
+        number: NUMBER,
+        additions: event.additions,
+        deletions: event.deletions,
+        labels: event.labels.map((name) => ({ name })),
+      },
     },
   };
   await runGithubScript(script, { github, context, core });
 }
 
-// Runs the size step for a pull request that has `labels` when the step runs
-// and returns the API calls it made. By default the event reported the same
-// labels.
-async function runSize({ additions, deletions, labels = [], eventLabels = labels }) {
-  const { github, calls } = fakeGithub(labels);
-  await runSizeStep(github, { additions, deletions, eventLabels });
+// Runs the size step for a pull request that has these line counts and
+// `labels` when the step runs, and returns the API calls it made. `event`
+// overrides what the event reported; by default it reported the same.
+async function runSize({ additions, deletions, labels = [], event = {} }) {
+  const { github, calls } = fakeGithub({ additions, deletions, labels });
+  await runSizeStep(github, { additions, deletions, labels, ...event });
   return { calls };
 }
 
@@ -303,16 +311,43 @@ test('labels are read when the step runs, not from the event', async () => {
     additions: 100,
     deletions: 0,
     labels: ['size/M'],
-    eventLabels: ['size/S'],
+    event: { labels: ['size/S'] },
   });
 
   assert.deepEqual(writes(calls), []);
 });
 
+test('line counts are read when the step runs, not from the event', async () => {
+  // A re-run replays its original event, and runs for the same pull request
+  // need not start in event order, so the event's counts can be stale. Here
+  // the event saw 20 lines but the pull request has grown to 300 and already
+  // carries size/L; trusting the event would put size/S back.
+  const grown = await runSize({
+    additions: 280,
+    deletions: 20,
+    labels: ['size/L'],
+    event: { additions: 20, deletions: 0 },
+  });
+  assert.deepEqual(writes(grown.calls), []);
+
+  // The other way: the event saw 300 lines, the pull request is down to 20.
+  const shrunk = await runSize({
+    additions: 15,
+    deletions: 5,
+    labels: ['size/L'],
+    event: { additions: 300, deletions: 0 },
+  });
+  assert.deepEqual(writes(shrunk.calls), [
+    { route: 'rest.issues.addLabels', params: { ...REPO, issue_number: NUMBER, labels: ['size/S'] } },
+    { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: NUMBER, name: 'size/L' } },
+  ]);
+});
+
 test('missing size label surfaces as job failure', async () => {
   // A token holding only pull-requests: write cannot create a label, so
   // GitHub answers 403 when size/M does not exist.
-  const { github, calls } = fakeGithub(['size/S'], {
+  const pr = { additions: 100, deletions: 0, labels: ['size/S'] };
+  const { github, calls } = fakeGithub(pr, {
     'rest.issues.addLabels': () => {
       throw Object.assign(new Error('You do not have permission to create labels on this repository.'), {
         status: 403,
@@ -320,7 +355,7 @@ test('missing size label surfaces as job failure', async () => {
     },
   });
 
-  await assert.rejects(runSizeStep(github, { additions: 100, deletions: 0, eventLabels: ['size/S'] }), {
+  await assert.rejects(runSizeStep(github, pr), {
     status: 403,
     message: 'You do not have permission to create labels on this repository.',
   });
