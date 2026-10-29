@@ -30,12 +30,13 @@
 #
 # Who a pull request is waiting on: a draft, or one where a reviewer has
 # requested changes, waits on its author (reminded after 14 days). Any other
-# open pull request waits on its requested reviewers (reminded after 5
-# business days, Monday to Friday in UTC; holidays count as business days).
-# With no requested reviewer, the run logs it and comments nowhere. A
-# reviewer's state is their latest review that approves, requests changes or
-# was dismissed, as on GitHub: a commented review, which a reply in a review
-# thread is, leaves it as it was, and a dismissal clears a request.
+# open pull request waits on its requested reviewers and teams (reminded
+# after 5 business days, Monday to Friday in UTC; holidays count as business
+# days). With no reviewer or team requested, the run logs it and comments
+# nowhere. A reviewer's state is their latest review that approves, requests
+# changes or was dismissed, as on GitHub: a commented review, which a reply
+# in a review thread is, leaves it as it was, and a dismissal clears a
+# request.
 #
 # Idle time runs from the newest timeline event made by a person: comments,
 # reviews, force pushes, label changes and so on. Events by bots do not count,
@@ -259,7 +260,11 @@ jobs:
                       'Push an update or reply to the review when you are ready.';
                 }
               } else if (businessDays >= REVIEW_BUSINESS_DAYS) {
-                mentions = (pr.requested_reviewers ?? []).map((reviewer) => reviewer.login);
+                // A team is mentioned as @org/slug.
+                mentions = [
+                  ...(pr.requested_reviewers ?? []).map((reviewer) => reviewer.login),
+                  ...(pr.requested_teams ?? []).map((team) => `${owner}/${team.slug}`),
+                ];
                 if (mentions.length === 0) {
                   core.info(`#${number}: waiting ${businessDays} business days for review, but no reviewer is requested; no comment`);
                 } else {
