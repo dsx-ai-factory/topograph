@@ -54,10 +54,18 @@ function listedPullRequest(number, state = 'open') {
 
 // Runs the issue job's welcome step for issue `number`, opened by AUTHOR.
 // `pages` are the pages listForRepo serves for the author, page 1 first.
-async function runIssueWelcome({ number = ISSUE_NUMBER, association = 'NONE', type = 'User', pages = [[listedIssue(number)]] } = {}) {
+// `commentPages` are the pages listComments serves for the issue.
+async function runIssueWelcome({
+  number = ISSUE_NUMBER,
+  association = 'NONE',
+  type = 'User',
+  pages = [[listedIssue(number)]],
+  commentPages = [[]],
+} = {}) {
   const { script } = extractStep(WORKFLOW, 'issue', 'welcome');
   const { github, calls } = recordingGithub({
     'rest.issues.listForRepo': ({ page }) => ({ data: pages[page - 1] ?? [] }),
+    'rest.issues.listComments': ({ page }) => ({ data: commentPages[page - 1] ?? [] }),
     'rest.issues.createComment': ({ issue_number, body }) => ({ data: { id: 1, issue_number, body } }),
   });
   const { core } = fakeCore();
@@ -75,10 +83,12 @@ async function runIssueWelcome({ number = ISSUE_NUMBER, association = 'NONE', ty
 
 // Runs the pull-request job's welcome step for pull request PR_NUMBER.
 // `pages` are the pages listForRepo serves for the author, page 1 first.
-async function runPullRequestWelcome({ association, type = 'User', pages = [[listedPullRequest(PR_NUMBER)]] }) {
+// `commentPages` are the pages listComments serves for the pull request.
+async function runPullRequestWelcome({ association, type = 'User', pages = [[listedPullRequest(PR_NUMBER)]], commentPages = [[]] }) {
   const { script } = extractStep(WORKFLOW, 'pull-request', 'welcome');
   const { github, calls } = recordingGithub({
     'rest.issues.listForRepo': ({ page }) => ({ data: pages[page - 1] ?? [] }),
+    'rest.issues.listComments': ({ page }) => ({ data: commentPages[page - 1] ?? [] }),
     'rest.issues.createComment': ({ issue_number, body }) => ({ data: { id: 1, issue_number, body } }),
   });
   const { core } = fakeCore();
@@ -108,13 +118,20 @@ function onlyComment(calls, number) {
 // The listForRepo query for AUTHOR's items, as the step must send it.
 const LIST_QUERY = { owner: 'dsx-ai-factory', repo: 'topograph', creator: AUTHOR, state: 'all', per_page: 100 };
 
+// The listComments query for item `number`, as the step must send it.
+function commentsQuery(number) {
+  return { owner: 'dsx-ai-factory', repo: 'topograph', issue_number: number, per_page: 100 };
+}
+
+// The calls of a run that welcomes: list the author's items, list the item's
+// comments to find an earlier welcome, then post the welcome.
+const WELCOMED = ['rest.issues.listForRepo', 'rest.issues.listComments', 'rest.issues.createComment'];
+
 test('first issue is welcomed once', async () => {
   const calls = await runIssueWelcome();
-  assert.deepEqual(
-    calls.map(({ route }) => route),
-    ['rest.issues.listForRepo', 'rest.issues.createComment'],
-  );
+  assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
   assert.deepEqual(calls[0].params, { ...LIST_QUERY, page: 1 });
+  assert.deepEqual(calls[1].params, { ...commentsQuery(ISSUE_NUMBER), page: 1 });
   const body = onlyComment(calls, ISSUE_NUMBER);
   assert.ok(body.includes(ISSUE_FIRST_LINK), `no link to ${ISSUE_FIRST_LINK}:\n${body}`);
   assert.ok(body.includes('`/assign`'), `no /assign:\n${body}`);
@@ -142,10 +159,7 @@ test('issue author whose only other items are PRs is welcomed', async () => {
     association: 'CONTRIBUTOR',
     pages: [[listedPullRequest(9), listedIssue(ISSUE_NUMBER), listedPullRequest(3)]],
   });
-  assert.deepEqual(
-    calls.map(({ route }) => route),
-    ['rest.issues.listForRepo', 'rest.issues.createComment'],
-  );
+  assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
   assert.ok(onlyComment(calls, ISSUE_NUMBER).includes(ISSUE_FIRST_LINK));
 });
 
@@ -173,10 +187,7 @@ const TWO_QUICK_ISSUES = [[listedIssue(ISSUE_NUMBER + 1), listedIssue(ISSUE_NUMB
 
 test('two quick issues: the lower number is welcomed', async () => {
   const calls = await runIssueWelcome({ number: ISSUE_NUMBER, pages: TWO_QUICK_ISSUES });
-  assert.deepEqual(
-    calls.map(({ route }) => route),
-    ['rest.issues.listForRepo', 'rest.issues.createComment'],
-  );
+  assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
   assert.ok(onlyComment(calls, ISSUE_NUMBER).includes(ISSUE_FIRST_LINK));
 });
 
@@ -193,7 +204,8 @@ test('bot issue is not welcomed', async () => {
 
 test('first-time PR is welcomed', async () => {
   const calls = await runPullRequestWelcome({ association: 'FIRST_TIME_CONTRIBUTOR' });
-  assert.deepEqual(calls.map(({ route }) => route), ['rest.issues.listForRepo', 'rest.issues.createComment']);
+  assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
+  assert.deepEqual(calls[1].params, { ...commentsQuery(PR_NUMBER), page: 1 });
   const body = onlyComment(calls, PR_NUMBER);
   assert.ok(body.includes('5 business days'), `no turnaround target:\n${body}`);
   assert.ok(body.includes(TURNAROUND_LINK), `no link to ${TURNAROUND_LINK}:\n${body}`);
@@ -202,7 +214,7 @@ test('first-time PR is welcomed', async () => {
 test('brand-new GitHub user PR is welcomed', async () => {
   // FIRST_TIMER: the author has never committed anywhere on GitHub.
   const calls = await runPullRequestWelcome({ association: 'FIRST_TIMER' });
-  assert.deepEqual(calls.map(({ route }) => route), ['rest.issues.listForRepo', 'rest.issues.createComment']);
+  assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
   onlyComment(calls, PR_NUMBER);
 });
 
@@ -212,7 +224,7 @@ test('first PR is welcomed when the listing holds only that PR', async () => {
     pages: [[listedPullRequest(PR_NUMBER)]],
   });
   assert.deepEqual(calls[0], { route: 'rest.issues.listForRepo', params: { ...LIST_QUERY, page: 1 } });
-  assert.deepEqual(calls.map(({ route }) => route), ['rest.issues.listForRepo', 'rest.issues.createComment']);
+  assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
   onlyComment(calls, PR_NUMBER);
 });
 
@@ -241,7 +253,7 @@ test('earlier issues by the same author do not block the PR welcome', async () =
     pages: [[listedPullRequest(PR_NUMBER), listedIssue(12, 'closed'), listedIssue(7)]],
   });
   assert.deepEqual(calls[0], { route: 'rest.issues.listForRepo', params: { ...LIST_QUERY, page: 1 } });
-  assert.deepEqual(calls.map(({ route }) => route), ['rest.issues.listForRepo', 'rest.issues.createComment']);
+  assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
   onlyComment(calls, PR_NUMBER);
 });
 
@@ -287,8 +299,74 @@ test('welcome text has no emoji or em-dash', async () => {
   assert.deepEqual(bodies.filter((body) => banned.test(body)), []);
 });
 
-// "Comments once" rests on the triggers: neither script looks for an earlier
-// welcome, so a reopened, edited or synchronize run would post another one.
+// A rerun of a run, or of one of its jobs, gets the same event as the first
+// attempt, so the earlier-item checks pass again. Only the item's own
+// comments show that it was already welcomed. Each case runs against both
+// jobs; `run` takes the comment pages listComments serves.
+const JOBS = [
+  { label: 'issue', number: ISSUE_NUMBER, run: (commentPages) => runIssueWelcome({ commentPages }) },
+  {
+    label: 'PR',
+    number: PR_NUMBER,
+    run: (commentPages) => runPullRequestWelcome({ association: 'FIRST_TIME_CONTRIBUTOR', commentPages }),
+  },
+];
+
+// The account a workflow's GITHUB_TOKEN comments as.
+const ACTIONS_BOT = { login: 'github-actions[bot]', type: 'Bot' };
+
+// The welcome a first attempt posts, as listComments would return it.
+async function postedWelcome({ number, run }) {
+  return { id: 5001, user: ACTIONS_BOT, body: onlyComment(await run([[]]), number) };
+}
+
+for (const job of JOBS) {
+  test(`${job.label}: a rerun after the welcome posts nothing`, async () => {
+    const welcome = await postedWelcome(job);
+    const calls = await job.run([[welcome]]);
+    assert.equal(calls[0].route, 'rest.issues.listForRepo');
+    assert.deepEqual(calls.slice(1), [{ route: 'rest.issues.listComments', params: { ...commentsQuery(job.number), page: 1 } }]);
+  });
+
+  test(`${job.label}: a rerun finds the welcome on the second page of comments`, async () => {
+    const welcome = await postedWelcome(job);
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({
+      id: 6000 + i,
+      user: { login: 'coderabbitai[bot]', type: 'Bot' },
+      body: `Review note ${i}`,
+    }));
+    const calls = await job.run([firstPage, [welcome]]);
+    assert.deepEqual(calls.slice(1), [
+      { route: 'rest.issues.listComments', params: { ...commentsQuery(job.number), page: 1 } },
+      { route: 'rest.issues.listComments', params: { ...commentsQuery(job.number), page: 2 } },
+    ]);
+  });
+
+  test(`${job.label}: comments that are not a welcome do not stop it`, async () => {
+    // Another bot's comment, and two shapes the issue-comment schema
+    // allows: user null, and no body.
+    const calls = await job.run([
+      [
+        { id: 7001, user: { login: 'copy-pr-bot[bot]', type: 'Bot' }, body: 'This pull request requires additional validation.' },
+        { id: 7002, user: null, body: 'A comment from a deleted account.' },
+        { id: 7003, user: ACTIONS_BOT },
+      ],
+    ]);
+    assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
+    onlyComment(calls, job.number);
+  });
+
+  test(`${job.label}: a person's comment that quotes the welcome does not stop it`, async () => {
+    const welcome = await postedWelcome(job);
+    const calls = await job.run([[{ ...welcome, id: 7101, user: { login: AUTHOR, type: 'User' } }]]);
+    assert.deepEqual(calls.map(({ route }) => route), WELCOMED);
+    onlyComment(calls, job.number);
+  });
+}
+
+// The triggers keep each job to an item's first event. A reopened, edited or
+// synchronize run is a new event, not a rerun; the earlier-welcome check would
+// stop its comment, but the job has no reason to run at all.
 test('triggers are opened only', () => {
   const wf = loadWorkflow(WORKFLOW);
   assert.deepEqual(Object.keys(wf.on), ['issues', 'pull_request_target']);
