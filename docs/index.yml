@@ -44,6 +44,8 @@ navigation:
         path: providers/lambdai.md
       - page: InfiniBand
         path: providers/infiniband.md
+      - page: Nautobot
+        path: providers/nautobot.md
       - page: NetQ
         path: providers/netq.md
       - page: DRA

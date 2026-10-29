@@ -29,7 +29,8 @@ engine: slurm
 # processing only if no new requests arrive during the specified duration.
 requestAggregationDelay: 15s
 
-# pageSize: sets the page size for topology requests against a CSP API (optional).
+# pageSize: sets the page size for topology requests against provider APIs (optional).
+# Nautobot uses this as the GraphQL limit and advances offset between pages.
 # Non-positive values emit a warning and use the provider default.
 pageSize: 100
 

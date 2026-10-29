@@ -19,11 +19,13 @@ package server
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -31,6 +33,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/pkg/config"
 	"github.com/dsx-ai-factory/topograph/pkg/test"
@@ -710,4 +713,133 @@ func TestHttpServerStopIdempotent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestWriteResultResponseIsPlainText(t *testing.T) {
+	queue := NewTrailingDelayQueue(nil, time.Hour)
+	defer queue.Shutdown()
+	// Bodies that content sniffing would take for HTML.
+	queue.store.Add("done", &Completion{Status: http.StatusOK, Ret: []byte("<html><body>topology</body></html>")})
+	queue.store.Add("pending", &Completion{Status: http.StatusAccepted, Message: "<html>pending"})
+
+	saved := srv
+	defer func() { srv = saved }()
+	srv = &HttpServer{async: &asyncController{queue: queue}}
+
+	testCases := []struct {
+		uid    string
+		status int
+		body   string
+	}{
+		{uid: "done", status: http.StatusOK, body: "<html><body>topology</body></html>"},
+		{uid: "pending", status: http.StatusAccepted, body: "<html>pending"},
+		{uid: "<html>missing", status: http.StatusNotFound, body: "request ID <html>missing not found\n"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.uid, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			writeResultResponse(tc.uid, rec)
+			require.Equal(t, tc.status, rec.Code)
+			require.Equal(t, tc.body, rec.Body.String())
+			require.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
+			require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+		})
+	}
+}
+
+// captureKlog sends klog output to a buffer for the rest of the test.
+func captureKlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	klog.LogToStderr(false)
+	klog.SetOutput(&buf)
+	t.Cleanup(func() {
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	})
+	return &buf
+}
+
+func TestReadRequestRejectsWithoutLoggingClientInput(t *testing.T) {
+	srv = &HttpServer{cfg: &config.Config{}}
+	logs := captureKlog(t)
+	// At -v=4 so a verbose dump logged before validate would show up too.
+	setKlogVerbosity(t, "4")
+
+	// A provider name carrying a line break and a fake klog header.
+	payload := `{"provider":{"name":"test\nE1027 00:00:00.000000 1 forged.go:1] FORGED"},"engine":{"name":"slurm"}}`
+	r := &http.Request{Method: http.MethodPost, Body: io.NopCloser(strings.NewReader(payload))}
+	rec := httptest.NewRecorder()
+	require.Nil(t, readRequest(rec, r))
+	klog.Flush()
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.NotContains(t, logs.String(), "FORGED", "a rejected request is not logged")
+}
+
+func TestReadRequestVerboseDumpCannotForgeLines(t *testing.T) {
+	srv = &HttpServer{cfg: &config.Config{}}
+	logs := captureKlog(t)
+	setKlogVerbosity(t, "4")
+
+	// A valid request whose engine parameter carries a line break and a fake
+	// klog header.
+	payload := `{"provider":{"name":"test"},"engine":{"name":"slurm","params":{"plugin":"x\nE1027 00:00:00.000000 1 forged.go:1] FORGED"}}}`
+	r := &http.Request{Method: http.MethodPost, Body: io.NopCloser(strings.NewReader(payload))}
+	require.NotNil(t, readRequest(httptest.NewRecorder(), r))
+	klog.Flush()
+
+	// Each physical line is a klog entry or an indented line of the dump, and
+	// the forged text stays on its parameter's line.
+	header := regexp.MustCompile(`^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d{6} +\d+ [^ ]+:\d+\] `)
+	forged := 0
+	for _, line := range strings.Split(strings.TrimSuffix(logs.String(), "\n"), "\n") {
+		require.False(t, strings.HasPrefix(line, "E1027"), "client input started a log line: %q", line)
+		if !strings.HasPrefix(line, "  ") {
+			require.Regexp(t, header, line)
+		}
+		if strings.Contains(line, "FORGED") {
+			forged++
+			require.True(t, strings.HasPrefix(line, "  Parameters: [plugin:x\\nE1027"), "unexpected line: %q", line)
+		}
+	}
+	require.Equal(t, 1, forged, "the verbose dump logs the parameter once")
+}
+
+// setKlogVerbosity sets klog's -v for the rest of the test.
+func setKlogVerbosity(t *testing.T, level string) {
+	t.Helper()
+	fs := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(fs)
+	require.NoError(t, fs.Set("v", level))
+	t.Cleanup(func() { _ = fs.Set("v", "0") })
+}
+
+func TestReadRequestLogsSummaryAtDefaultVerbosity(t *testing.T) {
+	srv = &HttpServer{cfg: &config.Config{}}
+	logs := captureKlog(t)
+
+	payload := `{"provider":{"name":"test"},"engine":{"name":"slurm"},` +
+		`"nodes":[{"region":"r1","instances":{"i1":"n1","i2":"n2"}},{"region":"r2","instances":{"i3":"n3"}}]}`
+	r := &http.Request{Method: http.MethodPost, Body: io.NopCloser(strings.NewReader(payload))}
+	_ = readRequest(httptest.NewRecorder(), r)
+	klog.Flush()
+
+	require.Contains(t, logs.String(), `"Topology request" provider="test" engine="slurm" regions=2 nodes=3`)
+	require.NotContains(t, logs.String(), "TopologyRequest:", "the full request is only logged at verbosity 4")
+}
+
+func TestWriteResultResponseRejectsUnexpectedResultType(t *testing.T) {
+	queue := NewTrailingDelayQueue(nil, time.Hour)
+	defer queue.Shutdown()
+	queue.store.Add("done", &Completion{Status: http.StatusOK, Ret: "not bytes"})
+
+	saved := srv
+	defer func() { srv = saved }()
+	srv = &HttpServer{async: &asyncController{queue: queue}}
+
+	rec := httptest.NewRecorder()
+	require.NotPanics(t, func() { writeResultResponse("done", rec) })
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "request ID done has an unexpected result type string\n", rec.Body.String())
 }

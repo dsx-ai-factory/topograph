@@ -11,7 +11,6 @@ contributors. For architecture and the provider/engine boundary, see
 git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 make build                    # produces bin/topograph, bin/node-observer, bin/node-data-broker, bin/kwok-nodes
-git fetch origin main:master  # make lint needs a local `master` ref — see "Local Test Loop" below
 make qualify                  # fmt + vet + lint + test — run this before every push
 ```
 
@@ -43,30 +42,18 @@ make clean                  # remove bin/
 ```bash
 make fmt        # go fmt ./...
 make vet        # go vet ./...
-make lint       # golangci-lint run --new-from-rev, computed from a local `master` ref
+make lint       # golangci-lint run --new-from-rev, computed from origin `main` ref
 make test       # go test -race -coverprofile=coverage.out ./...
 make coverage   # human-readable per-package summary (runs test first)
 make qualify    # fmt + vet + lint + test, in that order — run this before pushing
 ```
 
-`make lint` computes its diff base from a local `master` ref
-(`git rev-list master.. --count`), but this repo's default branch is `main`
-— a fresh clone has no local `master` and the target fails with a revision
-error. Work around it by syncing a local `master` ref to `origin/main`
-before running `make lint` or `make qualify`. Keep this ref as a
-lint-only bookkeeping branch — don't check it out or commit on it:
+`make lint` requires the local `origin/main` remote-tracking reference. If it
+is missing, the target stops before running the linter and prints a recovery
+command:
 
 ```bash
-git fetch origin main:master
-```
-
-This only works while `master` isn't checked out and hasn't diverged from
-`origin/main` (git fetch won't fetch into your current branch, and refuses
-a non-fast-forward update). If it fails for either reason, switch off
-`master` first, then reset it directly instead of fetching into it:
-
-```bash
-git branch -f master origin/main
+git fetch origin main:refs/remotes/origin/main
 ```
 
 Run a single package's tests directly with the standard Go toolchain while
@@ -219,12 +206,11 @@ underlying tools with CI-specific flags, which are close to but not
 identical to the local `make` targets.
 
 Pull request checks run on the `pull-request/<n>` branch that copy-pr-bot
-pushes for each PR; the first three also run on `main`:
+pushes for each PR; the first four also run on `main`:
 
 - `.github/workflows/go.yml`: build; `go test -v -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...`
   (coverage-instrumented, but _without_ `-race`, unlike `make test`);
-  golangci-lint through `golangci/golangci-lint-action` (not `make lint`, so
-  it isn't affected by the local `master`-ref issue above); `make vet`; a
+  golangci-lint through `golangci/golangci-lint-action`; `make vet`; a
   `go fmt` check; and `govulncheck ./...`
 - `.github/workflows/license-scan.yml`: `go-licenses check ./...` against
   the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list, and
@@ -233,6 +219,10 @@ pushes for each PR; the first three also run on `main`:
   weekly and on demand so zizmor's online audits catch new advisories
   against pinned actions. actionlint fails the run on any finding; zizmor
   uploads its security findings to code scanning without failing the run
+- `.github/workflows/workflow-tests.yaml`: when `.github/**` changes, plus on
+  demand, `node --test '.github/tests/**/*.test.mjs'`: unit tests for the
+  scripts inside workflows, the security rules every workflow keeps, and the
+  check that every label a form or workflow applies is in `.github/labels.yml`
 - `.github/workflows/chart-test.yaml`: `make chart-test`
 - `.github/workflows/k8s-test.yaml`: Kubernetes integration tests (kind +
   KWOK); can also be run manually
@@ -243,6 +233,11 @@ pushes for each PR; the first three also run on `main`:
 - `.github/workflows/fern-docs-preview-build.yml` and
   `.github/workflows/fern-docs-preview-comment.yml`: build a Fern docs
   preview when `docs/` or `fern/` changes and post its link on the PR
+
+`.github/workflows/pr-title.yaml` runs on the pull request itself rather than
+on the `pull-request/<n>` branch, since it reads only the title: it checks that
+the title follows the Conventional Commits format in `CONTRIBUTING.md`. It has
+no local equivalent.
 
 Release and maintenance workflows:
 
@@ -282,6 +277,15 @@ would otherwise fail the run:
 ```bash
 actionlint -shellcheck= -pyflakes=
 GH_TOKEN="$(gh auth token)" zizmor --no-exit-codes .
+```
+
+To run the workflow tests as CI does, run this from the repository root. It
+needs Node 22 or later, the version on `ubuntu-latest`, and
+[yq](https://github.com/mikefarah/yq) v4 on `PATH`; no npm install is needed.
+Keep the glob quoted so that Node expands it, not the shell:
+
+```bash
+node --test '.github/tests/**/*.test.mjs'
 ```
 
 `make qualify` and `make chart-test` (when charts changed) passing locally

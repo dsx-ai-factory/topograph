@@ -9,6 +9,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - License headers: `make license-headers` adds NVIDIA's standard SPDX and Apache 2.0 header to files that have none, and `make license-header-check`, run by `license-scan.yml`, fails on any file without a copyright or license header. Files that had no header now carry one.
+- Nautobot provider (`nautobot`) discovers switch fabric topology through the GraphQL API, with required `endpoint`, compute `deviceRole`, and `switchRoles` parameters, optional `location` and `platform` filters, status filters, and required `creds.token` authentication. Switch queries paginate using the configured `pageSize` (default `100`). Discovery starts at selected switches, collects compute endpoints from cable peers, follows connected switches outside the initial location and platform filters to infer fabric tiers, and groups redundant switches into a scheduler tree. Attached compute endpoints can also be in other locations or use other platforms. Duplicate device IDs and switch names fail with HTTP 502 identifying the conflicts; switch-name errors include both device UUIDs. Devices missing an ID or name are skipped with a warning. Oversized pages log a warning and advance the offset by the actual number of returned devices, including skipped records. Transport failures return HTTP 502 with the underlying error.
+- `workflow-tests.yaml` runs unit tests for the scripts inside GitHub workflows.
+- `conflict-check.yaml` adds the `needs-rebase` label to open pull requests that no longer merge cleanly into `main`, comments once to ask the author to resolve the conflicts, and removes the label once the pull request merges cleanly again. It runs after every push to `main`.
+
+### Changed
+
+- The issue template chooser no longer offers blank issues, and its links now point to NVIDIA PSIRT for security reports, `docs/community.md` for questions, and the documentation site. The feature request form applies `enhancement` instead of `feature request`, both documentation forms apply `documentation` instead of `doc`, a new Question form applies `question`, and every form also applies `needs-triage`.
+
+### Removed
+
+- The Markdown issue templates `documentation-request.md` and `submit-question.md`. The two documentation forms and the Question form replace them.
+
+### Fixed
+
+- `GET /v1/topology` responses now carry `Content-Type: text/plain; charset=utf-8` and `X-Content-Type-Options: nosniff` for completed and pending requests, as error responses already did, instead of leaving the content type to sniffing. A result of an unexpected type returns HTTP 500 instead of panicking the handler.
+- The API server now logs a one-line summary of each accepted topology request (provider, engine, region and node counts) instead of every request in full, which lists every node; the full request is logged at verbosity 4. Line breaks in client input can no longer start new log entries: the full request escapes them in each value, and the outbound request URL logged at verbosity 4 is quoted.
+- Helm node-observer's `generateTopologyUrl` now prints an integer `service.port` as a number. An integer port, such as `--set service.port=8080`, previously produced an invalid URL ending in `:%!f(int64=8080)/v1/generate`.
 
 ## [v1.1.0] - 2026-10-23
 

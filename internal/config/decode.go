@@ -166,11 +166,11 @@ func DecodeTime(dataString string) (time.Time, error) {
 	return t, invalidError(err, "time", dataString)
 }
 
-func decodeOther(t reflect.Type,
-	data any, dataString string) (any, error) {
+func decodeOther(t reflect.Type, data any, dataString string) (any, error) {
 	switch t.Kind() { // nolint: exhaustive
 	case reflect.Uint:
-		val, err := strconv.ParseUint(dataString, 10, 64)
+		// Bit size 0 is the platform's uint size, so the conversion cannot overflow.
+		val, err := strconv.ParseUint(dataString, 10, 0)
 
 		return uint(val), invalidError(err, "uint", dataString)
 	case reflect.Uint64:
@@ -191,7 +191,8 @@ func decodeOther(t reflect.Type,
 		return uint8(val), invalidError(err, "uint8", dataString)
 
 	case reflect.Int:
-		val, err := strconv.ParseInt(dataString, 10, 64)
+		// Bit size 0 is the platform's int size, so the conversion cannot overflow.
+		val, err := strconv.ParseInt(dataString, 10, 0)
 
 		return int(val), invalidError(err, "int", dataString)
 	case reflect.Int64:

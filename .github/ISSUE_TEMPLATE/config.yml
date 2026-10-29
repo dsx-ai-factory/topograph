@@ -15,12 +15,18 @@
 
 # GitHub info on config.yml
 # https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository#configuring-the-template-chooser
-# Set to 'false' if you only want the templates to be used. 
-blank_issues_enabled: true
+# Blank issues are off, so every issue starts from a form and gets its labels.
+blank_issues_enabled: false
 
-# When using discussions instead of Question issue templates,
-# link that below to have it show up in the 'Submit Issue' page
+# Links shown in the chooser beside the forms. .github/tests/issue-templates.test.mjs
+# pins their names, URLs and order.
 contact_links:
-  - name: Ask a Question
-    url: https://github.com/jarmak-nv/rapids-repo-template/discussions
-    about: Please ask any questions here.
+  - name: Report a security vulnerability
+    url: https://www.nvidia.com/object/submit-security-vulnerability.html
+    about: Report it privately to NVIDIA PSIRT (this form or psirt@nvidia.com), as SECURITY.md describes. It is not a GitHub issue.
+  - name: Ask a question
+    url: https://github.com/dsx-ai-factory/topograph/blob/main/docs/community.md
+    about: Ask in the community Slack channels. Use the Question form for a question that needs an answer on record.
+  - name: Read the documentation
+    url: https://docs.nvidia.com/topograph
+    about: Guides for each provider and engine, the API, and the node label reference.

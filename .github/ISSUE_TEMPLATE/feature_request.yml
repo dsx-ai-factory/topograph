@@ -16,7 +16,7 @@
 name: Feature Request
 description: Suggest a new feature or enhancement
 title: "[FEA]: "
-labels: ["feature request"]
+labels: ["enhancement", "needs-triage"]
 
 body:
   - type: checkboxes

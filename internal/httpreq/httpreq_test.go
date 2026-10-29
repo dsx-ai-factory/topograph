@@ -6,13 +6,18 @@
 package httpreq
 
 import (
+	"bytes"
 	"context"
+	"flag"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 )
@@ -384,5 +389,37 @@ func TestGetNextBackoff(t *testing.T) {
 			correct := tc.check(wait)
 			require.True(t, correct)
 		})
+	}
+}
+
+func TestDoRequestLogCannotForgeLines(t *testing.T) {
+	// DoRequest logs the URL at verbosity 4.
+	var buf bytes.Buffer
+	flags := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(flags)
+	require.NoError(t, flags.Set("v", "4"))
+	klog.LogToStderr(false)
+	klog.SetOutput(&buf)
+	t.Cleanup(func() {
+		require.NoError(t, flags.Set("v", "0"))
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	})
+
+	// url.URL.String() escapes the path and host but writes RawQuery as is.
+	f := func() (*http.Request, *httperr.Error) {
+		req, e := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:1/topology", nil)
+		if e != nil {
+			return nil, httperr.NewError(http.StatusInternalServerError, e.Error())
+		}
+		req.URL.RawQuery = "page=1\nE1027 00:00:00.000000 1 forged.go:1] FORGED"
+		return req, nil
+	}
+	_, _, _ = DoRequest(f, false)
+	klog.Flush()
+
+	require.Contains(t, buf.String(), "FORGED", "the URL is still logged")
+	for _, line := range strings.Split(buf.String(), "\n") {
+		require.False(t, strings.HasPrefix(line, "E1027"), "the URL started a log line: %q", line)
 	}
 }

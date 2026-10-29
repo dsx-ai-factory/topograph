@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Runs the unit tests for the scripts inside these workflows whenever anything
+# under .github/ changes. The tests live in .github/tests/ and run with Node's
+# built-in test runner: .github/tests/lib/harness.mjs pulls a step's script out
+# of a workflow file with yq and runs it against a recorded fake of the GitHub
+# API, so no test calls GitHub or needs a token. The same run checks the
+# security rules every workflow keeps (security-invariants.test.mjs) and that
+# every label a form or workflow applies is declared in .github/labels.yml
+# (labels.test.mjs).
+#
+# Node and yq (mikefarah v4) ship on the ubuntu-latest image, so the job
+# installs nothing. The test glob is quoted so that Node expands it, not the
+# shell. The node --version step records which Node ran the tests.
+
+name: Workflow Tests
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - '.github/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  node-test:
+    name: workflow tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Clone the repository.
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Node version
+        run: node --version
+
+      - name: Run workflow tests
+        run: node --test '.github/tests/**/*.test.mjs'

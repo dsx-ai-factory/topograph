@@ -122,7 +122,11 @@ vet:
 
 .PHONY: lint
 lint:
-	$(LINTER_BIN) run --new-from-rev "HEAD~$(git rev-list master.. --count)" ./...
+	@base=$$(git merge-base HEAD refs/remotes/origin/main) || { \
+	  echo "error: cannot determine lint base from origin/main; ensure the reference exists: git fetch origin main:refs/remotes/origin/main" >&2; \
+	  exit 1; \
+	}; \
+	$(LINTER_BIN) run --new-from-rev "$$base" ./...
 
 .PHONY: qualify
 qualify: fmt vet lint test

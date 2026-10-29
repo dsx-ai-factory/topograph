@@ -51,12 +51,15 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 | [Nscale](./providers/nscale.md) | `nscale` | `nscale-sim` |
 | [Lambda](./providers/lambdai.md) | `lambdai` | `lambdai-sim` |
 | [NVIDIA NetQ](./providers/netq.md) | `netq` | — |
+| [Nautobot](./providers/nautobot.md) | `nautobot` | — |
 | [NVIDIA NVLink partitions from Kubernetes Node labels](./providers/dra.md) | `dra` | — |
 | [InfiniBand](./providers/infiniband.md) | `infiniband-bm` (bare metal), `infiniband-k8s` (Kubernetes) | [`infiniband-sim`](./providers/infiniband.md#infiniband-sim-offline-simulation) |
 | [DSX topology model](./modeling.md#provider-simulations) | — | `dsx-sim` |
 | [Topograph API lifecycle testing](./providers/test.md) | `test` | — (the provider itself simulates success, pending, and error responses) |
 
 An em dash (—) indicates that no corresponding provider variant is registered.
+
+Use [Nautobot](./providers/nautobot.md) when fabric cabling is inventoried in Nautobot; switch roles, locations, and platforms select the initial fabric switches, and compute roles identify their attached endpoints. Connected switches are followed beyond the location and platform filters. Switch names must be unique throughout the discovered fabric.
 
 Currently supported engines:
 

@@ -241,6 +241,10 @@ package or area touched (e.g. `feat(provider/crusoe): ...`,
 under about 70 characters — it's what shows up in `git log --oneline` and in
 the PR list.
 
+Pull requests are squash merged, and the squash commit takes the pull request
+title as its subject, so the title must follow the same format. The `PR title`
+check (`pr-title.yaml`) fails until it does, and editing the title re-runs it.
+
 Examples:
 
 ```gitcommit
@@ -307,8 +311,12 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
 
 - **Automated** — Go build/test/lint/`govulncheck` (`go.yml`), Helm chart
   lint/unittest (`chart-test.yaml`), Codecov patch/project coverage, and the
-  DCO bot all run on every push to the PR, and workflow lint
-  (`workflow-lint.yaml`: actionlint and zizmor) runs when `.github/` changes.
+  DCO bot all run on every push to the PR. When `.github/` changes, workflow
+  lint (`workflow-lint.yaml`: actionlint and zizmor) and workflow tests
+  (`workflow-tests.yaml`: unit tests for the scripts inside workflows, the
+  workflow security rules, and the label list in `.github/labels.yml`) run too.
+  The `PR title` check (`pr-title.yaml`) runs when the PR is opened, pushed
+  to, or edited.
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)
@@ -337,6 +345,13 @@ If you haven't heard anything after 5 business days:
    the PR thread goes quiet.
 3. For a stalled issue rather than a PR, check the
    [Topograph roadmap](https://github.com/orgs/dsx-ai-factory/projects/6) to see if it's already being tracked there.
+
+If your PR stops merging cleanly into `main`, the Merge Conflict Check
+workflow (`conflict-check.yaml`) adds the `needs-rebase` label and comments
+once to ask you to resolve the conflicts. Rebase onto the latest `main`, or
+merge `main` into your branch, and push. The check runs after every push to
+`main`, so the label comes off on the first run that finds the PR merges
+cleanly, not when you push the fix. Draft PRs are not checked.
 
 Keep the PR in draft while you're still reshaping it — draft PRs don't page
 reviewers, so that's the cheapest phase to rework history or force-push in.
