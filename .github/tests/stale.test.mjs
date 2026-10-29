@@ -115,7 +115,10 @@ function review(login, state, submittedAt) {
 }
 
 // One open pull request as pulls.list returns it.
-function pull(number, { login = `author${number}`, draft = false, requested = [], labels = [], created = '2026-08-01T09:00:00Z' } = {}) {
+function pull(
+  number,
+  { login = `author${number}`, draft = false, requested = [], teams = [], labels = [], created = '2026-08-01T09:00:00Z' } = {},
+) {
   return {
     number,
     draft,
@@ -123,7 +126,7 @@ function pull(number, { login = `author${number}`, draft = false, requested = []
     created_at: created,
     head: { sha: `head${number}` },
     requested_reviewers: requested.map((reviewer) => account(reviewer)),
-    requested_teams: [],
+    requested_teams: teams.map((slug) => ({ name: slug, slug })),
     labels: labels.map((name) => ({ name })),
   };
 }
@@ -398,6 +401,30 @@ test('awaiting review with no requested reviewer logs and does not comment', asy
     log.info.includes('#33: waiting 5 business days for review, but no reviewer is requested; no comment'),
     log.info.join('\n'),
   );
+});
+
+test('a review requested from a team reminds the team', async (t) => {
+  clock(t, FRIDAY);
+  const { github, calls } = fakeRepo({
+    pulls: [
+      pull(221, { login: 'xena', teams: ['topograph-reviewers'] }),
+      pull(222, { login: 'yuri', requested: ['dmitsh'], teams: ['topograph-reviewers'] }),
+    ],
+    timelines: {
+      221: [commented(account('xena'), '2026-10-16T10:00:00Z')],
+      222: [commented(account('yuri'), '2026-10-16T10:00:00Z')],
+    },
+  });
+
+  await runNudge(github);
+
+  const posted = comments(calls);
+  assert.deepEqual(posted.map((c) => c.issue_number), [221, 222]);
+  assert.ok(
+    posted[0].body.startsWith('@dsx-ai-factory/topograph-reviewers this pull request has waited 5 business days for a review.'),
+    posted[0].body,
+  );
+  assert.ok(posted[1].body.startsWith('@dmitsh @dsx-ai-factory/topograph-reviewers this pull request has waited'), posted[1].body);
 });
 
 test('draft nudges the author only', async (t) => {
