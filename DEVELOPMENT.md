@@ -87,19 +87,17 @@ make mod        # go mod tidy
 
 ```bash
 make license-headers       # add the standard license header to files that have none
-make license-header-check  # list files without a header, or with a non-standard one; CI runs this
+make license-header-check  # list files without a header, or with an older NVIDIA one; CI runs this
 ```
 
 Both run [addlicense](https://github.com/google/addlicense) at a pinned
 version through `go run`, over the files git tracks plus new files it does not
 ignore, so a new file is covered before you `git add` it. The header
-text is `scripts/license-header.tmpl`. `make license-header-check` then runs
-`scripts/license-header-check.sh`, which fails on an NVIDIA header that is not
-that template line for line (any year or year range, any comment prefix) and
-checks the Helm `.tpl` files and `NOTES.txt` that addlicense does not read.
-`make license-headers` skips Helm
+text is `scripts/license-header.tmpl`. `make license-headers` skips Helm
 templates (`charts/topograph/templates/`), which take the header by hand as a
-`{{- /* ... */ -}}` comment so it does not render into the manifest.
+`{{- /* ... */ -}}` comment so it does not render into the manifest. addlicense
+does not read `.tpl` files or `NOTES.txt`, so the check requires that comment to
+open them.
 
 The header is NVIDIA's combined SPDX and Apache 2.0 notice. Its year is the
 year the file was created: `make license-headers` uses the current year, which
@@ -107,9 +105,10 @@ is right for new files. When adding a header to an older file by hand, use the
 year of its first commit (`git log --diff-filter=A --format=%ad -- <file>`).
 NVIDIA's copyright guidance warns against post-dating a notice.
 
-The check also fails on an NVIDIA header in another form, such as the older
-`Copyright <year> NVIDIA CORPORATION` block. Replace it with the standard
-header and keep its year or year range. A header naming another copyright
+addlicense accepts any existing copyright header, so the check also fails on
+the two older NVIDIA forms: the `Copyright <year> NVIDIA CORPORATION` block and
+the long Apache 2.0 boilerplate with `Copyright (c) <year>, NVIDIA CORPORATION.`.
+Replace such a header with the standard one and keep its year or year range. A header naming another copyright
 holder is left as its author wrote it.
 
 ## Running a Binary Locally

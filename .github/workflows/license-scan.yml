@@ -27,8 +27,8 @@
 # copyleft (GPL, LGPL, AGPL) are absent on purpose.
 #
 # The license-headers job runs `make license-header-check`, which fails when a
-# tracked file has no copyright or license header, or has an NVIDIA header that
-# is not the standard form. `make license-headers` adds the standard NVIDIA
+# tracked file has no copyright or license header, or has an NVIDIA header in
+# one of the two older forms. `make license-headers` adds the standard NVIDIA
 # license header to files that have none.
 
 name: License Scan

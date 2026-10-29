@@ -139,29 +139,41 @@ mod:
 
 # License headers, through addlicense at a pinned version. New headers use the
 # standard NVIDIA SPDX and Apache 2.0 notice in scripts/license-header.tmpl.
-# The check runs addlicense for headers that are missing, then
-# scripts/license-header-check.sh, which fails on an NVIDIA header that is not
-# that template and checks the Helm .tpl files and NOTES.txt addlicense skips.
+# addlicense accepts any existing copyright header, so the check also rejects
+# the two older NVIDIA forms (`Copyright <year> NVIDIA CORPORATION` and the long
+# Apache block with `Copyright (c) <year>, NVIDIA CORPORATION.`) in a file's
+# first lines.
 # Files are listed through git, so untracked trees such as localdev/ and other
 # worktrees are never walked; `grep -zv '/$$'` drops nested repositories, which
-# git lists as directories. Names are NUL-separated so a path with a space
-# stays one argument. vendor/, testdata/ and the helm-unittest snapshots
-# are skipped. Helm templates are skipped by license-headers only: a `#` header
-# renders into the manifest, so they carry a {{/* */}} header added by hand,
-# which the check still recognizes.
+# git lists as directories. Names are NUL-separated so a path with a space stays
+# one argument. Nothing else is excluded: fixtures and snapshots are file types
+# addlicense does not read, and they hold no NVIDIA header.
+# Helm templates are skipped by license-headers: a `#` header renders into the
+# manifest, so they carry a {{- /* */ -}} header added by hand. addlicense does
+# not read .tpl files or NOTES.txt, so the check requires that header to open
+# them.
 ADDLICENSE ?= go run github.com/google/addlicense@v1.2.0
 LICENSE_HEADER_FILES = git ls-files -z --cached --others --exclude-standard | grep -zv '/$$'
-LICENSE_HEADER_IGNORE := -ignore 'vendor/**' -ignore '**/testdata/**' -ignore '**/__snapshot__/**'
+LICENSE_HEADER_OLD = /Copyright (\(c\) )?[0-9][0-9][0-9][0-9](-[0-9][0-9][0-9][0-9])?,? NVIDIA CORPORATION([.]|$$)/
 
 .PHONY: license-headers
 license-headers:
 	$(LICENSE_HEADER_FILES) | xargs -0 $(ADDLICENSE) -f scripts/license-header.tmpl \
-	  $(LICENSE_HEADER_IGNORE) -ignore 'charts/topograph/templates/**'
+	  -ignore 'charts/topograph/templates/**'
 
 .PHONY: license-header-check
 license-header-check:
-	$(LICENSE_HEADER_FILES) | xargs -0 $(ADDLICENSE) -check $(LICENSE_HEADER_IGNORE)
-	$(LICENSE_HEADER_FILES) | scripts/license-header-check.sh
+	$(LICENSE_HEADER_FILES) | xargs -0 $(ADDLICENSE) -check
+	@old=$$($(LICENSE_HEADER_FILES) | LC_ALL=C xargs -0 -r awk \
+	  'FNR > 5 { nextfile } $(LICENSE_HEADER_OLD) { print FILENAME; nextfile }') || exit 1; \
+	if [ -n "$$old" ]; then \
+	  echo "NVIDIA license header in an older form; replace it with scripts/license-header.tmpl, keeping its year:"; \
+	  echo "$$old"; exit 1; fi
+	@missing=$$($(LICENSE_HEADER_FILES) | grep -z -E '^charts/.*[.](tpl|txt)$$' | LC_ALL=C xargs -0 -r awk \
+	  'FNR > 2 { nextfile } (FNR == 1 && !/^[{][{]-? *\/[*]/) || (FNR == 2 && !/Copyright/) { print FILENAME; nextfile }') || exit 1; \
+	if [ -n "$$missing" ]; then \
+	  echo "Helm template without a leading {{- /* */ -}} license header:"; \
+	  echo "$$missing"; exit 1; fi
 
 .PHONY: coverage
 coverage: test
