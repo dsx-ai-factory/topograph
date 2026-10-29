@@ -36,7 +36,8 @@
 # nowhere. A reviewer's state is their latest review that approves, requests
 # changes or was dismissed, as on GitHub: a commented review, which a reply
 # in a review thread is, leaves it as it was, and a dismissal clears a
-# request.
+# request. Unlike GitHub's review state, a request for changes also stops
+# counting once the author asks that reviewer to review again.
 #
 # Idle time runs from the newest timeline event made by a person: comments,
 # reviews, force pushes, label changes and so on. Events by bots do not count,
@@ -196,13 +197,17 @@ jobs:
             // was, and a dismissed review clears a request, which matches
             // GitHub's review:changes_requested search. Reviews come oldest
             // first, so the last such review per reviewer is their latest.
+            // A request from a reviewer listed in `requested` does not count:
+            // GitHub drops a reviewer from requested_reviewers when they
+            // submit a review, so one listed there was asked to review again
+            // and the pull request now waits on them.
             const REVIEW_DECISIONS = ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'];
-            function changesRequested(reviews) {
+            function changesRequested(reviews, requested) {
               const latest = new Map();
               for (const review of reviews) {
                 if (REVIEW_DECISIONS.includes(review.state)) latest.set(review.user?.login, review.state);
               }
-              return [...latest.values()].includes('CHANGES_REQUESTED');
+              return [...latest].some(([login, state]) => state === 'CHANGES_REQUESTED' && !requested.has(login));
             }
 
             const pulls = await github.paginate(github.rest.pulls.list, {
@@ -246,6 +251,7 @@ jobs:
                     pull_number: number,
                     per_page: 100,
                   }),
+                  new Set((pr.requested_reviewers ?? []).map((reviewer) => reviewer.login)),
                 );
 
               let mentions = [];
