@@ -91,8 +91,8 @@ make license-header-check  # list files without a header, or with an older NVIDI
 ```
 
 Both run [addlicense](https://github.com/google/addlicense) at a pinned
-version through `go run`, over the files git tracks plus new files it does not
-ignore, so a new file is covered before you `git add` it. The header
+version through `go run`, over the files git tracks, so `git add` a new file
+before running them. The header
 text is `scripts/license-header.tmpl`. `make license-headers` skips Helm
 templates (`charts/topograph/templates/`), which take the header by hand as a
 `{{- /* ... */ -}}` comment so it does not render into the manifest. addlicense
