@@ -24,10 +24,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/dsx-ai-factory/topograph/pkg/providers/akamai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
@@ -223,6 +226,48 @@ func TestGetAnnotationsNscaleDispatch(t *testing.T) {
 		topology.KeyNodeInstance: "srv-1",
 		topology.KeyNodeRegion:   "region-a",
 	}, annotations)
+}
+
+func TestApplyAkamaiAnnotations(t *testing.T) {
+	for _, valid := range []bool{true, false} {
+		t.Run(map[bool]string{true: "complete metadata", false: "incomplete metadata"}[valid], func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/token" {
+					assert.Equal(t, http.MethodPut, r.Method)
+					_, _ = w.Write([]byte("fake-local-token"))
+					return
+				}
+				assert.Equal(t, "/v1/instance", r.URL.Path)
+				assert.Equal(t, "fake-local-token", r.Header.Get("Metadata-Token"))
+				assert.Equal(t, "application/json", r.Header.Get("Accept"))
+				if valid {
+					_, _ = w.Write([]byte(`{"host_uuid":"fake-host-uuid","region":"us-iad","id":12345}`))
+				} else {
+					_, _ = w.Write([]byte(`{"host_uuid":"fake-host-uuid","id":12345}`))
+				}
+			}))
+			defer server.Close()
+			client := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+				Name:        "worker",
+				Annotations: map[string]string{"existing": "keep", topology.KeyNodeInstance: "stale-host", topology.KeyNodeRegion: "stale-region"},
+				Labels:      map[string]string{"existing": "keep"},
+			}})
+			broker := &nodeBroker{clientset: client, nodeName: "worker", config: nodeDataBrokerConfig{Provider: topology.Provider{
+				Name: akamai.NAME, Params: map[string]any{"imdsUrl": server.URL + "/v1/instance"},
+			}}}
+			err := broker.apply(context.Background())
+			if !valid {
+				require.ErrorContains(t, err, "region")
+				require.Empty(t, client.Actions(), "incomplete metadata must not update the node")
+				return
+			}
+			require.NoError(t, err)
+			node, err := client.CoreV1().Nodes().Get(context.Background(), "worker", metav1.GetOptions{})
+			require.NoError(t, err)
+			require.Equal(t, map[string]string{"existing": "keep", topology.KeyNodeInstance: "fake-host-uuid", topology.KeyNodeRegion: "us-iad"}, node.Annotations)
+			require.Equal(t, map[string]string{"existing": "keep"}, node.Labels)
+		})
+	}
 }
 
 // TestGetAnnotationsNscaleDispatchCanceledContext verifies that a canceled

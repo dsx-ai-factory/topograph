@@ -84,6 +84,10 @@ Available simulation variants are listed in the [supported providers table](./ov
 
 Model-based simulation providers load a model file and then simulate that provider's API responses. This is useful when you want to exercise the normal provider translation logic without real provider credentials or infrastructure. The [InfiniBand simulation provider](./providers/infiniband.md#infiniband-sim-offline-simulation) instead replays captured `ibnetdiscover` output.
 
+The [Akamai simulation provider](./providers/akamai.md#simulation) accepts either a
+model or a saved JSON/YAML topology response. Response replay preserves redundant
+host attachments and multiple uplinks that the tree model format cannot express.
+
 Model-based simulation providers share these common parameters:
 
 | Parameter       | Required | Description                                                                                                                          |

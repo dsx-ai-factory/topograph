@@ -38,6 +38,8 @@ navigation:
 
   - section: Providers
     contents:
+      - page: Akamai Cloud
+        path: providers/akamai.md
       - page: AWS
         path: providers/aws.md
       - page: Crusoe

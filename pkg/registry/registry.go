@@ -23,6 +23,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/engines/slinky"
 	"github.com/dsx-ai-factory/topograph/pkg/engines/slurm"
 	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/akamai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/aws"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/crusoe"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dra"
@@ -40,6 +41,8 @@ import (
 )
 
 var Providers = providers.NewRegistry(
+	akamai.NamedLoader,
+	akamai.NamedLoaderSim,
 	aws.NamedLoader,
 	aws.NamedLoaderSim,
 	crusoe.NamedLoader,
