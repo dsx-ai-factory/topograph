@@ -38,12 +38,18 @@
 # thread is, leaves it as it was, and a dismissal clears a request.
 #
 # Idle time runs from the newest timeline event made by a person: comments,
-# reviews, pushes, label changes and so on. Events by bots do not count, and
-# neither do `mentioned` or `subscribed`, which GitHub records against the
+# reviews, force pushes, label changes and so on. Events by bots do not count,
+# and neither do `mentioned` or `subscribed`, which GitHub records against the
 # mentioned user a second after any comment that @-mentions them, this job's
-# reminders included. Each reminder ends with a hidden marker holding the
-# start of the idle period; a reminder is not repeated while a comment by
-# github-actions[bot] carries that marker, so each quiet period gets one.
+# reminders included. A push counts from when it reached the pull request:
+# the timeline's `committed` events carry only each commit's own date and no
+# account, so they do not count, and the pull_request workflow runs for the
+# head commit (pr-title.yaml runs on every push) give the push time and, as
+# their actor, who pushed. Only the head commit's runs are read, so when a bot
+# pushes after a person, the person's push no longer counts. Each reminder
+# ends with a hidden marker holding the start of the idle period; a reminder
+# is not repeated while a comment by github-actions[bot] carries that marker,
+# so each quiet period gets one.
 # Pull requests labeled lifecycle/frozen or do-not-merge are skipped, and
 # lifecycle/frozen also exempts a question issue.
 #
@@ -124,6 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: read # list the pull_request workflow runs that date each push and name who pushed
       pull-requests: write # read PRs, timelines and reviews; comment; add or remove lifecycle/stale
     steps:
       - name: Remind authors and reviewers of idle pull requests
@@ -146,21 +153,23 @@ jobs:
             const { owner, repo } = context.repo;
             const now = new Date();
 
-            // Most events carry created_at; reviews carry submitted_at, and
-            // commits only their committer date.
+            // Timeline events and workflow runs carry created_at; reviews
+            // carry submitted_at.
             function eventTime(event) {
-              const stamp = event.created_at ?? event.submitted_at ?? event.committer?.date;
+              const stamp = event.created_at ?? event.submitted_at;
               return stamp ? new Date(stamp) : null;
             }
 
-            // The newest event made by a person, and never earlier than the
-            // PR's opening: the timeline has no event for it, and a branch's
-            // commits can be older than the PR.
-            function lastActivity(pr, events) {
+            // The newest timeline event or pull_request run made by a person,
+            // and never earlier than the PR's opening: the timeline has no
+            // event for it. A `committed` event is skipped: its only date is
+            // the commit's own, which can be weeks before the push, and it
+            // names no account, so a bot's commit would pass as a person's.
+            // A run's actor is the account that pushed.
+            function lastActivity(pr, events, runs) {
               let newest = new Date(pr.created_at);
-              for (const event of events) {
-                if (PASSIVE_EVENTS.includes(event.event)) continue;
-                // A commit has neither actor nor user, and counts.
+              for (const event of [...events, ...runs]) {
+                if (PASSIVE_EVENTS.includes(event.event) || event.event === 'committed') continue;
                 if ((event.actor ?? event.user)?.type === 'Bot') continue;
                 const at = eventTime(event);
                 if (at && at > newest) newest = at;
@@ -217,7 +226,14 @@ jobs:
                 issue_number: number,
                 per_page: 100,
               });
-              const since = lastActivity(pr, events);
+              const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+                owner,
+                repo,
+                event: 'pull_request',
+                head_sha: pr.head.sha,
+                per_page: 100,
+              });
+              const since = lastActivity(pr, events, runs);
               const days = Math.floor((now - since) / DAY_MS);
               const businessDays = businessDaysSince(since);
               const onAuthor =
