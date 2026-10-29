@@ -811,15 +811,24 @@ test('second page of open PRs is processed', async (t) => {
 
 // A fake repository of closed issues and pull requests for the lock job.
 // issues.listForRepo sorts the current state on every call, and a comment or
-// a lock moves the item's updated_at to now, as on GitHub. createComment is
-// recorded rather than rejected, so a comment attempt shows up in calls.
-function closedRepo(items) {
+// a lock moves the item's updated_at to now, as on GitHub (actions/toolkit#47
+// shows updated_at equal to its locked event, 12 days after it closed).
+// createComment is recorded rather than rejected, so a comment attempt shows
+// up in calls. `changedAfterList` holds what people change between the list
+// and the first issues.get, as { number: fields }.
+function closedRepo(items, { changedAfterList = {} } = {}) {
   const state = items.map((item) => ({ ...item }));
   const find = (number) => state.find((item) => item.number === number);
+  let pending = changedAfterList;
   return recordingGithub({
     'rest.issues.listForRepo': (params) => {
       const sorted = [...state].sort((a, b) => a.updated_at.localeCompare(b.updated_at) || a.number - b.number);
       return page(sorted.map((item) => ({ ...item })), params);
+    },
+    'rest.issues.get': ({ issue_number: number }) => {
+      for (const [changed, fields] of Object.entries(pending)) Object.assign(find(Number(changed)), fields);
+      pending = {};
+      return { data: { ...find(number) } };
     },
     'rest.issues.createComment': ({ issue_number: number }) => {
       find(number).updated_at = githubTime(Date.now());
@@ -922,6 +931,38 @@ test('lock dry run makes no write call', async (t) => {
     Array.from({ length: 50 }, (_, i) => `#${i + 1}: would lock (dry run)`),
   );
   assert.ok(log.info.includes('Dry run: would lock 50 of 120 eligible threads; 70 left for later runs.'), log.info.join('\n'));
+});
+
+test('live lock reads each thread again and skips one changed since the list', async (t) => {
+  clock(t, FRIDAY);
+  const justNow = '2026-10-23T09:59:00Z';
+  const { github, calls } = closedRepo(
+    [1, 2, 3, 4, 5].map((number) => closed(number, '2026-07-24T10:00:00Z')),
+    {
+      // While the job was reading: a comment on #2, #3 reopened, and #4
+      // locked by a maintainer. Each moves updated_at.
+      changedAfterList: {
+        2: { updated_at: justNow },
+        3: { state: 'open', closed_at: null, updated_at: justNow },
+        4: { locked: true, active_lock_reason: 'off-topic', updated_at: justNow },
+      },
+    },
+  );
+
+  const log = await runLockLive(github);
+
+  assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [
+    ['rest.issues.lock', 1],
+    ['rest.issues.lock', 5],
+  ]);
+  assert.deepEqual(
+    calls.filter(({ route }) => route === 'rest.issues.get').map(({ params }) => params.issue_number),
+    [1, 2, 3, 4, 5],
+  );
+  for (const number of [2, 3, 4]) {
+    assert.ok(log.info.includes(`#${number}: updated since it was listed, not locked`), log.info.join('\n'));
+  }
+  assert.ok(log.info.includes('Locked 2 of 5 eligible threads; 0 left for later runs.'), log.info.join('\n'));
 });
 
 test('lock skips already locked items', async (t) => {
