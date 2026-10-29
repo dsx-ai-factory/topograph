@@ -138,8 +138,10 @@ mod:
 	go mod tidy
 
 # License headers, through addlicense at a pinned version. New headers use the
-# standard NVIDIA SPDX and Apache 2.0 notice in scripts/license-header.tmpl,
-# and the check fails on an NVIDIA header in any other form.
+# standard NVIDIA SPDX and Apache 2.0 notice in scripts/license-header.tmpl.
+# The check runs addlicense for headers that are missing, then
+# scripts/license-header-check.sh, which fails on an NVIDIA header that is not
+# that template and checks the Helm .tpl files and NOTES.txt addlicense skips.
 # Files are listed through git, so untracked trees such as localdev/ and other
 # worktrees are never walked; `grep -zv '/$$'` drops nested repositories, which
 # git lists as directories. Names are NUL-separated so a path with a space
@@ -159,19 +161,7 @@ license-headers:
 .PHONY: license-header-check
 license-header-check:
 	$(LICENSE_HEADER_FILES) | xargs -0 $(ADDLICENSE) -check $(LICENSE_HEADER_IGNORE)
-	@# addlicense has no handler for Helm's .tpl and NOTES.txt, so its check
-	@# passes them unread; check their hand-added headers here.
-	@missing=$$(git ls-files -z --cached --others --exclude-standard 'charts/*.tpl' 'charts/*.txt' \
-	  | xargs -0 -r grep -L -E 'Copyright|SPDX-License-Identifier'); \
-	if [ -n "$$missing" ]; then echo "missing license header:"; echo "$$missing"; exit 1; fi
-	@# Every NVIDIA header uses the standard form: the older short and long forms
-	@# fail, and so does an SPDX header without the Apache 2.0 notice. Headers of
-	@# other copyright holders are left to them.
-	@old=$$( { $(LICENSE_HEADER_FILES) | xargs -0 grep -l -E \
-	    'Copyright (\(c\) )?[0-9]{4}(-[0-9]{4})?,? NVIDIA CORPORATION([.]|$$)'; \
-	  $(LICENSE_HEADER_FILES) | xargs -0 grep -l --null 'SPDX-FileCopyrightText' \
-	    | xargs -0 -r grep -L 'Licensed under the Apache License'; } | sort -u); \
-	if [ -n "$$old" ]; then echo "license header not in the standard form (run make license-headers after removing the old header):"; echo "$$old"; exit 1; fi
+	$(LICENSE_HEADER_FILES) | scripts/license-header-check.sh
 
 .PHONY: coverage
 coverage: test

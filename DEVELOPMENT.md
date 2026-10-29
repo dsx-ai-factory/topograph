@@ -93,7 +93,11 @@ make license-header-check  # list files without a header, or with a non-standard
 Both run [addlicense](https://github.com/google/addlicense) at a pinned
 version through `go run`, over the files git tracks plus new files it does not
 ignore, so a new file is covered before you `git add` it. The header
-text is `scripts/license-header.tmpl`. `make license-headers` skips Helm
+text is `scripts/license-header.tmpl`. `make license-header-check` then runs
+`scripts/license-header-check.sh`, which fails on an NVIDIA header that is not
+that template line for line (any year or year range, any comment prefix) and
+checks the Helm `.tpl` files and `NOTES.txt` that addlicense does not read.
+`make license-headers` skips Helm
 templates (`charts/topograph/templates/`), which take the header by hand as a
 `{{- /* ... */ -}}` comment so it does not render into the manifest.
 
