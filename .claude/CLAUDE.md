@@ -145,14 +145,15 @@ covers only what the tooling cannot tell you.
 
 - `go fmt ./...` is authoritative; do not hand-format
 - `golangci-lint` runs in CI with `--new-from-rev` so only new issues block; fix warnings in code you touch
-- Copyright header on every new Go file:
+- License header on every new file: run `make license-headers`, which adds the standard NVIDIA SPDX and Apache 2.0 header (`scripts/license-header.tmpl`) in each file type's comment syntax, for example in Go:
   ```go
-  /*
-   * Copyright <year> NVIDIA CORPORATION
-   * SPDX-License-Identifier: Apache-2.0
-   */
+  // SPDX-FileCopyrightText: Copyright (c) <year> NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  // SPDX-License-Identifier: Apache-2.0
+  //
+  // Licensed under the Apache License, Version 2.0 (the "License");
+  // ... (the rest of the Apache 2.0 notice)
   ```
-  A few files predating this convention still carry the long Apache 2.0 boilerplate; match the short SPDX form above for new files rather than copying those.
+  `make license-header-check` runs in CI (`license-scan.yml`) and fails on a file with no header. Older files carry the short `Copyright <year> NVIDIA CORPORATION` form or the long Apache 2.0 boilerplate; both still pass, so leave them as they are. The year is the year the file was created, never a later one: new files take the current year, and a header added to an older file takes the year of its first commit (`git log --diff-filter=A --format=%ad -- <file>`). Helm templates are skipped by `make license-headers`, because a `#` comment renders into the manifest; add the header by hand as a `{{- /* ... */ -}}` comment, as the existing templates do.
 
 ### Provider interface
 
@@ -368,4 +369,5 @@ template wholesale.
 - [ ] User-facing changes recorded in `CHANGELOG.md` `[Unreleased]` when applicable
 - [ ] `pkg/topology/` changes were discussed in an issue first
 - [ ] No credential, API key, token, or environment variable value appears anywhere in the diff
+- [ ] Every new file has a license header (`make license-header-check`)
 - [ ] Every commit has a DCO sign-off

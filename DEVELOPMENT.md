@@ -11,7 +11,6 @@ contributors. For architecture and the provider/engine boundary, see
 git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 make build                    # produces bin/topograph, bin/node-observer, bin/node-data-broker, bin/kwok-nodes
-git fetch origin main:master  # make lint needs a local `master` ref — see "Local Test Loop" below
 make qualify                  # fmt + vet + lint + test — run this before every push
 ```
 
@@ -43,30 +42,18 @@ make clean                  # remove bin/
 ```bash
 make fmt        # go fmt ./...
 make vet        # go vet ./...
-make lint       # golangci-lint run --new-from-rev, computed from a local `master` ref
+make lint       # golangci-lint run --new-from-rev, computed from origin `main` ref
 make test       # go test -race -coverprofile=coverage.out ./...
 make coverage   # human-readable per-package summary (runs test first)
 make qualify    # fmt + vet + lint + test, in that order — run this before pushing
 ```
 
-`make lint` computes its diff base from a local `master` ref
-(`git rev-list master.. --count`), but this repo's default branch is `main`
-— a fresh clone has no local `master` and the target fails with a revision
-error. Work around it by syncing a local `master` ref to `origin/main`
-before running `make lint` or `make qualify`. Keep this ref as a
-lint-only bookkeeping branch — don't check it out or commit on it:
+`make lint` requires the local `origin/main` remote-tracking reference. If it
+is missing, the target stops before running the linter and prints a recovery
+command:
 
 ```bash
-git fetch origin main:master
-```
-
-This only works while `master` isn't checked out and hasn't diverged from
-`origin/main` (git fetch won't fetch into your current branch, and refuses
-a non-fast-forward update). If it fails for either reason, switch off
-`master` first, then reset it directly instead of fetching into it:
-
-```bash
-git branch -f master origin/main
+git fetch origin main:refs/remotes/origin/main
 ```
 
 Run a single package's tests directly with the standard Go toolchain while
@@ -95,6 +82,26 @@ missing (pinned version in `Makefile` via `HELM_UNITTEST_VERSION`).
 ```bash
 make mod        # go mod tidy
 ```
+
+### License headers
+
+```bash
+make license-headers       # add the standard license header to files that have none
+make license-header-check  # list files without a header; CI runs this
+```
+
+Both run [addlicense](https://github.com/google/addlicense) at a pinned
+version through `go run`, over the files git tracks plus new files it does not
+ignore, so a new file is covered before you `git add` it. The header
+text is `scripts/license-header.tmpl`. `make license-headers` skips Helm
+templates (`charts/topograph/templates/`), which take the header by hand as a
+`{{- /* ... */ -}}` comment so it does not render into the manifest.
+
+The header is NVIDIA's combined SPDX and Apache 2.0 notice. Its year is the
+year the file was created: `make license-headers` uses the current year, which
+is right for new files. When adding a header to an older file by hand, use the
+year of its first commit (`git log --diff-filter=A --format=%ad -- <file>`).
+NVIDIA's copyright guidance warns against post-dating a notice.
 
 ## Running a Binary Locally
 
@@ -203,11 +210,11 @@ pushes for each PR; the first four also run on `main`:
 
 - `.github/workflows/go.yml`: build; `go test -v -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...`
   (coverage-instrumented, but _without_ `-race`, unlike `make test`);
-  golangci-lint through `golangci/golangci-lint-action` (not `make lint`, so
-  it isn't affected by the local `master`-ref issue above); `make vet`; a
+  golangci-lint through `golangci/golangci-lint-action`; `make vet`; a
   `go fmt` check; and `govulncheck ./...`
 - `.github/workflows/license-scan.yml`: `go-licenses check ./...` against
-  the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list
+  the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list, and
+  `make license-header-check`
 - `.github/workflows/workflow-lint.yaml`: when `.github/**` changes, plus
   weekly and on demand so zizmor's online audits catch new advisories
   against pinned actions. actionlint fails the run on any finding; zizmor
