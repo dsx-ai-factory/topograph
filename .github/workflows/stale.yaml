@@ -159,7 +159,10 @@ jobs:
             const now = new Date();
 
             // Timeline events and workflow runs carry created_at; reviews
-            // carry submitted_at.
+            // carry submitted_at. A `committed` event carries neither, only
+            // the commit's own dates, so it gets no time and never counts:
+            // a commit can be weeks older than its push, and it names no
+            // account, so a bot's commit would pass as a person's.
             function eventTime(event) {
               const stamp = event.created_at ?? event.submitted_at;
               return stamp ? new Date(stamp) : null;
@@ -167,14 +170,11 @@ jobs:
 
             // The newest timeline event or pull_request run made by a person,
             // and never earlier than the PR's opening: the timeline has no
-            // event for it. A `committed` event is skipped: its only date is
-            // the commit's own, which can be weeks before the push, and it
-            // names no account, so a bot's commit would pass as a person's.
-            // A run's actor is the account that pushed.
+            // event for it. A run's actor is the account that pushed.
             function lastActivity(pr, events, runs) {
               let newest = new Date(pr.created_at);
               for (const event of [...events, ...runs]) {
-                if (PASSIVE_EVENTS.includes(event.event) || event.event === 'committed') continue;
+                if (PASSIVE_EVENTS.includes(event.event)) continue;
                 if ((event.actor ?? event.user)?.type === 'Bot') continue;
                 const at = eventTime(event);
                 if (at && at > newest) newest = at;
