@@ -357,29 +357,33 @@ A daily workflow ([`stale.yaml`](.github/workflows/stale.yaml)) also follows
 up on quiet threads:
 
 - **Waiting on review.** After 5 business days (Monday to Friday, UTC) with no
-  activity, the PR gets a comment that mentions its requested reviewers.
+  activity, the PR gets a comment that mentions its requested reviewers and
+  teams. A PR with no reviewer or team requested gets no comment.
 - **Waiting on the author.** A draft, or a PR where a reviewer has requested
   changes, gets a comment that mentions its author after 14 days with no
   activity. A reply in a review thread leaves a request for changes in place;
-  the reviewer's approval or a dismissed review clears it.
+  the reviewer's approval, a dismissed review, or a new review request to
+  that reviewer clears it.
 - **Idle for 30 days.** The PR gets the `lifecycle/stale` label, which comes
-  off on the first daily run after new activity. Pull requests are never
-  closed automatically.
+  off on the first daily run after new activity, also on a PR opted out as
+  described below. Pull requests are never closed automatically.
 - **Questions.** An issue labeled `question` is marked `lifecycle/stale` after
   90 days with no activity and closed 30 days later. Comment on it to keep it
   open. Once it is closed, comment to ask a maintainer to reopen it, or open a
   new issue that links to it.
 - **Old closed threads.** An issue or PR that has been closed with no activity
-  for 90 days is locked, without a comment, at most 50 a day and oldest
+  for 90 days is locked, without a comment, at most 50 a run and oldest
   first. Open a new issue that links to it instead.
 
 Closing questions and locking threads start as a dry run: the workflow only
 logs what it would do until a maintainer has read a week of those logs.
 
 Activity means a comment, review, push, or label change by a person; events
-from bots do not count. Each reminder is posted once per quiet period. To opt
-an issue or PR out, a maintainer adds the `lifecycle/frozen` label;
-`do-not-merge` also stops the reminders and the label on a PR.
+from bots, including pushes by Dependabot or by a workflow, do not count. A
+push counts from when it reached the PR, not from the dates of its commits.
+Each reminder is posted once per quiet period. To opt an issue or PR out, a
+maintainer adds the `lifecycle/frozen` label; `do-not-merge` also stops the
+reminders and the label on a PR.
 
 Keep the PR in draft while you're still reshaping it — draft PRs don't page
 reviewers, so that's the cheapest phase to rework history or force-push in.
