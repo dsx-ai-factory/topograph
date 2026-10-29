@@ -13,7 +13,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/googleapis/gax-go/v2 v2.27.0
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/nebius/gosdk v0.2.82
+	github.com/nebius/gosdk v0.2.83
 	github.com/oklog/run v1.2.0
 	github.com/oracle/oci-go-sdk/v65 v65.128.0
 	github.com/prometheus/client_golang v1.25.0
@@ -21,7 +21,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.uber.org/goleak v1.3.0
 	golang.org/x/sync v0.24.0
-	google.golang.org/api v0.308.0
+	google.golang.org/api v0.309.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
