@@ -20,9 +20,9 @@
 # script checks what addlicense cannot:
 #
 # - Helm .tpl files and NOTES.txt, which addlicense does not read, have one.
-# - An NVIDIA header is scripts/license-header.tmpl, line for line, with any
-#   year or year range and the file's comment prefix (`//`, `#` or none).
-# - No NVIDIA header uses an older form.
+# - An NVIDIA header, in any form, is scripts/license-header.tmpl line for
+#   line, with any year or year range and the file's comment prefix (`//`,
+#   `#`, ` *` or none).
 #
 # Headers of other copyright holders are not checked. The skipped paths match
 # LICENSE_HEADER_IGNORE in the Makefile.
@@ -32,8 +32,9 @@ set -euo pipefail
 tmpl=scripts/license-header.tmpl
 lines=$(wc -l <"$tmpl")
 want=$(cat "$tmpl")
-spdx='SPDX-FileCopyrightText: Copyright \(c\) [0-9]{4}(-[0-9]{4})? NVIDIA CORPORATION'
-old='Copyright (\(c\) )?[0-9]{4}(-[0-9]{4})?,? NVIDIA CORPORATION([.]|$)'
+# A header starts within the first lines of a file: after a shebang, a blank
+# line, or the opening line of a block comment.
+header_lines=5
 status=0
 
 report() {
@@ -44,12 +45,14 @@ report() {
 while IFS= read -r -d '' f; do
 	case "$f" in
 	vendor/* | testdata/* | */testdata/* | */__snapshot__/*) continue ;;
+	# License texts, not headers.
+	LICENSE | */doc/*/copyright) continue ;;
 	esac
 	# Skip directories (nested repositories), binary and empty files.
 	if [ ! -f "$f" ] || ! grep -qI . "$f"; then
 		continue
 	fi
-	head=$(head -n 40 "$f")
+	head=$(head -n "$header_lines" "$f")
 
 	case "$f" in
 	charts/*.tpl | charts/*.txt)
@@ -60,16 +63,13 @@ while IFS= read -r -d '' f; do
 		;;
 	esac
 
-	if grep -q -E "$old" <<<"$head"; then
-		report "$f" "NVIDIA license header in an older form"
-		continue
-	fi
-
-	start=$(grep -n -m1 -E "$spdx" <<<"$head" | cut -d: -f1) || continue
+	# Any NVIDIA copyright line in the header, whatever its form, starts a
+	# header that must match the template from that line on.
+	start=$(grep -n -m1 -i -E 'copyright.*nvidia corporation' <<<"$head" | cut -d: -f1) || continue
 	got=$(awk -v s="$start" -v n="$lines" 'NR >= s && NR < s + n' "$f" |
-		sed -E 's#^(//|\#) ?##; s/Copyright \(c\) [0-9]{4}(-[0-9]{4})? NVIDIA/Copyright (c) {{.Year}} NVIDIA/')
+		sed -E 's#^(//|\#| \*) ?##; s/Copyright \(c\) [0-9]{4}(-[0-9]{4})? NVIDIA/Copyright (c) {{.Year}} NVIDIA/')
 	if [ "$got" != "$want" ]; then
-		report "$f" "NVIDIA license header differs from $tmpl"
+		report "$f" "NVIDIA license header is not $tmpl"
 	fi
 done
 
