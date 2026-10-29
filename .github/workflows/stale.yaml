@@ -52,8 +52,9 @@
 # ends with a hidden marker holding the start of the idle period; a reminder
 # is not repeated while a comment by github-actions[bot] carries that marker,
 # so each quiet period gets one.
-# Pull requests labeled lifecycle/frozen or do-not-merge are skipped, and
-# lifecycle/frozen also exempts a question issue.
+# Pull requests labeled lifecycle/frozen or do-not-merge get no reminder and
+# never get lifecycle/stale; one that already has it still loses it after
+# new activity. lifecycle/frozen also exempts a question issue.
 #
 # Schedule: 06:15 UTC, clear of the Scorecard run at 06:00 and of
 # workflow-lint.yaml on Mondays at 07:30.
@@ -220,8 +221,12 @@ jobs:
             for (const pr of pulls) {
               const number = pr.number;
               const labels = pr.labels.map((label) => label.name);
+              const stale = labels.includes('lifecycle/stale');
+              // An opted-out pull request gets no reminder and never gets
+              // lifecycle/stale, but one that already has the label loses it
+              // after new activity, like any other.
               const exempt = labels.find((name) => EXEMPT.includes(name));
-              if (exempt) {
+              if (exempt && !stale) {
                 core.info(`#${number}: labeled ${exempt}, skipped`);
                 continue;
               }
@@ -243,20 +248,23 @@ jobs:
               const days = Math.floor((now - since) / DAY_MS);
               const businessDays = businessDaysSince(since);
               const onAuthor =
-                pr.draft ||
-                changesRequested(
-                  await github.paginate(github.rest.pulls.listReviews, {
-                    owner,
-                    repo,
-                    pull_number: number,
-                    per_page: 100,
-                  }),
-                  new Set((pr.requested_reviewers ?? []).map((reviewer) => reviewer.login)),
-                );
+                !exempt &&
+                (pr.draft ||
+                  changesRequested(
+                    await github.paginate(github.rest.pulls.listReviews, {
+                      owner,
+                      repo,
+                      pull_number: number,
+                      per_page: 100,
+                    }),
+                    new Set((pr.requested_reviewers ?? []).map((reviewer) => reviewer.login)),
+                  ));
 
               let mentions = [];
               let text = '';
-              if (onAuthor) {
+              if (exempt) {
+                core.info(`#${number}: labeled ${exempt}, no reminder`);
+              } else if (onAuthor) {
                 if (days >= AUTHOR_DAYS) {
                   mentions = [pr.user.login];
                   text = pr.draft
@@ -305,7 +313,6 @@ jobs:
                 }
               }
 
-              const stale = labels.includes('lifecycle/stale');
               if (days >= STALE_DAYS && !stale) {
                 // Not caught: a missing label must fail the job.
                 await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['lifecycle/stale'] });
