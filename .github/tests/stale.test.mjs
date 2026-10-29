@@ -750,6 +750,29 @@ test('exempt label is skipped', async (t) => {
   assert.deepEqual(writes(calls), []);
 });
 
+test('an opted-out pull request still loses lifecycle/stale after activity', async (t) => {
+  clock(t, FRIDAY);
+  const { github, calls } = fakeRepo({
+    pulls: [
+      // Active 5 business days ago: the label comes off, and opting out
+      // means no reminder.
+      pull(241, { login: 'bea', requested: ['dmitsh'], labels: ['lifecycle/stale', 'lifecycle/frozen'] }),
+      // Still idle: the label stays, and again no reminder.
+      pull(242, { login: 'cal', requested: ['dmitsh'], labels: ['lifecycle/stale', 'do-not-merge'] }),
+    ],
+    timelines: {
+      241: [commented(account('bea'), '2026-10-16T10:00:00Z', 'Picking this up again.')],
+      242: [commented(account('cal'), '2026-08-23T10:00:00Z')],
+    },
+  });
+
+  await runNudge(github);
+
+  assert.deepEqual(writes(calls), [
+    { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: 241, name: 'lifecycle/stale' } },
+  ]);
+});
+
 test('activity past the first timeline page counts', async (t) => {
   clock(t, FRIDAY);
   const events = Array.from({ length: 130 }, (_, i) => commented(account('pat'), githubTime(Date.parse('2026-08-01T00:00:00Z') + i * 60_000)));
