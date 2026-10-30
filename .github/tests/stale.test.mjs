@@ -882,6 +882,42 @@ test('at most 20 reminders a run, the longest idle first', async (t) => {
   assert.ok(log.info.includes('Reminded on 20 of 22 pull requests due a reminder; 2 left for later runs.'), log.info.join('\n'));
 });
 
+test('a failing pull request does not stop the others, and the step fails at the end', async (t) => {
+  clock(t, FRIDAY);
+  const apiError = (message, status) => Object.assign(new Error(message), { status });
+  const timelines = {
+    401: [commented(account('author401'), '2026-08-23T10:00:00Z')],
+    403: [commented(account('author403'), '2026-10-16T10:00:00Z')],
+    404: [commented(account('author404'), '2026-08-23T10:00:00Z')],
+  };
+  const pulls = [pull(401), pull(402), pull(403, { requested: ['dmitsh'] }), pull(404)];
+  const { github, calls } = fakeRepo(
+    { pulls, timelines },
+    {
+      // Reading #402's timeline fails.
+      'rest.issues.listEventsForTimeline': (params) => {
+        if (params.issue_number === 402) throw apiError('Server Error', 502);
+        return page(timelines[params.issue_number] ?? [], params);
+      },
+      // lifecycle/stale is missing when #401 is labeled, and exists by #404.
+      'rest.issues.addLabels': ({ issue_number: number }) => {
+        if (number === 401) throw apiError('Label does not exist', 422);
+        return { data: [{ name: 'lifecycle/stale' }] };
+      },
+    },
+  );
+
+  const log = await runNudgeLive(github);
+
+  assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [
+    ['rest.issues.addLabels', 401],
+    ['rest.issues.createComment', 403],
+    ['rest.issues.addLabels', 404],
+  ]);
+  assert.deepEqual(log.error, ['#402: Server Error', '#401: Label does not exist']);
+  assert.deepEqual(log.failed, ['Could not process 2 pull requests: #401, #402. See the errors above.']);
+});
+
 // A fake repository of closed issues and pull requests for the lock job.
 // issues.listForRepo sorts the current state on every call, and a comment or
 // a lock moves the item's updated_at to now, as on GitHub (actions/toolkit#47
