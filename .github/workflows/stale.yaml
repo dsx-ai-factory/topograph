@@ -21,7 +21,10 @@
 #                  later. actions/stale does this; pull requests are off.
 #   pull-requests  Reminds the person a quiet pull request is waiting on, and
 #                  labels one idle for 30 days lifecycle/stale. It never closes
-#                  a pull request.
+#                  a pull request. It posts at most 20 reminders a run, the
+#                  longest idle first, and starts as a dry run
+#                  (NUDGE_DRY_RUN) that only logs its reminders and label
+#                  changes.
 #   lock           Locks issues and pull requests that have been closed with no
 #                  activity for 90 days, oldest first and at most 50 a run. It
 #                  posts no comment; the lock shows as an event in the
@@ -146,6 +149,15 @@ jobs:
             const AUTHOR_DAYS = 14;
             const REVIEW_BUSINESS_DAYS = 5;
             const STALE_DAYS = 30;
+            // Dry run (C5), like debug-only in the questions job and
+            // LOCK_DRY_RUN: the job logs the reminders and label changes it
+            // would make and changes nothing. Flip to false in a follow-up
+            // commit once a maintainer has read one week of these logs.
+            const NUDGE_DRY_RUN = true;
+            // Reminders per run, the longest idle pull requests first. The
+            // rest stay due and go out on the following daily runs. Label
+            // changes are not capped.
+            const NUDGE_LIMIT = 20;
             const EXEMPT = ['lifecycle/frozen', 'do-not-merge'];
             // GitHub records these against the mentioned user a second after
             // a comment that @-mentions them, so counting them would let every
@@ -220,6 +232,7 @@ jobs:
               per_page: 100,
             });
 
+            const decisions = [];
             for (const pr of pulls) {
               const number = pr.number;
               const labels = pr.labels.map((label) => label.name);
@@ -290,6 +303,9 @@ jobs:
                 }
               }
 
+              // Read everything first and write afterwards, so the cap below
+              // can pick the longest idle pull requests across the whole list.
+              let reminder = null;
               if (text) {
                 const marker = `<!-- topograph-idle-nudge:${since.toISOString()} -->`;
                 // Match the author as well as the marker, so a comment anyone
@@ -300,30 +316,52 @@ jobs:
                 if (reminded) {
                   core.info(`#${number}: already reminded for the quiet period since ${since.toISOString()}`);
                 } else {
-                  await github.rest.issues.createComment({
-                    owner,
-                    repo,
-                    issue_number: number,
+                  reminder = {
+                    count: mentions.length,
                     body: [
                       `${mentions.map((login) => `@${login}`).join(' ')} ${text}`,
                       'These reminders and the `lifecycle/stale` label are explained under ' +
                         `[Following up](${FOLLOWING_UP}). Pull requests are never closed automatically.`,
                       marker,
                     ].join('\n\n'),
-                  });
-                  core.info(`#${number}: reminded ${mentions.length} account(s), idle since ${since.toISOString()}`);
+                  };
                 }
               }
+              const label = days >= STALE_DAYS && !stale ? 'add' : days < STALE_DAYS && stale ? 'remove' : null;
+              decisions.push({ number, since, days, reminder, label });
+            }
 
-              if (days >= STALE_DAYS && !stale) {
+            // The longest idle first; sort is stable, so ties keep list order.
+            const due = decisions.filter((decision) => decision.reminder).sort((a, b) => a.since - b.since);
+            const chosen = new Set(due.slice(0, NUDGE_LIMIT).map((decision) => decision.number));
+            for (const decision of due.slice(NUDGE_LIMIT)) {
+              core.info(`#${decision.number}: reminder due, left for a later run (at most ${NUDGE_LIMIT} a run)`);
+            }
+
+            const dry = NUDGE_DRY_RUN ? ' (dry run)' : '';
+            let posted = 0;
+            for (const { number, since, days, reminder, label } of decisions) {
+              if (chosen.has(number)) {
+                if (!NUDGE_DRY_RUN) await github.rest.issues.createComment({ owner, repo, issue_number: number, body: reminder.body });
+                core.info(
+                  `#${number}: ${NUDGE_DRY_RUN ? 'would remind' : 'reminded'} ${reminder.count} account(s), ` +
+                    `idle since ${since.toISOString()}${dry}`,
+                );
+                posted += 1;
+              }
+              if (label === 'add') {
                 // Not caught: a missing label must fail the job.
-                await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['lifecycle/stale'] });
-                core.info(`#${number}: idle ${days} days, added lifecycle/stale`);
-              } else if (days < STALE_DAYS && stale) {
-                await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'lifecycle/stale' });
-                core.info(`#${number}: active again, removed lifecycle/stale`);
+                if (!NUDGE_DRY_RUN) await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['lifecycle/stale'] });
+                core.info(`#${number}: idle ${days} days, ${NUDGE_DRY_RUN ? 'would add' : 'added'} lifecycle/stale${dry}`);
+              } else if (label === 'remove') {
+                if (!NUDGE_DRY_RUN) await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'lifecycle/stale' });
+                core.info(`#${number}: active again, ${NUDGE_DRY_RUN ? 'would remove' : 'removed'} lifecycle/stale${dry}`);
               }
             }
+            core.info(
+              `${NUDGE_DRY_RUN ? 'Dry run: would remind on' : 'Reminded on'} ${posted} of ${due.length} pull requests due a reminder; ` +
+                `${due.length - chosen.size} left for later runs.`,
+            );
 
   lock:
     name: Lock old closed threads
