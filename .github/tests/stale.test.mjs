@@ -99,6 +99,12 @@ const DEPENDABOT_GIT = { name: 'dependabot[bot]', email: '49699333+dependabot[bo
 const ACTIONS_GIT = { name: 'github-actions[bot]', email: '41898282+github-actions[bot]@users.noreply.github.com' };
 const WEB_FLOW_GIT = { name: 'GitHub', email: 'noreply@github.com' };
 
+// One check run as checks.listForRef lists it: the app that made it and
+// when it started, which for dco is 1 to 2 seconds after the push.
+function checkRun(app, at) {
+  return { name: app, app: { slug: app }, status: 'completed', started_at: at };
+}
+
 // One workflow run as actions.listWorkflowRunsForRepo lists it. `sha`
 // defaults to the pull request's head commit.
 function workflowRun(who, at, { event = 'pull_request', sha } = {}) {
@@ -136,18 +142,24 @@ function page(items, { page: pageNumber = 1, per_page: perPage = 30 }) {
 }
 
 // A fake repository holding open pull requests, their timelines, their
-// reviews and the workflow runs on their commits. Comments and label changes
-// are written back the way GitHub records them, so a second run sees what the
-// first one did.
-function fakeRepo({ pulls, timelines = {}, reviews = {}, runs = {} }, extraRoutes = {}) {
+// reviews, the workflow runs on their commits and the check runs on their
+// head commits. Comments and label changes are written back the way GitHub
+// records them, so a second run sees what the first one did. A pull request
+// with no entry in `runs` has one pull_request run, by its author when it
+// was opened; `runs: { N: [] }` models a head commit pushed while the pull
+// request had merge conflicts, which starts no pull_request run.
+function fakeRepo({ pulls, timelines = {}, reviews = {}, runs = {}, checks = {} }, extraRoutes = {}) {
   const timeline = (number) => (timelines[number] ??= []);
   const pr = (number) => pulls.find((p) => p.number === number);
   const allRuns = () =>
-    Object.entries(runs).flatMap(([number, list]) => list.map((run) => ({ ...run, head_sha: run.head_sha ?? pr(Number(number)).head.sha })));
+    pulls.flatMap((p) => (runs[p.number] ?? [workflowRun(p.user, p.created_at)]).map((run) => ({ ...run, head_sha: run.head_sha ?? p.head.sha })));
   return recordingGithub({
     'rest.pulls.list': (params) => page(pulls, params),
     'rest.issues.listEventsForTimeline': (params) => page(timeline(params.issue_number), params),
     'rest.pulls.listReviews': (params) => page(reviews[params.pull_number] ?? [], params),
+    // The check runs on a head commit, unwrapped from { total_count,
+    // check_runs } by paginate like the workflow runs below.
+    'rest.checks.listForRef': (params) => page(checks[pulls.find((p) => p.head.sha === params.ref)?.number] ?? [], params),
     // Filtered by head_sha and event as GitHub filters them. A page is the
     // list paginate hands back: it unwraps GitHub's { total_count,
     // workflow_runs } page into its items (plugin-paginate-rest,
@@ -918,6 +930,93 @@ test('a failing pull request does not stop the others, and the step fails at the
   assert.deepEqual(log.failed, ['Could not process 2 pull requests: #401, #402. See the errors above.']);
 });
 
+test('a push to a pull request with merge conflicts counts from the first check run on its head commit', async (t) => {
+  clock(t, FRIDAY);
+  // GitHub starts no pull_request run for a pull request with merge
+  // conflicts, but apps such as dco still check each pushed commit.
+  const { github, calls } = fakeRepo({
+    pulls: [
+      pull(251, { requested: ['dmitsh'], labels: ['needs-rebase', 'lifecycle/stale'] }),
+      pull(252, { requested: ['dmitsh'], labels: ['needs-rebase'] }),
+    ],
+    timelines: {
+      251: [commented(account('author251'), '2026-08-23T10:00:00Z')],
+      252: [commented(account('author252'), '2026-09-01T10:00:00Z')],
+    },
+    runs: { 251: [], 252: [] },
+    checks: {
+      // Pushed yesterday: active again.
+      251: [checkRun('dco', '2026-10-22T10:00:02Z')],
+      // Pushed 5 business days ago. codecov checked the commit again later,
+      // which is not a push.
+      252: [
+        checkRun('codecov', '2026-10-22T12:00:00Z'),
+        checkRun('dco', '2026-10-16T10:00:02Z'),
+        checkRun('greptile-apps', '2026-10-16T10:00:08Z'),
+      ],
+    },
+  });
+
+  await runNudgeLive(github);
+
+  const changed = writes(calls);
+  assert.deepEqual(changed.map(({ route, params }) => [route, params.issue_number]), [
+    ['rest.issues.removeLabel', 251],
+    ['rest.issues.createComment', 252],
+  ]);
+  assert.ok(changed[1].params.body.endsWith(marker('2026-10-16T10:00:02.000Z')), changed[1].params.body);
+  assert.deepEqual(
+    calls.filter(({ route }) => route === 'rest.checks.listForRef').map(({ params }) => params),
+    [
+      { ...REPO, ref: 'head251', filter: 'all', per_page: 100, page: 1 },
+      { ...REPO, ref: 'head252', filter: 'all', per_page: 100, page: 1 },
+    ],
+  );
+});
+
+test('check runs do not date a push that started a pull_request run', async (t) => {
+  clock(t, FRIDAY);
+  // Dependabot's push started a run, so it is known to be a bot's push and
+  // the dco check run on the same commit must not count it as a person's.
+  const { github, calls } = fakeRepo({
+    pulls: [pull(261, { requested: ['dmitsh'] })],
+    timelines: { 261: [commented(account('author261'), '2026-10-16T10:00:00Z')] },
+    runs: { 261: [workflowRun(bot('dependabot[bot]'), '2026-10-22T10:00:05Z')] },
+    checks: { 261: [checkRun('dco', '2026-10-22T10:00:02Z')] },
+  });
+
+  await runNudgeLive(github);
+
+  const posted = comments(calls);
+  assert.deepEqual(posted.map((c) => c.issue_number), [261]);
+  assert.ok(posted[0].body.endsWith(marker('2026-10-16T10:00:00.000Z')), posted[0].body);
+  assert.deepEqual(calls.filter(({ route }) => route === 'rest.checks.listForRef'), []);
+});
+
+test('a head commit with no pull_request run and no check run counts as active', async (t) => {
+  clock(t, FRIDAY);
+  // Nothing dates the push of the head commit, so the pull request is not
+  // treated as idle: no reminder, no lifecycle/stale, and an old one comes off.
+  const { github, calls } = fakeRepo({
+    pulls: [pull(271, { requested: ['dmitsh'], labels: ['lifecycle/stale'] }), pull(272, { requested: ['dmitsh'] })],
+    timelines: {
+      271: [commented(account('author271'), '2026-08-23T10:00:00Z')],
+      272: [commented(account('author272'), '2026-08-23T10:00:00Z')],
+    },
+    runs: { 271: [], 272: [] },
+  });
+
+  const log = await runNudgeLive(github);
+
+  assert.deepEqual(writes(calls), [
+    { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: 271, name: 'lifecycle/stale' } },
+  ]);
+  for (const number of [271, 272]) {
+    const line = `#${number}: no pull_request run or check run on the head commit, so its push cannot be dated; treated as active`;
+    assert.ok(log.info.includes(line), `missing "${line}" in:\n${log.info.join('\n')}`);
+  }
+});
+
 // A fake repository of closed issues and pull requests for the lock job.
 // issues.listForRepo sorts the current state on every call, and a comment or
 // a lock moves the item's updated_at to now, as on GitHub (actions/toolkit#47
@@ -1118,7 +1217,7 @@ test('runs daily and on demand, upstream only, with only the permissions each jo
   const jobs = Object.fromEntries(Object.entries(wf.jobs).map(([id, job]) => [id, { if: job.if, permissions: job.permissions }]));
   assert.deepEqual(jobs, {
     questions: { if: GUARD, permissions: { issues: 'write' } },
-    'pull-requests': { if: GUARD, permissions: { actions: 'read', 'pull-requests': 'write' } },
+    'pull-requests': { if: GUARD, permissions: { actions: 'read', checks: 'read', 'pull-requests': 'write' } },
     lock: { if: GUARD, permissions: { issues: 'write', 'pull-requests': 'write' } },
   });
 });
