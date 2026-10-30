@@ -53,7 +53,12 @@
 # account, so they do not count, and the pull_request workflow runs for the
 # head commit (pr-title.yaml runs on every push) give the push time and, as
 # their actor, who pushed. Only the head commit's runs are read, so when a bot
-# pushes after a person, the person's push no longer counts. Each reminder
+# pushes after a person, the person's push no longer counts. GitHub starts no
+# pull_request run for a pull request with merge conflicts; with no run on
+# the head commit, its push counts from the first check run on it (the dco
+# app checks every pushed commit within seconds), as a person's push. A head
+# commit with no run and no check run cannot be dated, so the pull request
+# counts as active: no reminder and no lifecycle/stale. Each reminder
 # ends with a hidden marker holding the start of the idle period; a reminder
 # is not repeated while a comment by github-actions[bot] carries that marker,
 # so each quiet period gets one.
@@ -141,6 +146,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: read # list the pull_request workflow runs that date each push and name who pushed
+      checks: read # list the check runs that date a push to a pull request with merge conflicts
       pull-requests: write # read PRs, timelines and reviews; comment; add or remove lifecycle/stale
     steps:
       - name: Remind authors and reviewers of idle pull requests
@@ -266,7 +272,32 @@ jobs:
                   head_sha: pr.head.sha,
                   per_page: 100,
                 });
-                const since = lastActivity(pr, events, runs);
+                // GitHub starts no pull_request run for a pull request with
+                // merge conflicts. Apps such as dco still check each pushed
+                // commit, within seconds of the push, so with no run the
+                // first check run on the head commit dates its push; later
+                // ones can be re-checks. It names no account, so it counts
+                // as a person's push. With neither, nothing dates the push,
+                // and the pull request counts as active rather than idle.
+                let pushes = runs;
+                let undated = false;
+                if (runs.length === 0) {
+                  const checks = await github.paginate(github.rest.checks.listForRef, {
+                    owner,
+                    repo,
+                    ref: pr.head.sha,
+                    filter: 'all',
+                    per_page: 100,
+                  });
+                  const starts = checks.map((check) => Date.parse(check.started_at)).filter((ms) => !Number.isNaN(ms));
+                  if (starts.length > 0) {
+                    pushes = [{ created_at: new Date(Math.min(...starts)).toISOString() }];
+                  } else {
+                    undated = true;
+                    core.info(`#${number}: no pull_request run or check run on the head commit, so its push cannot be dated; treated as active`);
+                  }
+                }
+                const since = undated ? now : lastActivity(pr, events, pushes);
                 const days = Math.floor((now - since) / DAY_MS);
                 const businessDays = businessDaysSince(since);
                 const onAuthor =
