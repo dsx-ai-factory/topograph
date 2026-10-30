@@ -93,49 +93,29 @@ func TestProviderBMGenerateTopologyConfig(t *testing.T) {
 	})
 }
 
-func TestProviderBMInstances2NodeMap(t *testing.T) {
+func TestProviderBMGetNodeInstances(t *testing.T) {
 	p := &ProviderBM{}
 
-	t.Run("identity mapping", func(t *testing.T) {
-		i2n, err := p.Instances2NodeMap(context.Background(), []string{"node-1", "node-2"})
+	t.Run("identity mapping in the local region", func(t *testing.T) {
+		cis, err := p.GetNodeInstances(context.Background(), []string{"node-1", "node-2"})
 		require.NoError(t, err)
-		require.Equal(t, map[string]string{"node-1": "node-1", "node-2": "node-2"}, i2n)
+		require.Equal(t, []topology.ComputeInstances{
+			{Region: "local", Instances: map[string]string{"node-1": "node-1", "node-2": "node-2"}},
+		}, cis)
 	})
 
-	t.Run("empty input returns empty map", func(t *testing.T) {
-		i2n, err := p.Instances2NodeMap(context.Background(), nil)
+	t.Run("empty input returns no regions", func(t *testing.T) {
+		cis, err := p.GetNodeInstances(context.Background(), nil)
 		require.NoError(t, err)
-		require.Empty(t, i2n)
+		require.Empty(t, cis)
 	})
 
 	t.Run("duplicate node — idempotent, cardinality matches unique keys", func(t *testing.T) {
-		i2n, err := p.Instances2NodeMap(context.Background(), []string{"node-1", "node-1"})
+		cis, err := p.GetNodeInstances(context.Background(), []string{"node-1", "node-1"})
 		require.NoError(t, err)
-		require.Len(t, i2n, 1)
-		require.Equal(t, "node-1", i2n["node-1"])
-	})
-}
-
-func TestProviderBMGetInstancesRegions(t *testing.T) {
-	p := &ProviderBM{}
-
-	t.Run("all regions are local", func(t *testing.T) {
-		regions, err := p.GetInstancesRegions(context.Background(), []string{"node-1", "node-2"})
-		require.NoError(t, err)
-		require.Equal(t, map[string]string{"node-1": "local", "node-2": "local"}, regions)
-	})
-
-	t.Run("empty input returns empty map", func(t *testing.T) {
-		regions, err := p.GetInstancesRegions(context.Background(), nil)
-		require.NoError(t, err)
-		require.Empty(t, regions)
-	})
-
-	t.Run("duplicate node — idempotent, cardinality matches unique keys", func(t *testing.T) {
-		regions, err := p.GetInstancesRegions(context.Background(), []string{"node-1", "node-1"})
-		require.NoError(t, err)
-		require.Len(t, regions, 1)
-		require.Equal(t, "local", regions["node-1"])
+		require.Equal(t, []topology.ComputeInstances{
+			{Region: "local", Instances: map[string]string{"node-1": "node-1"}},
+		}, cis)
 	})
 }
 

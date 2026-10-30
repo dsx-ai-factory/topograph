@@ -105,12 +105,9 @@ func TestProviderSimGenerateTopologyConfig(t *testing.T) {
 	_, httpErr = sim.GenerateTopologyConfig(context.Background(), nil, []topology.ComputeInstances{{Region: "one"}, {Region: "two"}})
 	require.Equal(t, http.StatusBadRequest, httpErr.Code())
 
-	instanceMap, err := sim.Instances2NodeMap(context.Background(), []string{"node-a"})
+	cis, err := sim.GetNodeInstances(context.Background(), []string{"node-a"})
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"node-a": "node-a"}, instanceMap)
-	regions, err := sim.GetInstancesRegions(context.Background(), []string{"node-a"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{"node-a": "local"}, regions)
+	require.Equal(t, []topology.ComputeInstances{{Region: "local", Instances: map[string]string{"node-a": "node-a"}}}, cis)
 }
 
 func leafNames(root *topology.Vertex) []string {

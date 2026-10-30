@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -442,185 +441,42 @@ func TestNscaleClientTopologyCanceledContext(t *testing.T) {
 
 func fakeMetadata() map[string]*imdsMetadata {
 	return map[string]*imdsMetadata{
-		"node-1": {Meta: map[string]string{"serverID": "srv-1"}},
+		"node-1": {Meta: imdsMeta{ServerID: "srv-1"}},
 	}
 }
 
-func TestFetchIMDSMetadataCachesRepeatedIdenticalNodes(t *testing.T) {
-	var calls int32
-	p := &baseProvider{
-		params: &ProviderParams{},
-		imdsFetch: func(_ context.Context, _ []string, _ string) (map[string]*imdsMetadata, error) {
-			atomic.AddInt32(&calls, 1)
-			return fakeMetadata(), nil
-		},
-	}
-	nodes := []string{"node-1"}
-
-	data1, err := p.fetchIMDSMetadata(context.Background(), nodes)
-	require.NoError(t, err)
-	data2, err := p.fetchIMDSMetadata(context.Background(), nodes)
-	require.NoError(t, err)
-
-	require.Equal(t, data1, data2)
-	require.Equal(t, int32(1), atomic.LoadInt32(&calls))
-
-	_, err = p.fetchIMDSMetadata(context.Background(), []string{"node-2"})
-	require.NoError(t, err)
-	require.Equal(t, int32(2), atomic.LoadInt32(&calls))
-}
-
-func TestFetchIMDSMetadataConcurrentIdenticalNodesDedup(t *testing.T) {
-	var calls int32
-	started := make(chan struct{})
-	unblock := make(chan struct{})
-
-	p := &baseProvider{
-		params: &ProviderParams{},
-		imdsFetch: func(_ context.Context, _ []string, _ string) (map[string]*imdsMetadata, error) {
-			atomic.AddInt32(&calls, 1)
-			close(started)
-			<-unblock
-			return fakeMetadata(), nil
-		},
-	}
-	nodes := []string{"node-1"}
-
-	type result struct {
-		data map[string]*imdsMetadata
-		err  error
-	}
-	results := make(chan result, 2)
-
-	go func() {
-		data, err := p.fetchIMDSMetadata(context.Background(), nodes)
-		results <- result{data, err}
-	}()
-
-	<-started // owner is in-flight, holding no lock, blocked on unblock
-
-	go func() {
-		data, err := p.fetchIMDSMetadata(context.Background(), nodes)
-		results <- result{data, err}
-	}()
-
-	close(unblock)
-
-	for i := 0; i < 2; i++ {
-		select {
-		case r := <-results:
-			require.NoError(t, r.err)
-			require.Equal(t, fakeMetadata(), r.data)
-		case <-time.After(5 * time.Second):
-			t.Fatal("fetchIMDSMetadata did not return")
-		}
-	}
-
-	require.Equal(t, int32(1), atomic.LoadInt32(&calls))
-}
-
-func TestFetchIMDSMetadataWaiterCanceledContext(t *testing.T) {
-	var calls int32
-	started := make(chan struct{})
-	unblock := make(chan struct{})
-
-	p := &baseProvider{
-		params: &ProviderParams{},
-		imdsFetch: func(_ context.Context, _ []string, _ string) (map[string]*imdsMetadata, error) {
-			atomic.AddInt32(&calls, 1)
-			close(started)
-			<-unblock
-			return fakeMetadata(), nil
-		},
-	}
-	nodes := []string{"node-1"}
-
-	ownerDone := make(chan struct{})
-	go func() {
-		_, _ = p.fetchIMDSMetadata(context.Background(), nodes)
-		close(ownerDone)
-	}()
-
-	<-started // owner is in-flight, blocked on unblock
-
-	waiterCtx, cancel := context.WithCancel(context.Background())
-	waiterErrCh := make(chan error, 1)
-	go func() {
-		_, err := p.fetchIMDSMetadata(waiterCtx, nodes)
-		waiterErrCh <- err
-	}()
-
-	cancel()
-
-	select {
-	case err := <-waiterErrCh:
-		require.ErrorIs(t, err, context.Canceled)
-	case <-time.After(5 * time.Second):
-		t.Fatal("waiter did not return promptly after ctx cancellation")
-	}
-
-	// The canceled waiter must not have disturbed the owner's in-flight load.
-	require.Equal(t, int32(1), atomic.LoadInt32(&calls))
-
-	close(unblock)
-	select {
-	case <-ownerDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("owner fetch did not complete")
-	}
-
-	data, err := p.fetchIMDSMetadata(context.Background(), nodes)
-	require.NoError(t, err)
-	require.Equal(t, fakeMetadata(), data)
-	require.Equal(t, int32(1), atomic.LoadInt32(&calls))
-}
-
-func TestFetchIMDSMetadataFailureClearsInFlight(t *testing.T) {
-	var calls int32
+func TestFetchIMDSMetadataError(t *testing.T) {
 	wantErr := errors.New("pdsh failed")
-
 	p := &baseProvider{
 		params: &ProviderParams{},
 		imdsFetch: func(_ context.Context, _ []string, _ string) (map[string]*imdsMetadata, error) {
-			if atomic.AddInt32(&calls, 1) == 1 {
-				return nil, wantErr
-			}
-			return fakeMetadata(), nil
+			return nil, wantErr
 		},
 	}
-	nodes := []string{"node-1"}
 
-	_, err := p.fetchIMDSMetadata(context.Background(), nodes)
+	data, err := p.fetchIMDSMetadata(context.Background(), []string{"node-1"})
 	require.ErrorIs(t, err, wantErr)
-	require.Nil(t, p.imdsInFlight)
-	require.Nil(t, p.imdsData)
-
-	data, err := p.fetchIMDSMetadata(context.Background(), nodes)
-	require.NoError(t, err)
-	require.Equal(t, fakeMetadata(), data)
-	require.Equal(t, int32(2), atomic.LoadInt32(&calls))
+	require.Nil(t, data)
 }
 
-func TestProviderInstanceAndRegionMapsFilterByRegion(t *testing.T) {
+func TestProviderNodeInstancesFilterByRegion(t *testing.T) {
 	p := &Provider{
 		baseProvider: baseProvider{
 			params: &ProviderParams{},
 			creds:  &Credentials{Region: "region-a"},
 			imdsFetch: func(_ context.Context, _ []string, _ string) (map[string]*imdsMetadata, error) {
 				return map[string]*imdsMetadata{
-					"node-1": {Meta: map[string]string{"serverID": "srv-1", "regionID": "region-a"}},
-					"node-2": {Meta: map[string]string{"serverID": "srv-2", "regionID": "region-b"}},
+					"node-1": {Meta: imdsMeta{ServerID: "srv-1", RegionID: "region-a"}},
+					"node-2": {Meta: imdsMeta{ServerID: "srv-2", RegionID: "region-b"}},
 				}, nil
 			},
 		},
 	}
 	nodes := []string{"node-1", "node-2"}
 
-	i2n, err := p.Instances2NodeMap(context.Background(), nodes)
+	cis, err := p.GetNodeInstances(context.Background(), nodes)
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"srv-1": "node-1"}, i2n)
-
-	nodeRegions, err := p.GetInstancesRegions(context.Background(), nodes)
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{"node-1": "region-a"}, nodeRegions)
+	require.Equal(t, []topology.ComputeInstances{
+		{Region: "region-a", Instances: map[string]string{"srv-1": "node-1"}},
+	}, cis)
 }

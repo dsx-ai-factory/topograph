@@ -123,13 +123,11 @@ func TestInstanceMapper(t *testing.T) {
 	provider := &Provider{}
 	nodes := []string{"gpu-01", "gpu-02"}
 
-	i2n, err := provider.Instances2NodeMap(ctx, nodes)
+	cis, err := provider.GetNodeInstances(ctx, nodes)
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"gpu-01": "gpu-01", "gpu-02": "gpu-02"}, i2n)
-
-	regions, err := provider.GetInstancesRegions(ctx, nodes)
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{"gpu-01": region, "gpu-02": region}, regions)
+	require.Equal(t, []topology.ComputeInstances{
+		{Region: region, Instances: map[string]string{"gpu-01": "gpu-01", "gpu-02": "gpu-02"}},
+	}, cis)
 }
 
 func TestGetNodeAnnotations(t *testing.T) {

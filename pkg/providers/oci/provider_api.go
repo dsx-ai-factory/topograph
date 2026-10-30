@@ -237,7 +237,12 @@ func (p *apiProvider) getComputeHostInfo(ctx context.Context, pageSize *int, ci 
 
 // Engine support
 
-// Instances2NodeMap implements slurm.instanceMapper
-func (p *apiProvider) Instances2NodeMap(ctx context.Context, nodes []string) (map[string]string, error) {
-	return instanceToNodeMap(ctx, nodes)
+// GetNodeInstances implements slurm.instanceMapper
+func (p *apiProvider) GetNodeInstances(ctx context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	i2n, err := instanceToNodeMap(ctx, nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	return groupInstances(ctx, i2n, nodes)
 }

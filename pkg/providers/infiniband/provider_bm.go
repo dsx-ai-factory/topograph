@@ -72,21 +72,7 @@ func (p *ProviderBM) GenerateTopologyConfig(ctx context.Context, _ *int, cis []t
 	}, nil
 }
 
-// Instances2NodeMap implements slurm.instanceMapper
-func (p *ProviderBM) Instances2NodeMap(ctx context.Context, nodes []string) (map[string]string, error) {
-	i2n := make(map[string]string)
-	for _, node := range nodes {
-		i2n[node] = node
-	}
-
-	return i2n, nil
-}
-
-// GetInstancesRegions implements slurm.instanceMapper
-func (p *ProviderBM) GetInstancesRegions(ctx context.Context, nodes []string) (map[string]string, error) {
-	res := make(map[string]string)
-	for _, node := range nodes {
-		res[node] = "local"
-	}
-	return res, nil
+// GetNodeInstances implements slurm.instanceMapper
+func (p *ProviderBM) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, "local"), nil
 }

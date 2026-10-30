@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 func TestLoader(t *testing.T) {
@@ -82,4 +83,13 @@ func TestLoader(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetNodeInstances(t *testing.T) {
+	p := &Provider{}
+
+	cis, err := p.GetNodeInstances(context.TODO(), []string{"n1", "n2"})
+	require.NoError(t, err)
+	require.Equal(t,
+		[]topology.ComputeInstances{{Region: "local", Instances: map[string]string{"n1": "n1", "n2": "n2"}}}, cis)
 }

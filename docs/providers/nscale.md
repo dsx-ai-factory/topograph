@@ -160,7 +160,7 @@ For Slurm auto-discovery, the provider runs `scontrol show nodes -o` to get the 
 res=$(curl -fsS -- http://169.254.169.254/openstack/latest/meta_data.json) && echo "$res"
 ```
 
-This single `pdsh` sweep is cached and shared by both the server-ID-to-hostname map and the region map, so a topology request only queries each node's IMDS once, not once per map. Each node's response is a JSON document with a `meta` map. The provider extracts two fields per node:
+A topology request runs this single `pdsh` sweep once, and its result builds both the server-ID-to-hostname map and the region map. Each node's response is a JSON document with a `meta` map. The provider extracts two fields per node:
 
 | IMDS `meta` field | Purpose |
 |---|---|

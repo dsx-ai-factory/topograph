@@ -195,13 +195,18 @@ malformed line without separator
 	res, err := parseIMDSOutput(bytes.NewBufferString(input))
 	require.NoError(t, err)
 	require.Equal(t, map[string]*imdsMetadata{
-		"node1": {Meta: map[string]string{
-			metaKeyServerID: "psrv-1",
-			metaKeyRegionID: "region-a",
-		}},
-		"node2": {Meta: map[string]string{
-			metaKeyServerID: "psrv-2",
-		}},
+		"node1": {Meta: imdsMeta{ServerID: "psrv-1", RegionID: "region-a"}},
+		"node2": {Meta: imdsMeta{ServerID: "psrv-2"}},
+	}, res)
+}
+
+func TestParseIMDSOutputIgnoresOtherMetaKeys(t *testing.T) {
+	input := `node1: {"uuid": "abc", "meta": {"serverID": "psrv-1", "regionID": "region-a", "count": 3, "nested": {"a": 1}}}
+`
+	res, err := parseIMDSOutput(bytes.NewBufferString(input))
+	require.NoError(t, err)
+	require.Equal(t, map[string]*imdsMetadata{
+		"node1": {Meta: imdsMeta{ServerID: "psrv-1", RegionID: "region-a"}},
 	}, res)
 }
 
@@ -213,14 +218,9 @@ func TestParseIMDSOutputOversizedLine(t *testing.T) {
 
 func TestInstanceToNodeMap(t *testing.T) {
 	nodeMeta := map[string]*imdsMetadata{
-		"node1": {Meta: map[string]string{
-			metaKeyServerID: "psrv-1",
-			metaKeyRegionID: "region-a",
-		}},
-		"node2": {Meta: map[string]string{
-			metaKeyServerID: "psrv-2",
-		}},
-		"node3": {Meta: map[string]string{}},
+		"node1": {Meta: imdsMeta{ServerID: "psrv-1", RegionID: "region-a"}},
+		"node2": {Meta: imdsMeta{ServerID: "psrv-2"}},
+		"node3": {Meta: imdsMeta{}},
 	}
 
 	require.Equal(t, map[string]string{
@@ -231,13 +231,8 @@ func TestInstanceToNodeMap(t *testing.T) {
 
 func TestGetRegions(t *testing.T) {
 	nodeMeta := map[string]*imdsMetadata{
-		"node1": {Meta: map[string]string{
-			metaKeyServerID: "psrv-1",
-			metaKeyRegionID: "region-a",
-		}},
-		"node2": {Meta: map[string]string{
-			metaKeyServerID: "psrv-2",
-		}},
+		"node1": {Meta: imdsMeta{ServerID: "psrv-1", RegionID: "region-a"}},
+		"node2": {Meta: imdsMeta{ServerID: "psrv-2"}},
 	}
 
 	require.Equal(t, map[string]string{
@@ -247,17 +242,9 @@ func TestGetRegions(t *testing.T) {
 
 func TestFilterByRegion(t *testing.T) {
 	nodeMeta := map[string]*imdsMetadata{
-		"node1": {Meta: map[string]string{
-			metaKeyServerID: "psrv-1",
-			metaKeyRegionID: "region-a",
-		}},
-		"node2": {Meta: map[string]string{
-			metaKeyServerID: "psrv-2",
-			metaKeyRegionID: "region-b",
-		}},
-		"node3": {Meta: map[string]string{
-			metaKeyServerID: "psrv-3",
-		}},
+		"node1": {Meta: imdsMeta{ServerID: "psrv-1", RegionID: "region-a"}},
+		"node2": {Meta: imdsMeta{ServerID: "psrv-2", RegionID: "region-b"}},
+		"node3": {Meta: imdsMeta{ServerID: "psrv-3"}},
 	}
 
 	t.Run("no expected region: no filtering", func(t *testing.T) {

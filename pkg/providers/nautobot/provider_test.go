@@ -438,10 +438,7 @@ func TestQueryEscapesFilters(t *testing.T) {
 
 func TestInstanceMapping(t *testing.T) {
 	p := loadProvider(t, "https://example.invalid")
-	mapping, err := p.Instances2NodeMap(context.Background(), []string{"node-a"})
+	cis, err := p.GetNodeInstances(context.Background(), []string{"node-a"})
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"node-a": "node-a"}, mapping)
-	regions, err := p.GetInstancesRegions(context.Background(), []string{"node-a"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{"node-a": "local"}, regions)
+	require.Equal(t, []topology.ComputeInstances{{Region: "local", Instances: map[string]string{"node-a": "node-a"}}}, cis)
 }

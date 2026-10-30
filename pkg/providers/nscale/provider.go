@@ -20,9 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
-	"sync"
 
 	"github.com/dsx-ai-factory/topograph/internal/config"
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
@@ -39,26 +37,14 @@ const (
 
 type imdsFetchFunc func(ctx context.Context, nodes []string, imdsURL string) (map[string]*imdsMetadata, error)
 
-// imdsCall represents a single in-flight fetchIMDSMetadata load. Callers
-// that arrive while a load is in progress wait on done instead of issuing a
-// redundant pdsh sweep; a canceled ctx lets a waiter stop waiting without
-// affecting the in-flight load itself.
-type imdsCall struct {
-	done chan struct{}
-	data map[string]*imdsMetadata
-	err  error
-}
-
 type baseProvider struct {
 	params *ProviderParams
 	creds  *Credentials
 	client Client
 
-	imdsMu       sync.Mutex
-	imdsNodes    []string
-	imdsData     map[string]*imdsMetadata
-	imdsInFlight *imdsCall
-	imdsFetch    imdsFetchFunc
+	// imdsFetch loads IMDS metadata for the nodes; nil means fetchIMDSMetadata.
+	// Tests replace it to avoid running pdsh.
+	imdsFetch imdsFetchFunc
 }
 
 type ProviderParams struct {
@@ -199,101 +185,35 @@ func (p *baseProvider) GenerateTopologyConfig(ctx context.Context, pageSize *int
 	return topo.ToGraph(NAME, instances, p.params.TrimTiers, false), nil
 }
 
-// Instances2NodeMap implements slurm.instanceMapper
-func (p *Provider) Instances2NodeMap(ctx context.Context, nodes []string) (map[string]string, error) {
+// GetNodeInstances implements slurm.instanceMapper
+func (p *Provider) GetNodeInstances(ctx context.Context, nodes []string) ([]topology.ComputeInstances, error) {
 	nodeMeta, err := p.fetchIMDSMetadata(ctx, nodes)
 	if err != nil {
 		return nil, err
 	}
-	return instanceToNodeMap(nodeMeta), nil
+	return providers.GroupByRegion(instanceToNodeMap(nodeMeta), getRegions(nodeMeta)), nil
 }
 
-// GetInstancesRegions implements slurm.instanceMapper
-func (p *Provider) GetInstancesRegions(ctx context.Context, nodes []string) (map[string]string, error) {
-	nodeMeta, err := p.fetchIMDSMetadata(ctx, nodes)
-	if err != nil {
-		return nil, err
-	}
-	return getRegions(nodeMeta), nil
-}
-
-// fetchIMDSMetadata returns parsed IMDS metadata for the given nodes, caching
-// the result so that repeated calls with the same node list (as done by
-// Instances2NodeMap and GetInstancesRegions) issue a single pdsh sweep. Nodes
+// fetchIMDSMetadata returns parsed IMDS metadata for the given nodes. Nodes
 // whose IMDS region does not match the configured 'region' credential are
 // excluded, with a warning logged per excluded node.
-//
-// imdsMu only guards the cache and the in-flight bookkeeping, never the pdsh
-// call itself: a caller that finds a load already in progress waits on that
-// call's done channel rather than holding the lock, so a canceled ctx lets
-// it stop waiting immediately instead of blocking for the full sweep.
 func (p *baseProvider) fetchIMDSMetadata(ctx context.Context, nodes []string) (map[string]*imdsMetadata, error) {
-	for {
-		p.imdsMu.Lock()
-		if p.imdsData != nil && slices.Equal(p.imdsNodes, nodes) {
-			data := p.imdsData
-			p.imdsMu.Unlock()
-			return data, nil
-		}
-
-		if call := p.imdsInFlight; call != nil {
-			p.imdsMu.Unlock()
-			select {
-			case <-call.done:
-				continue
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		call := &imdsCall{done: make(chan struct{})}
-		p.imdsInFlight = call
-		p.imdsMu.Unlock()
-
-		p.runIMDSFetch(ctx, nodes, call)
-		return call.data, call.err
+	fetch := p.imdsFetch
+	if fetch == nil {
+		fetch = fetchIMDSMetadata
 	}
-}
 
-// runIMDSFetch executes the pdsh sweep for call outside imdsMu, then
-// publishes its result to the cache (on success) and wakes any waiters. The
-// cleanup runs via defer so a canceled ctx, an error, or a panic unwinding
-// through this frame all leave imdsInFlight cleared and call.done closed.
-func (p *baseProvider) runIMDSFetch(ctx context.Context, nodes []string, call *imdsCall) {
-	defer func() {
-		p.imdsMu.Lock()
-		if p.imdsInFlight == call {
-			p.imdsInFlight = nil
-		}
-		if call.err == nil {
-			p.imdsNodes = slices.Clone(nodes)
-			p.imdsData = call.data
-		}
-		p.imdsMu.Unlock()
-		close(call.done)
-	}()
-
-	nodeMeta, err := p.imdsFetchFunc()(ctx, nodes, p.imdsURL())
+	nodeMeta, err := fetch(ctx, nodes, p.imdsURL())
 	if err != nil {
-		call.err = err
-		return
+		return nil, err
 	}
 
 	var expectedRegion string
 	if p.creds != nil {
 		expectedRegion = p.creds.Region
 	}
-	call.data = filterByRegion(nodeMeta, expectedRegion)
-}
 
-// imdsFetchFunc returns the configured IMDS loader, falling back to the
-// package-level fetchIMDSMetadata for a baseProvider constructed without
-// going through Loader.
-func (p *baseProvider) imdsFetchFunc() imdsFetchFunc {
-	if p.imdsFetch != nil {
-		return p.imdsFetch
-	}
-	return fetchIMDSMetadata
+	return filterByRegion(nodeMeta, expectedRegion), nil
 }
 
 // imdsURL returns the configured 'imdsUrl' provider parameter, falling back
