@@ -193,22 +193,29 @@ async function runStep(github, jobId, stepId) {
   return log;
 }
 
+// Runs a script with its dry run switch `name` turned off. The switch must
+// occur exactly once, so a renamed or reworded constant fails here instead of
+// leaving the test on the shipped dry run.
+async function runStepLive(github, jobId, stepId, name) {
+  const { script } = extractStep(WORKFLOW, jobId, stepId);
+  const shipped = `const ${name} = true;`;
+  assert.equal(script.split(shipped).length - 1, 1, `the ${jobId} script must contain "${shipped}" exactly once`);
+  const { core, log } = fakeCore();
+  await runGithubScript(script.replace(shipped, `const ${name} = false;`), { github, context: { repo: REPO }, core });
+  return log;
+}
+
+// Runs the nudge script as shipped, which is a dry run.
 const runNudge = (github) => runStep(github, 'pull-requests', 'nudge');
+
+// Runs the nudge script with its dry run switched off.
+const runNudgeLive = (github) => runStepLive(github, 'pull-requests', 'nudge', 'NUDGE_DRY_RUN');
 
 // Runs the lock script as shipped, which is a dry run.
 const runLock = (github) => runStep(github, 'lock', 'lock');
 
-// Runs the lock script with its dry run switched off. The switch must occur
-// exactly once, so a renamed or reworded constant fails here instead of
-// leaving the test on the shipped dry run.
-async function runLockLive(github) {
-  const { script } = extractStep(WORKFLOW, 'lock', 'lock');
-  const shipped = 'const LOCK_DRY_RUN = true;';
-  assert.equal(script.split(shipped).length - 1, 1, `the lock script must contain "${shipped}" exactly once`);
-  const { core, log } = fakeCore();
-  await runGithubScript(script.replace(shipped, 'const LOCK_DRY_RUN = false;'), { github, context: { repo: REPO }, core });
-  return log;
-}
+// Runs the lock script with its dry run switched off.
+const runLockLive = (github) => runStepLive(github, 'lock', 'lock', 'LOCK_DRY_RUN');
 
 const FOOTER =
   'These reminders and the `lifecycle/stale` label are explained under ' +
@@ -250,7 +257,7 @@ test('changes requested at 14 days nudges the author', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   const posted = comments(calls);
   assert.deepEqual(posted.map((c) => c.issue_number), [21]);
@@ -279,7 +286,7 @@ test('commented reply keeps changes requested', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), [
     {
@@ -318,7 +325,7 @@ test('dismissed review clears changes requested', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), [
     {
@@ -364,7 +371,7 @@ test('re-requesting a review from the reviewer who requested changes waits on th
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   const posted = comments(calls);
   assert.deepEqual(posted.map((c) => c.issue_number), [231, 232]);
@@ -393,7 +400,7 @@ test('awaiting review at 5 business days across a weekend nudges the reviewer', 
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), [
     {
@@ -421,7 +428,7 @@ test('awaiting review at 4 business days does not nudge', async (t) => {
     timelines: { 32: [commented(account('bob'), '2026-10-16T10:00:00Z')] },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), []);
 });
@@ -433,7 +440,7 @@ test('awaiting review with no requested reviewer logs and does not comment', asy
     timelines: { 33: [commented(account('bob'), '2026-10-16T10:00:00Z')] },
   });
 
-  const log = await runNudge(github);
+  const log = await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), []);
   assert.ok(
@@ -455,7 +462,7 @@ test('a review requested from a team reminds the team', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   const posted = comments(calls);
   assert.deepEqual(posted.map((c) => c.issue_number), [221, 222]);
@@ -481,7 +488,7 @@ test('draft nudges the author only', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   const posted = comments(calls);
   assert.deepEqual(posted.map((c) => c.issue_number), [41]);
@@ -502,7 +509,7 @@ test('61 days idle adds lifecycle/stale and never closes', async (t) => {
     { 'rest.pulls.update': () => ({ data: {} }), 'rest.issues.update': () => ({ data: {} }) },
   );
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   const changed = writes(calls);
   assert.deepEqual(changed.map(({ route, params }) => [route, params.issue_number]), [
@@ -528,7 +535,7 @@ test('lifecycle/stale is added at 30 days, not at 29', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), [
     { route: 'rest.issues.addLabels', params: { ...REPO, issue_number: 53, labels: ['lifecycle/stale'] } },
@@ -551,7 +558,7 @@ test('fresh activity removes lifecycle/stale', async (t) => {
     runs: { 61: [workflowRun(account('gina'), '2026-10-21T10:00:05Z')] },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), [
     { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: 61, name: 'lifecycle/stale' } },
@@ -565,13 +572,13 @@ test('second run does not repeat the nudge', async (t) => {
     timelines: { 71: [commented(account('hank'), '2026-10-16T10:00:00Z')] },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
   assert.deepEqual(comments(calls).map((c) => c.issue_number), [71]);
 
   // The next scheduled run. Saturday is not a business day, so the PR is
   // still 5 business days idle and the nudge is still due.
   t.mock.timers.setTime(Date.parse('2026-10-24T06:15:00Z'));
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [
     ['rest.issues.createComment', 71],
@@ -594,7 +601,7 @@ test('marker from a non-bot user is ignored', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(comments(calls).map((c) => c.issue_number), [81, 82]);
 });
@@ -615,7 +622,7 @@ test('bot activity does not reset idleness', async (t) => {
     reviews: { 91: [{ user: bot('greptile-apps[bot]'), state: 'COMMENTED', submitted_at: '2026-10-22T11:00:00Z' }] },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   const posted = comments(calls);
   assert.deepEqual(posted.map((c) => c.issue_number), [91]);
@@ -636,7 +643,7 @@ test('mention events from a nudge do not reset idleness', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   // Idle since 2026-09-18: 35 days, so stale; the nudge for that period
   // already went out.
@@ -653,7 +660,7 @@ test('a new pull request with older commits is not idle', async (t) => {
     timelines: { 161: [committed('2026-09-20T10:00:00Z')] },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), []);
 });
@@ -679,7 +686,7 @@ test('a push of old commits counts from when it was pushed', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), [
     { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: 201, name: 'lifecycle/stale' } },
@@ -708,7 +715,7 @@ test('pushes by bots do not reset idleness', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   const posted = comments(calls);
   assert.deepEqual(posted.map((c) => c.issue_number), [211, 212]);
@@ -745,7 +752,7 @@ test('exempt label is skipped', async (t) => {
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), []);
 });
@@ -766,7 +773,7 @@ test('an opted-out pull request still loses lifecycle/stale after activity', asy
     },
   });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), [
     { route: 'rest.issues.removeLabel', params: { ...REPO, issue_number: 241, name: 'lifecycle/stale' } },
@@ -779,7 +786,7 @@ test('activity past the first timeline page counts', async (t) => {
   events.push(commented(account('pat'), '2026-10-22T10:00:00Z'));
   const { github, calls } = fakeRepo({ pulls: [pull(171, { login: 'pat', requested: ['dmitsh'] })], timelines: { 171: events } });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(writes(calls), []);
 });
@@ -795,7 +802,7 @@ test('second page of open PRs is processed', async (t) => {
   }
   const { github, calls } = fakeRepo({ pulls, timelines });
 
-  await runNudge(github);
+  await runNudgeLive(github);
 
   assert.deepEqual(
     calls.filter(({ route }) => route === 'rest.pulls.list').map(({ params }) => params),
@@ -807,6 +814,72 @@ test('second page of open PRs is processed', async (t) => {
   assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [
     ['rest.issues.createComment', 150],
   ]);
+});
+
+test('nudge dry run makes no write call and logs what it would do', async (t) => {
+  clock(t, FRIDAY);
+  const { github, calls } = fakeRepo({
+    pulls: [
+      // Due a reminder to dmitsh.
+      pull(501, { requested: ['dmitsh'] }),
+      // Idle 61 days with no reviewer requested: due lifecycle/stale only.
+      pull(502),
+      // Active yesterday: due to lose lifecycle/stale.
+      pull(503, { labels: ['lifecycle/stale'] }),
+    ],
+    timelines: {
+      501: [commented(account('author501'), '2026-10-16T10:00:00Z')],
+      502: [commented(account('author502'), '2026-08-23T10:00:00Z')],
+      503: [commented(account('author503'), '2026-10-22T10:00:00Z')],
+    },
+  });
+
+  // The script as shipped.
+  const log = await runNudge(github);
+
+  assert.deepEqual(writes(calls), []);
+  assert.deepEqual(log.failed, []);
+  for (const line of [
+    '#501: would remind 1 account(s), idle since 2026-10-16T10:00:00.000Z (dry run)',
+    '#502: idle 61 days, would add lifecycle/stale (dry run)',
+    '#503: active again, would remove lifecycle/stale (dry run)',
+    'Dry run: would remind on 1 of 1 pull requests due a reminder; 0 left for later runs.',
+  ]) {
+    assert.ok(log.info.includes(line), `missing "${line}" in:\n${log.info.join('\n')}`);
+  }
+});
+
+test('at most 20 reminders a run, the longest idle first', async (t) => {
+  clock(t, FRIDAY);
+  // 22 pull requests due a reminder, listed in an order unrelated to how
+  // long each has been idle: #601 has been idle the shortest time and #610
+  // the next shortest.
+  const hoursBefore = [0, 5, 10, 15, 20, 3, 8, 13, 18, 1, 6, 11, 16, 21, 4, 9, 14, 19, 2, 7, 12, 17];
+  const pulls = [];
+  const timelines = {};
+  hoursBefore.forEach((hours, i) => {
+    const number = 601 + i;
+    pulls.push(pull(number, { requested: ['dmitsh'] }));
+    timelines[number] = [commented(account(`author${number}`), githubTime(Date.parse('2026-10-16T10:00:00Z') - hours * 3_600_000))];
+  });
+  const { github, calls } = fakeRepo({ pulls, timelines });
+
+  const log = await runNudgeLive(github);
+
+  // The 20 longest idle, posted in list order; nothing else is written.
+  assert.deepEqual(
+    writes(calls).map(({ route, params }) => [route, params.issue_number]),
+    [602, 603, 604, 605, 606, 607, 608, 609, 611, 612, 613, 614, 615, 616, 617, 618, 619, 620, 621, 622].map((number) => [
+      'rest.issues.createComment',
+      number,
+    ]),
+  );
+  const left = log.info.filter((line) => line.includes('left for a later run'));
+  assert.deepEqual(left, [
+    '#610: reminder due, left for a later run (at most 20 a run)',
+    '#601: reminder due, left for a later run (at most 20 a run)',
+  ]);
+  assert.ok(log.info.includes('Reminded on 20 of 22 pull requests due a reminder; 2 left for later runs.'), log.info.join('\n'));
 });
 
 // A fake repository of closed issues and pull requests for the lock job.
