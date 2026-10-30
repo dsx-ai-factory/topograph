@@ -14,18 +14,48 @@ make build                    # produces bin/topograph, bin/node-observer, bin/n
 make qualify                  # fmt + vet + lint + test — run this before every push
 ```
 
-## Prerequisites
+## Development tools
 
-| Tool                                                      | Purpose                | Notes                                                                                                                                                                                 |
-| --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Go 1.27.3+](https://go.dev/dl/)                          | Language runtime       | See `go.mod` for the exact minimum; newer minor versions are fine                                                                                                                     |
-| `make`                                                    | Build automation       | Pre-installed on macOS/Linux                                                                                                                                                          |
-| [golangci-lint 2.14.0+](https://golangci-lint.run/usage/install/) | Go linting             | `brew install golangci-lint`, or see the [install guide](https://golangci-lint.run/usage/install/) for `go install`/binary options; CI runs it via `golangci/golangci-lint-action` in `go.yml` |
-| [helm 3.10+ or 4.x](https://helm.sh/docs/intro/install/)  | Chart lint/test        | Required for `make chart-test`; CI pins `v4.1.1` in `.github/workflows/chart-test.yaml`                                                                                               |
-| [docker](https://docs.docker.com/get-docker/)             | Container image builds | Only needed for `make image-build` / `make docker-buildx`                                                                                                                             |
+| Tool | Purpose / requirement |
+| --- | --- |
+| Git, Make, C compiler (`cc`) | Source control, builds, and race-enabled tests |
+| [Go](https://go.dev/dl/) | Build and test; minimum version is defined in `go.mod` |
+| [golangci-lint](https://golangci-lint.run/docs/welcome/install/) 2.14.0+ | `make lint`; CI pins its version in `.github/workflows/go.yml` |
+| [kind](https://kind.sigs.k8s.io/) and [kubectl](https://kubernetes.io/docs/tasks/tools/) | Local Kubernetes clusters and demos |
+| [Helm](https://helm.sh/docs/intro/install/) 3.10+ or 4.x | Chart linting and tests |
+| [Mike Farah yq](https://github.com/mikefarah/yq) v4 and [jq](https://jqlang.org/) | YAML and JSON processing in scripts |
+| [Docker](https://docs.docker.com/get-started/get-docker/) and Buildx | Container image builds and local Kubernetes demos |
+| curl | Downloads in setup and demo scripts |
+| Node.js 22+ | Optional; workflow tests under `.github/tests/` |
 
-There is no `make dev-env-setup` / tool-manifest step in this repo — install
-the tools above with your system package manager and you're ready to build.
+Keep kubectl within [one minor version](https://kubernetes.io/releases/version-skew-policy/)
+of the cluster's Kubernetes version. Check each demo's README for additional requirements.
+
+### macOS installation
+
+These commands are for **macOS**. Commands and package names may differ in other
+development environments.
+
+Install Apple's Command Line Tools if needed; they provide Git, Make, and `cc`:
+
+```bash
+xcode-select --install
+```
+
+With [Homebrew](https://brew.sh/) installed and on `PATH`:
+
+```bash
+brew install go golangci-lint kind kubernetes-cli helm yq jq
+brew install --cask docker-desktop
+open -a Docker
+
+# Optional: only needed for workflow tests
+brew install node
+```
+
+Complete Docker Desktop's initial setup, enable its CLI tools on `PATH`, and wait
+for the engine to start before running demos. Docker Desktop includes
+[Buildx](https://docs.docker.com/build/concepts/overview/); macOS includes curl.
 
 ## Clone and Build
 
