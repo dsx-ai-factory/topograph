@@ -69,7 +69,9 @@
 # write on a pull request (GitHub's "Permissions required for GitHub Apps"),
 # so the pull-requests job does not hold issues: write. Neither token can
 # create a label, so lifecycle/stale must exist (it is declared in
-# .github/labels.yml); if it does not, adding it fails and so does the job.
+# .github/labels.yml); if it does not, adding it fails. A failure on one pull
+# request is logged and the job goes on with the others, then fails the step
+# with the numbers of the pull requests it could not process.
 # actions/stale's README also suggests `actions: write`, which only lets it
 # keep its place in a cache between runs that stop at operations-per-run.
 # The questions job reads well under one 100-issue batch, so it starts from
@@ -232,103 +234,112 @@ jobs:
               per_page: 100,
             });
 
+            // An error on one pull request is logged and that pull request
+            // listed, so the others are still processed; the step fails at
+            // the end. A missing lifecycle/stale label fails it this way.
+            const failed = [];
             const decisions = [];
             for (const pr of pulls) {
-              const number = pr.number;
-              const labels = pr.labels.map((label) => label.name);
-              const stale = labels.includes('lifecycle/stale');
-              // An opted-out pull request gets no reminder and never gets
-              // lifecycle/stale, but one that already has the label loses it
-              // after new activity, like any other.
-              const exempt = labels.find((name) => EXEMPT.includes(name));
-              if (exempt && !stale) {
-                core.info(`#${number}: labeled ${exempt}, skipped`);
-                continue;
-              }
-
-              const events = await github.paginate(github.rest.issues.listEventsForTimeline, {
-                owner,
-                repo,
-                issue_number: number,
-                per_page: 100,
-              });
-              const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
-                owner,
-                repo,
-                event: 'pull_request',
-                head_sha: pr.head.sha,
-                per_page: 100,
-              });
-              const since = lastActivity(pr, events, runs);
-              const days = Math.floor((now - since) / DAY_MS);
-              const businessDays = businessDaysSince(since);
-              const onAuthor =
-                !exempt &&
-                (pr.draft ||
-                  changesRequested(
-                    await github.paginate(github.rest.pulls.listReviews, {
-                      owner,
-                      repo,
-                      pull_number: number,
-                      per_page: 100,
-                    }),
-                    new Set((pr.requested_reviewers ?? []).map((reviewer) => reviewer.login)),
-                  ));
-
-              let mentions = [];
-              let text = '';
-              if (exempt) {
-                core.info(`#${number}: labeled ${exempt}, no reminder`);
-              } else if (onAuthor) {
-                if (days >= AUTHOR_DAYS) {
-                  mentions = [pr.user.login];
-                  text = pr.draft
-                    ? `this draft pull request has had no activity for ${days} days. ` +
-                      'Mark it ready for review when it is, or close it if you no longer plan to finish it.'
-                    : `a reviewer requested changes on this pull request, and it has had no activity for ${days} days. ` +
-                      'Push an update or reply to the review when you are ready.';
+              try {
+                const number = pr.number;
+                const labels = pr.labels.map((label) => label.name);
+                const stale = labels.includes('lifecycle/stale');
+                // An opted-out pull request gets no reminder and never gets
+                // lifecycle/stale, but one that already has the label loses it
+                // after new activity, like any other.
+                const exempt = labels.find((name) => EXEMPT.includes(name));
+                if (exempt && !stale) {
+                  core.info(`#${number}: labeled ${exempt}, skipped`);
+                  continue;
                 }
-              } else if (businessDays >= REVIEW_BUSINESS_DAYS) {
-                // A team is mentioned as @org/slug.
-                mentions = [
-                  ...(pr.requested_reviewers ?? []).map((reviewer) => reviewer.login),
-                  ...(pr.requested_teams ?? []).map((team) => `${owner}/${team.slug}`),
-                ];
-                if (mentions.length === 0) {
-                  core.info(`#${number}: waiting ${businessDays} business days for review, but no reviewer is requested; no comment`);
-                } else {
-                  text =
-                    `this pull request has waited ${businessDays} business days for a review. ` +
-                    'Please review it, or reply here with when you expect to.';
-                }
-              }
 
-              // Read everything first and write afterwards, so the cap below
-              // can pick the longest idle pull requests across the whole list.
-              let reminder = null;
-              if (text) {
-                const marker = `<!-- topograph-idle-nudge:${since.toISOString()} -->`;
-                // Match the author as well as the marker, so a comment anyone
-                // else writes cannot suppress a reminder.
-                const reminded = events.some(
-                  (event) => event.event === 'commented' && event.user?.login === BOT_LOGIN && event.body?.includes(marker),
-                );
-                if (reminded) {
-                  core.info(`#${number}: already reminded for the quiet period since ${since.toISOString()}`);
-                } else {
-                  reminder = {
-                    count: mentions.length,
-                    body: [
-                      `${mentions.map((login) => `@${login}`).join(' ')} ${text}`,
-                      'These reminders and the `lifecycle/stale` label are explained under ' +
-                        `[Following up](${FOLLOWING_UP}). Pull requests are never closed automatically.`,
-                      marker,
-                    ].join('\n\n'),
-                  };
+                const events = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                  owner,
+                  repo,
+                  issue_number: number,
+                  per_page: 100,
+                });
+                const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+                  owner,
+                  repo,
+                  event: 'pull_request',
+                  head_sha: pr.head.sha,
+                  per_page: 100,
+                });
+                const since = lastActivity(pr, events, runs);
+                const days = Math.floor((now - since) / DAY_MS);
+                const businessDays = businessDaysSince(since);
+                const onAuthor =
+                  !exempt &&
+                  (pr.draft ||
+                    changesRequested(
+                      await github.paginate(github.rest.pulls.listReviews, {
+                        owner,
+                        repo,
+                        pull_number: number,
+                        per_page: 100,
+                      }),
+                      new Set((pr.requested_reviewers ?? []).map((reviewer) => reviewer.login)),
+                    ));
+
+                let mentions = [];
+                let text = '';
+                if (exempt) {
+                  core.info(`#${number}: labeled ${exempt}, no reminder`);
+                } else if (onAuthor) {
+                  if (days >= AUTHOR_DAYS) {
+                    mentions = [pr.user.login];
+                    text = pr.draft
+                      ? `this draft pull request has had no activity for ${days} days. ` +
+                        'Mark it ready for review when it is, or close it if you no longer plan to finish it.'
+                      : `a reviewer requested changes on this pull request, and it has had no activity for ${days} days. ` +
+                        'Push an update or reply to the review when you are ready.';
+                  }
+                } else if (businessDays >= REVIEW_BUSINESS_DAYS) {
+                  // A team is mentioned as @org/slug.
+                  mentions = [
+                    ...(pr.requested_reviewers ?? []).map((reviewer) => reviewer.login),
+                    ...(pr.requested_teams ?? []).map((team) => `${owner}/${team.slug}`),
+                  ];
+                  if (mentions.length === 0) {
+                    core.info(`#${number}: waiting ${businessDays} business days for review, but no reviewer is requested; no comment`);
+                  } else {
+                    text =
+                      `this pull request has waited ${businessDays} business days for a review. ` +
+                      'Please review it, or reply here with when you expect to.';
+                  }
                 }
+
+                // Read everything first and write afterwards, so the cap below
+                // can pick the longest idle pull requests across the whole list.
+                let reminder = null;
+                if (text) {
+                  const marker = `<!-- topograph-idle-nudge:${since.toISOString()} -->`;
+                  // Match the author as well as the marker, so a comment anyone
+                  // else writes cannot suppress a reminder.
+                  const reminded = events.some(
+                    (event) => event.event === 'commented' && event.user?.login === BOT_LOGIN && event.body?.includes(marker),
+                  );
+                  if (reminded) {
+                    core.info(`#${number}: already reminded for the quiet period since ${since.toISOString()}`);
+                  } else {
+                    reminder = {
+                      count: mentions.length,
+                      body: [
+                        `${mentions.map((login) => `@${login}`).join(' ')} ${text}`,
+                        'These reminders and the `lifecycle/stale` label are explained under ' +
+                          `[Following up](${FOLLOWING_UP}). Pull requests are never closed automatically.`,
+                        marker,
+                      ].join('\n\n'),
+                    };
+                  }
+                }
+                const label = days >= STALE_DAYS && !stale ? 'add' : days < STALE_DAYS && stale ? 'remove' : null;
+                decisions.push({ number, since, days, reminder, label });
+              } catch (error) {
+                core.error(`#${pr.number}: ${error.message}`);
+                failed.push(pr.number);
               }
-              const label = days >= STALE_DAYS && !stale ? 'add' : days < STALE_DAYS && stale ? 'remove' : null;
-              decisions.push({ number, since, days, reminder, label });
             }
 
             // The longest idle first; sort is stable, so ties keep list order.
@@ -341,27 +352,36 @@ jobs:
             const dry = NUDGE_DRY_RUN ? ' (dry run)' : '';
             let posted = 0;
             for (const { number, since, days, reminder, label } of decisions) {
-              if (chosen.has(number)) {
-                if (!NUDGE_DRY_RUN) await github.rest.issues.createComment({ owner, repo, issue_number: number, body: reminder.body });
-                core.info(
-                  `#${number}: ${NUDGE_DRY_RUN ? 'would remind' : 'reminded'} ${reminder.count} account(s), ` +
-                    `idle since ${since.toISOString()}${dry}`,
-                );
-                posted += 1;
-              }
-              if (label === 'add') {
-                // Not caught: a missing label must fail the job.
-                if (!NUDGE_DRY_RUN) await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['lifecycle/stale'] });
-                core.info(`#${number}: idle ${days} days, ${NUDGE_DRY_RUN ? 'would add' : 'added'} lifecycle/stale${dry}`);
-              } else if (label === 'remove') {
-                if (!NUDGE_DRY_RUN) await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'lifecycle/stale' });
-                core.info(`#${number}: active again, ${NUDGE_DRY_RUN ? 'would remove' : 'removed'} lifecycle/stale${dry}`);
+              try {
+                if (chosen.has(number)) {
+                  if (!NUDGE_DRY_RUN) await github.rest.issues.createComment({ owner, repo, issue_number: number, body: reminder.body });
+                  core.info(
+                    `#${number}: ${NUDGE_DRY_RUN ? 'would remind' : 'reminded'} ${reminder.count} account(s), ` +
+                      `idle since ${since.toISOString()}${dry}`,
+                  );
+                  posted += 1;
+                }
+                if (label === 'add') {
+                  // A missing label fails here and so fails the step.
+                  if (!NUDGE_DRY_RUN) await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['lifecycle/stale'] });
+                  core.info(`#${number}: idle ${days} days, ${NUDGE_DRY_RUN ? 'would add' : 'added'} lifecycle/stale${dry}`);
+                } else if (label === 'remove') {
+                  if (!NUDGE_DRY_RUN) await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'lifecycle/stale' });
+                  core.info(`#${number}: active again, ${NUDGE_DRY_RUN ? 'would remove' : 'removed'} lifecycle/stale${dry}`);
+                }
+              } catch (error) {
+                core.error(`#${number}: ${error.message}`);
+                failed.push(number);
               }
             }
             core.info(
               `${NUDGE_DRY_RUN ? 'Dry run: would remind on' : 'Reminded on'} ${posted} of ${due.length} pull requests due a reminder; ` +
                 `${due.length - chosen.size} left for later runs.`,
             );
+            if (failed.length > 0) {
+              const list = failed.sort((a, b) => a - b).map((number) => `#${number}`).join(', ');
+              core.setFailed(`Could not process ${failed.length} pull requests: ${list}. See the errors above.`);
+            }
 
   lock:
     name: Lock old closed threads
