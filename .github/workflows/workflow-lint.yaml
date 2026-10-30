@@ -31,6 +31,9 @@
 #     fern-docs-preview-comment.yml, and publish-fern-docs.yml
 #   - dangerous-triggers: the workflow_run trigger in
 #     fern-docs-preview-comment.yml, part of the two-workflow docs preview
+#   - dangerous-triggers: the pull_request_target trigger in labeler.yaml,
+#     which needs the base repository's token to label pull requests from
+#     forks; the job checks out no code and runs nothing from the pull request
 #   - superfluous-actions: softprops/action-gh-release in release.yml
 # Make the job blocking once these are resolved or explicitly ignored.
 #

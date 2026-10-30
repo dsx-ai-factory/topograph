@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Area labels for pull requests, applied by .github/workflows/labeler.yaml
+# with actions/labeler v7.0.0. A label is added when any file the pull request
+# changes matches one of its globs. sync-labels is on, so the label comes off
+# again on a later push that no longer touches that area, including an area/*
+# label someone added by hand.
+#
+# The workflow runs on pull_request_target and checks out nothing, so the
+# labeler reads this file through the API at the base branch's commit. Edits
+# to it in a pull request take effect after they merge, not on that pull
+# request.
+#
+# Every label here must be declared in .github/labels.yml, and every glob must
+# match at least one tracked file; .github/tests/labeler.test.mjs and
+# labels.test.mjs check both. Globs are minimatch patterns: `**` spans
+# directories and `*` does not cross a `/`, so `*.md` matches only Markdown
+# files at the repository root.
+
+area/providers:
+  - changed-files:
+      - any-glob-to-any-file: ['pkg/providers/**']
+
+area/engines:
+  - changed-files:
+      - any-glob-to-any-file: ['pkg/engines/**', 'pkg/translate/**']
+
+area/topology:
+  - changed-files:
+      - any-glob-to-any-file: ['pkg/topology/**']
+
+area/accelerator:
+  - changed-files:
+      - any-glob-to-any-file: ['pkg/accelerator/**']
+
+area/chart:
+  - changed-files:
+      - any-glob-to-any-file: ['charts/**']
+
+area/node-observer:
+  - changed-files:
+      - any-glob-to-any-file: ['pkg/node_observer/**', 'cmd/node-observer/**']
+
+area/node-data-broker:
+  - changed-files:
+      - any-glob-to-any-file: ['cmd/node-data-broker/**']
+
+area/api:
+  - changed-files:
+      - any-glob-to-any-file: ['pkg/server/**', 'cmd/topograph/**']
+
+area/infiniband:
+  - changed-files:
+      - any-glob-to-any-file: ['pkg/ib/**']
+
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file: ['docs/**', 'fern/**', '*.md']
+
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file: ['.github/**']
+
+area/build:
+  - changed-files:
+      - any-glob-to-any-file: ['Dockerfile', 'Makefile', 'deb/**', 'rpmbuild/**', 'scripts/**']
+
+area/tests:
+  - changed-files:
+      - any-glob-to-any-file: ['tests/**', 'pkg/test/**', 'demos/**']
