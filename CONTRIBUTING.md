@@ -314,7 +314,8 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
   DCO bot all run on every push to the PR. When `.github/` changes, workflow
   lint (`workflow-lint.yaml`: actionlint and zizmor) and workflow tests
   (`workflow-tests.yaml`: unit tests for the scripts inside workflows, the
-  workflow security rules, and the label list in `.github/labels.yml`) run too.
+  workflow security rules, the label list in `.github/labels.yml`, and the
+  Dependabot cooldown in `.github/dependabot.yml`) run too.
   The `PR title` check (`pr-title.yaml`) runs when the PR is opened, pushed
   to, or edited.
 - **Human** — adherence to the provider/engine boundary, test coverage on new

@@ -30,6 +30,13 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Etc/UTC"
+    # Propose a release only once it is 7 days old, on every ecosystem below.
+    # A release that turns out broken, yanked or compromised in its first days
+    # then has time to be pulled before it reaches a PR here, and 7 days is the
+    # threshold zizmor's dependabot-cooldown audit applies by default. Cooldown
+    # delays version updates only; Dependabot security updates still open at once.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
@@ -51,6 +58,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Etc/UTC"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci(deps)"
@@ -74,6 +83,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Etc/UTC"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 3
     commit-message:
       prefix: "build(deps)"

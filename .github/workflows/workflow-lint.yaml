@@ -25,8 +25,6 @@
 # template injection, excessive permissions, persisted credentials, and
 # unpinned actions. Its findings go to the code scanning dashboard as SARIF and
 # do not fail the job, because these accepted findings remain:
-#   - dependabot-cooldown (x3): no cooldown on the gomod, github-actions, and
-#     docker ecosystems in dependabot.yml
 #   - adhoc-packages (x3): `npm install -g fern-api` in fern-docs-ci.yml,
 #     fern-docs-preview-comment.yml, and publish-fern-docs.yml
 #   - dangerous-triggers: the workflow_run trigger in

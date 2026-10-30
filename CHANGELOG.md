@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - The issue template chooser no longer offers blank issues, and its links now point to NVIDIA PSIRT for security reports, `docs/community.md` for questions, and the documentation site. The feature request form applies `enhancement` instead of `feature request`, both documentation forms apply `documentation` instead of `doc`, a new Question form applies `question`, and every form also applies `needs-triage`.
+- Dependabot waits 7 days after a release before opening a version-update PR for Go modules, GitHub Actions and Docker base images (`cooldown` in `.github/dependabot.yml`). Security updates are not delayed.
 
 ### Removed
 
