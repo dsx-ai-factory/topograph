@@ -375,12 +375,19 @@ up on quiet threads:
   for 90 days is locked, without a comment, at most 50 a run and oldest
   first. Open a new issue that links to it instead.
 
-Closing questions and locking threads start as a dry run: the workflow only
-logs what it would do until a maintainer has read a week of those logs.
+Each run posts at most 20 reminders, to the PRs that have been idle longest;
+the rest follow on later runs.
+
+All of this starts as a dry run: the workflow posts no reminder or comment,
+adds or removes no label, and closes or locks nothing. It only logs what it
+would do, until a maintainer has read a week of those logs.
 
 Activity means a comment, review, push, or label change by a person; events
 from bots, including pushes by Dependabot or by a workflow, do not count. A
 push counts from when it reached the PR, not from the dates of its commits.
+That holds for a PR with merge conflicts too: GitHub runs no PR workflow on
+it, so the push is dated by the first check on the pushed commit, and a PR
+whose last push cannot be dated counts as active.
 Each reminder is posted once per quiet period. To opt an issue or PR out, a
 maintainer adds the `lifecycle/frozen` label; `do-not-merge` also stops the
 reminders and the label on a PR.
