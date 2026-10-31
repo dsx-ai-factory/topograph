@@ -24,6 +24,7 @@ import (
 
 func TestProviders(t *testing.T) {
 	known := []string{
+		"akamai", "akamai-sim",
 		"aws", "aws-sim",
 		"infiniband-bm", "infiniband-k8s", "infiniband-sim",
 		"dra",

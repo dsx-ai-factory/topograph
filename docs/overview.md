@@ -42,6 +42,7 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 
 | Service provider or network fabric | Topograph provider name | Simulation variant |
 |---|---|---|
+| [Akamai Cloud](./providers/akamai.md) | `akamai` | `akamai-sim` |
 | [Amazon Web Services (AWS)](./providers/aws.md) | `aws` | `aws-sim` |
 | [Crusoe Cloud](./providers/crusoe.md) | `crusoe` | `crusoe-sim` |
 | [Firebird](./providers/firebird.md) | `firebird` | `firebird-sim` |
@@ -58,6 +59,10 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 | [Topograph API lifecycle testing](./providers/test.md) | `test` | — (the provider itself simulates success, pending, and error responses) |
 
 An em dash (—) indicates that no corresponding provider variant is registered.
+
+For [Akamai Cloud](./providers/akamai.md#node-identity-from-imds), the Node Data
+Broker reads the node's topology host UUID and region from local IMDS JSON
+responses and writes the standard identity annotations used by Kubernetes discovery.
 
 Use [Nautobot](./providers/nautobot.md) when fabric cabling is inventoried in Nautobot; switch roles, locations, and platforms select the initial fabric switches, and compute roles identify their attached endpoints. Connected switches are followed beyond the location and platform filters. Switch names must be unique throughout the discovered fabric.
 

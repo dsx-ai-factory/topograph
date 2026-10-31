@@ -35,6 +35,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/internal/healthz"
 	"github.com/dsx-ai-factory/topograph/internal/version"
 	"github.com/dsx-ai-factory/topograph/pkg/accelerator"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/akamai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/aws"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/crusoe"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dra"
@@ -171,6 +172,8 @@ func (b *nodeBroker) apply(ctx context.Context) error {
 
 func (b *nodeBroker) getAnnotations(ctx context.Context) (map[string]string, error) {
 	switch b.config.Provider.Name {
+	case akamai.NAME:
+		return akamai.GetNodeAnnotations(ctx, b.config.Provider.Params)
 	case aws.NAME:
 		return aws.GetNodeAnnotations(ctx)
 	case crusoe.NAME:
