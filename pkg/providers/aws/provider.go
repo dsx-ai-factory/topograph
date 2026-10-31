@@ -172,12 +172,7 @@ func New(clientFactory ClientFactory, trimTiers int) *Provider {
 
 // Engine support
 
-// Instances2NodeMap implements slurm.instanceMapper
-func (p *Provider) Instances2NodeMap(ctx context.Context, nodes []string) (map[string]string, error) {
-	return instanceToNodeMap(ctx, nodes)
-}
-
-// GetInstancesRegions implements slurm.instanceMapper
-func (p *Provider) GetInstancesRegions(ctx context.Context, nodes []string) (map[string]string, error) {
-	return getRegions(ctx, nodes)
+// GetNodeInstances implements slurm.instanceMapper
+func (p *Provider) GetNodeInstances(ctx context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.GetNodeInstancesByRegion(ctx, nodes, instanceToNodeMap, getRegions)
 }

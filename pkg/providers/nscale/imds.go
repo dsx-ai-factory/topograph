@@ -33,13 +33,16 @@ import (
 
 const (
 	IMDSURL = "http://169.254.169.254/openstack/latest/meta_data.json"
-
-	metaKeyServerID = "serverID"
-	metaKeyRegionID = "regionID"
 )
 
 type imdsMetadata struct {
-	Meta map[string]string `json:"meta"`
+	Meta imdsMeta `json:"meta"`
+}
+
+// imdsMeta holds the fields of the IMDS "meta" object used by the provider.
+type imdsMeta struct {
+	ServerID string `json:"serverID"`
+	RegionID string `json:"regionID"`
 }
 
 func pdshCmd(url string) string {
@@ -61,12 +64,10 @@ func parseIMDSOutput(buff *bytes.Buffer) (map[string]*imdsMetadata, error) {
 	scanner := bufio.NewScanner(buff)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxIMDSLineSize)
 	for scanner.Scan() {
-		str := scanner.Text()
-		idx := strings.Index(str, ": ")
-		if idx == -1 {
+		node, data, ok := strings.Cut(scanner.Text(), ": ")
+		if !ok {
 			continue
 		}
-		node, data := str[:idx], str[idx+2:]
 
 		metadata := &imdsMetadata{}
 		if err := json.Unmarshal([]byte(data), metadata); err != nil {
@@ -100,7 +101,7 @@ func filterByRegion(nodeMeta map[string]*imdsMetadata, expectedRegion string) ma
 
 	filtered := make(map[string]*imdsMetadata, len(nodeMeta))
 	for node, metadata := range nodeMeta {
-		region := metadata.Meta[metaKeyRegionID]
+		region := metadata.Meta.RegionID
 		if region != expectedRegion {
 			klog.Warningf("excluding node %s from topology query: IMDS region %q does not match configured region %q", node, region, expectedRegion)
 			continue
@@ -114,7 +115,7 @@ func filterByRegion(nodeMeta map[string]*imdsMetadata, expectedRegion string) ma
 func instanceToNodeMap(nodeMeta map[string]*imdsMetadata) map[string]string {
 	i2n := make(map[string]string, len(nodeMeta))
 	for node, metadata := range nodeMeta {
-		serverID := metadata.Meta[metaKeyServerID]
+		serverID := metadata.Meta.ServerID
 		if len(serverID) == 0 {
 			continue
 		}
@@ -127,7 +128,7 @@ func instanceToNodeMap(nodeMeta map[string]*imdsMetadata) map[string]string {
 func getRegions(nodeMeta map[string]*imdsMetadata) map[string]string {
 	regions := make(map[string]string, len(nodeMeta))
 	for node, metadata := range nodeMeta {
-		if region := metadata.Meta[metaKeyRegionID]; len(region) > 0 {
+		if region := metadata.Meta.RegionID; len(region) > 0 {
 			regions[node] = region
 		}
 	}
@@ -157,16 +158,16 @@ func GetNodeAnnotations(ctx context.Context, params map[string]any) (map[string]
 		return nil, fmt.Errorf("failed to parse IMDS response: %v", err)
 	}
 
-	serverID := metadata.Meta[metaKeyServerID]
+	serverID := metadata.Meta.ServerID
 	if len(serverID) == 0 {
-		return nil, fmt.Errorf("missing %q in IMDS response", metaKeyServerID)
+		return nil, fmt.Errorf("missing %q in IMDS response", "serverID")
 	}
 
 	annotations := map[string]string{
 		topology.KeyNodeInstance: serverID,
 	}
 
-	if region := metadata.Meta[metaKeyRegionID]; len(region) > 0 {
+	if region := metadata.Meta.RegionID; len(region) > 0 {
 		annotations[topology.KeyNodeRegion] = region
 	}
 

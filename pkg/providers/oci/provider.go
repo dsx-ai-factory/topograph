@@ -17,6 +17,9 @@ package oci
 
 import (
 	"context"
+
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 type baseProvider struct {
@@ -25,7 +28,13 @@ type baseProvider struct {
 
 // Engine support
 
-// GetInstancesRegions implements slurm.instanceMapper
-func (p *baseProvider) GetInstancesRegions(ctx context.Context, nodes []string) (map[string]string, error) {
-	return getRegions(ctx, nodes)
+// groupInstances joins the given instance-to-node map with the region of each
+// node, and returns the instances grouped by region.
+func groupInstances(ctx context.Context, i2n map[string]string, nodes []string) ([]topology.ComputeInstances, error) {
+	nodeRegions, err := getRegions(ctx, nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	return providers.GroupByRegion(i2n, nodeRegions), nil
 }

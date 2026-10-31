@@ -75,12 +75,10 @@ type TopologyNodeFinder struct {
 }
 
 type instanceMapper interface {
-	// Instances2NodeMap receives a list of SLURM node names and returns a map of
-	// the service provider assigned compute instance IDs to the node names
-	Instances2NodeMap(context.Context, []string) (map[string]string, error)
-	// GetInstancesRegions receives a list of SLURM node names and returns a map
-	// of node names to their deployed regions
-	GetInstancesRegions(context.Context, []string) (map[string]string, error)
+	// GetNodeInstances receives a list of SLURM node names and returns the
+	// service provider assigned compute instance IDs mapped to the node names,
+	// grouped by the region the instances are deployed in
+	GetNodeInstances(context.Context, []string) ([]topology.ComputeInstances, error)
 }
 
 var partitionNodesRe *regexp.Regexp
@@ -116,46 +114,13 @@ func (eng *SlurmEngine) ResolveComputeInstances(ctx context.Context, instances [
 		return nil, nil
 	}
 
-	i2n, err := instanceMapper.Instances2NodeMap(ctx, nodes)
+	cis, err := instanceMapper.GetNodeInstances(ctx, nodes)
 	if err != nil {
 		return nil, httperr.NewError(http.StatusInternalServerError, err.Error())
 	}
-	klog.V(4).Infof("Detected instance map: %v", i2n)
+	klog.V(4).Infof("Detected compute instances: %v", cis)
 
-	nodeRegions, err := instanceMapper.GetInstancesRegions(ctx, nodes)
-	if err != nil {
-		return nil, httperr.NewError(http.StatusInternalServerError, err.Error())
-	}
-
-	return aggregateComputeInstances(i2n, nodeRegions), nil
-}
-
-func aggregateComputeInstances(i2n, nodeRegions map[string]string) []topology.ComputeInstances {
-	// regions maps region name to the corresponding index in "cis"
-	regions := make(map[string]int)
-	cis := []topology.ComputeInstances{}
-
-	for instance, node := range i2n {
-		region, ok := nodeRegions[node]
-		if !ok {
-			klog.Warningf("Failed to find region for node %s", node)
-			continue
-		}
-		indx, ok := regions[region]
-		if !ok {
-			indx = len(regions)
-			regions[region] = indx
-			cis = append(cis, topology.ComputeInstances{
-				Region:    region,
-				Instances: map[string]string{instance: node},
-			})
-		} else {
-			cis[indx].Instances[instance] = node
-		}
-	}
-	klog.V(4).Infof("Detected regions: %v", regions)
-
-	return cis
+	return cis, nil
 }
 
 func GetNodeList(ctx context.Context) ([]string, error) {

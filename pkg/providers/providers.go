@@ -66,6 +66,71 @@ func HttpReq(ctx context.Context, method, url string, headers map[string]string)
 	return strings.TrimSpace(string(data)), nil
 }
 
+// GroupByRegion joins a map of compute instance IDs to node names with a map of
+// node names to regions, and returns the instances grouped by region. Nodes
+// without a known region are skipped.
+func GroupByRegion(i2n, nodeRegions map[string]string) []topology.ComputeInstances {
+	// regions maps region name to the corresponding index in "cis"
+	regions := make(map[string]int)
+	cis := []topology.ComputeInstances{}
+
+	for instance, node := range i2n {
+		region, ok := nodeRegions[node]
+		if !ok {
+			klog.Warningf("Failed to find region for node %s", node)
+			continue
+		}
+		indx, ok := regions[region]
+		if !ok {
+			indx = len(regions)
+			regions[region] = indx
+			cis = append(cis, topology.ComputeInstances{
+				Region:    region,
+				Instances: map[string]string{instance: node},
+			})
+		} else {
+			cis[indx].Instances[instance] = node
+		}
+	}
+	klog.V(4).Infof("Detected regions: %v", regions)
+
+	return cis
+}
+
+// NodeLookup resolves a per-node mapping for the given nodes.
+type NodeLookup func(ctx context.Context, nodes []string) (map[string]string, error)
+
+// GetNodeInstancesByRegion builds the instance-to-node map and the node-to-region
+// map with the given lookups, and returns the instances grouped by region.
+func GetNodeInstancesByRegion(ctx context.Context, nodes []string,
+	instanceToNode, nodeToRegion NodeLookup) ([]topology.ComputeInstances, error) {
+
+	i2n, err := instanceToNode(ctx, nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	nodeRegions, err := nodeToRegion(ctx, nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	return GroupByRegion(i2n, nodeRegions), nil
+}
+
+// SelfNamedInstances returns a single region holding the given nodes, where each
+// node name doubles as its own instance ID.
+func SelfNamedInstances(nodes []string, region string) []topology.ComputeInstances {
+	if len(nodes) == 0 {
+		return []topology.ComputeInstances{}
+	}
+	instances := make(map[string]string, len(nodes))
+	for _, node := range nodes {
+		instances[node] = node
+	}
+	return []topology.ComputeInstances{{Region: region, Instances: instances}}
+}
+
 func ParseInstanceOutput(buff *bytes.Buffer) (map[string]string, error) {
 	return ParsePdshOutput(buff, false)
 }

@@ -91,13 +91,13 @@ func (p *imdsProvider) getComputeHostInfo(ctx context.Context, ci topology.Compu
 
 // Engine support
 
-// Instances2NodeMap implements slurm.instanceMapper
-func (p *imdsProvider) Instances2NodeMap(ctx context.Context, nodes []string) (map[string]string, error) {
+// GetNodeInstances implements slurm.instanceMapper
+func (p *imdsProvider) GetNodeInstances(ctx context.Context, nodes []string) ([]topology.ComputeInstances, error) {
 	i2n := make(map[string]string)
 
 	for _, node := range nodes {
 		i2n[node] = node
 	}
 
-	return i2n, nil
+	return groupInstances(ctx, i2n, nodes)
 }

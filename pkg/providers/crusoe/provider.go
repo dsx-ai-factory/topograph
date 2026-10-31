@@ -33,11 +33,13 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
-const NAME = "crusoe"
+const (
+	NAME = "crusoe"
 
-// region is the only region a Crusoe Kubernetes cluster spans. Crusoe deploys
-// one cluster per region, so the provider reports a constant.
-const region = "local"
+	// region is the only region a Crusoe Kubernetes cluster spans. Crusoe deploys
+	// one cluster per region, so the provider reports a constant.
+	region = "local"
+)
 
 type Provider struct {
 	client      kubernetes.Interface
@@ -117,22 +119,9 @@ func nodeMetadataFromNodeList(nodeList *corev1.NodeList) []nodeMetadata {
 	return nodes
 }
 
-// Instances2NodeMap implements slurm.instanceMapper.
-func (p *Provider) Instances2NodeMap(_ context.Context, nodes []string) (map[string]string, error) {
-	i2n := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		i2n[node] = node
-	}
-	return i2n, nil
-}
-
-// GetInstancesRegions implements slurm.instanceMapper.
-func (p *Provider) GetInstancesRegions(_ context.Context, nodes []string) (map[string]string, error) {
-	regions := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		regions[node] = region
-	}
-	return regions, nil
+// GetNodeInstances implements slurm.instanceMapper
+func (p *Provider) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, region), nil
 }
 
 // GetNodeAnnotations returns the identity annotations the node-data-broker

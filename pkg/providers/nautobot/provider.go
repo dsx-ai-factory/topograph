@@ -237,19 +237,7 @@ func (p *Provider) GenerateTopologyConfig(ctx context.Context, pageSize *int, in
 	return cluster.ToGraph(NAME, instances, p.params.TrimTiers, false), nil
 }
 
-// Instances2NodeMap implements Slurm hostname-based discovery.
-func (p *Provider) Instances2NodeMap(_ context.Context, nodes []string) (map[string]string, error) {
-	result := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		result[node] = node
-	}
-	return result, nil
-}
-
-func (p *Provider) GetInstancesRegions(_ context.Context, nodes []string) (map[string]string, error) {
-	result := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		result[node] = "local"
-	}
-	return result, nil
+// GetNodeInstances implements slurm.instanceMapper
+func (p *Provider) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, "local"), nil
 }

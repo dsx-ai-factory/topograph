@@ -101,18 +101,7 @@ func (p *ProviderSim) GetComputeInstances(_ context.Context) ([]topology.Compute
 	return p.instances, nil
 }
 
-func (p *ProviderSim) Instances2NodeMap(_ context.Context, nodes []string) (map[string]string, error) {
-	result := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		result[node] = node
-	}
-	return result, nil
-}
-
-func (p *ProviderSim) GetInstancesRegions(_ context.Context, nodes []string) (map[string]string, error) {
-	result := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		result[node] = "local"
-	}
-	return result, nil
+// GetNodeInstances implements slurm.instanceMapper
+func (p *ProviderSim) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, "local"), nil
 }

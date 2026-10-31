@@ -18,6 +18,7 @@ package providers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -258,4 +259,91 @@ func TestGetIMDSURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGroupByRegion(t *testing.T) {
+	testCases := []struct {
+		name    string
+		i2n     map[string]string
+		regions map[string]string
+		cis     []topology.ComputeInstances
+	}{
+		{
+			name: "Case 1: no data",
+			cis:  []topology.ComputeInstances{},
+		},
+		{
+			name:    "Case 2: full match",
+			i2n:     map[string]string{"i1": "n1", "i2": "n2", "i3": "n3", "i4": "n4", "i5": "n5"},
+			regions: map[string]string{"n1": "r1", "n2": "r1", "n3": "r2", "n4": "r2", "n5": "r3"},
+			cis: []topology.ComputeInstances{
+				{
+					Region:    "r1",
+					Instances: map[string]string{"i1": "n1", "i2": "n2"},
+				},
+				{
+					Region:    "r2",
+					Instances: map[string]string{"i3": "n3", "i4": "n4"},
+				},
+				{
+					Region:    "r3",
+					Instances: map[string]string{"i5": "n5"},
+				},
+			},
+		},
+		{
+			name:    "Case 3: partial match",
+			i2n:     map[string]string{"i1": "n1", "i2": "n2", "i3": "n3", "i4": "n4", "i5": "n5"},
+			regions: map[string]string{"n1": "r1", "n3": "r2", "n4": "r2"},
+			cis: []topology.ComputeInstances{
+				{
+					Region:    "r1",
+					Instances: map[string]string{"i1": "n1"},
+				},
+				{
+					Region:    "r2",
+					Instances: map[string]string{"i3": "n3", "i4": "n4"},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cis := GroupByRegion(tc.i2n, tc.regions)
+			require.ElementsMatch(t, tc.cis, cis)
+		})
+	}
+}
+
+func TestSelfNamedInstances(t *testing.T) {
+	require.Equal(t, []topology.ComputeInstances{}, SelfNamedInstances(nil, "local"))
+	require.Equal(t,
+		[]topology.ComputeInstances{{Region: "local", Instances: map[string]string{"n1": "n1", "n2": "n2"}}},
+		SelfNamedInstances([]string{"n1", "n2", "n1"}, "local"))
+}
+
+func TestGetNodeInstancesByRegion(t *testing.T) {
+	ctx := context.TODO()
+	nodes := []string{"n1", "n2"}
+	lookup := func(m map[string]string, err error) NodeLookup {
+		return func(context.Context, []string) (map[string]string, error) {
+			return m, err
+		}
+	}
+	i2n := lookup(map[string]string{"i1": "n1", "i2": "n2"}, nil)
+	regions := lookup(map[string]string{"n1": "r1", "n2": "r1"}, nil)
+
+	cis, err := GetNodeInstancesByRegion(ctx, nodes, i2n, regions)
+	require.NoError(t, err)
+	require.Equal(t,
+		[]topology.ComputeInstances{{Region: "r1", Instances: map[string]string{"i1": "n1", "i2": "n2"}}}, cis)
+
+	failure := errors.New("lookup failed")
+
+	_, err = GetNodeInstancesByRegion(ctx, nodes, lookup(nil, failure), regions)
+	require.ErrorIs(t, err, failure)
+
+	_, err = GetNodeInstancesByRegion(ctx, nodes, i2n, lookup(nil, failure))
+	require.ErrorIs(t, err, failure)
 }
