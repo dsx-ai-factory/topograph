@@ -197,6 +197,35 @@ jobs:
             if git show-ref --verify --quiet "refs/tags/${version}"; then
               mkdir -p "fern/versions/${version}-content"
               git archive "refs/tags/${version}" -- docs/ | tar -x --strip-components=1 -C "fern/versions/${version}-content"
+              # Patch MDX-unsafe HTML from older tags before escaping.
+              # Tags are immutable; these fixes mirror what main already has.
+              python3 tools/check-docs-mdx --fix "fern/versions/${version}-content" || true
+              find "fern/versions/${version}-content" -name '*.md' -print0 | while IFS= read -r -d '' f; do
+                # Patch MDX-unsafe HTML patterns from older tags:
+                #  - <p><picture><source><img/></picture></p> → ![alt](src)
+                #  - <p><img .../></p> → ![alt](src)
+                #  - <a name="..."></a> → removed (Fern auto-generates heading anchors)
+                python3 -c "
+import re, sys
+text = open(sys.argv[1]).read()
+text = re.sub(
+    r'<p[^>]*>\s*<picture>\s*<source\b[^>]*/>\s*<img\s+src=\"([^\"]+)\"[^>]*\balt=\"([^\"]*)\"[^>]*/>\s*</picture>\s*</p>',
+    r'![\2](\1)',
+    text,
+    flags=re.DOTALL
+)
+text = re.sub(
+    r'<p[^>]*>\s*<img\s+src=\"([^\"]+)\"[^>]*\balt=\"([^\"]*)\"[^>]*/>\s*</p>',
+    r'![\2](\1)',
+    text,
+)
+text = re.sub(r'\s*<a\s+name=\"[^\"]*\">\s*</a>', '', text)
+open(sys.argv[1], 'w').write(text)
+" "$f"
+              done
+              # Fix broken ../../charts/ relative links that 404 on the Fern site
+              sed -i'' -e 's|\](../../charts/topograph/\([^)]*\))|](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/\1)|g' "fern/versions/${version}-content"/providers/infiniband.md 2>/dev/null || true
+              sed -i'' -e 's|\](../../charts/topograph/\([^)]*\))|](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/\1)|g' "fern/versions/${version}-content"/engines/k8s.md 2>/dev/null || true
               # Escape {, }, < for MDX — but only outside fenced code blocks and inline code spans
               find "fern/versions/${version}-content" -name '*.md' -print0 | while IFS= read -r -d '' f; do
                 awk '
