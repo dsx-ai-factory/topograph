@@ -20,6 +20,7 @@ on:
     paths:
       - 'docs/**'
       - 'fern/**'
+      - 'tools/check-docs-*'
       - '.github/workflows/fern-docs-ci.yml'
     branches:
       - "pull-request/[0-9]+"
