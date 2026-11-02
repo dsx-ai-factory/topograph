@@ -2,12 +2,7 @@
 
 For the SLURM engine, topograph supports [tree](https://slurm.schedmd.com/topology.conf.html#SECTION_topology/tree) and [block](https://slurm.schedmd.com/topology.conf.html#SECTION_topology/block) topology configurations.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/topograph-slurm-topology-formats-community-dark.png" />
-    <img src="../assets/topograph-slurm-topology-formats-community-light.png" width="100%" alt="Topograph Slurm topology formats diagram" />
-  </picture>
-</p>
+![Topograph Slurm topology formats diagram](../assets/topograph-slurm-topology-formats-community-light.png)
 
 ## Automatic block-size inference
 

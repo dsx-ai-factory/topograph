@@ -1,6 +1,6 @@
 # Topograph Fern Docs
 
-This directory contains the [Fern](https://buildwithfern.com) configuration for Topograph documentation. The deployed site lives at <https://docs.nvidia.com/topograph>.
+This directory contains the [Fern](https://buildwithfern.com) configuration for Topograph documentation. The deployed site lives at [https://docs.nvidia.com/topograph](https://docs.nvidia.com/topograph).
 
 The `docs/` directory on `main` is the **source of truth**. This `fern/` directory holds site config and theme assets only — never doc content.
 
