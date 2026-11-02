@@ -3,17 +3,17 @@ module github.com/dsx-ai-factory/topograph
 go 1.27.3
 
 require (
-	cloud.google.com/go/compute v1.74.0
+	cloud.google.com/go/compute v1.74.1
 	cloud.google.com/go/compute/metadata v0.10.0
 	github.com/agrea/ptr v0.2.0
-	github.com/aws/aws-sdk-go-v2 v1.47.4
-	github.com/aws/aws-sdk-go-v2/config v1.33.10
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.10
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.341.0
+	github.com/aws/aws-sdk-go-v2 v1.47.5
+	github.com/aws/aws-sdk-go-v2/config v1.33.12
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.12
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.343.0
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/googleapis/gax-go/v2 v2.27.0
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/nebius/gosdk v0.2.83
+	github.com/nebius/gosdk v0.2.86
 	github.com/oklog/run v1.2.0
 	github.com/oracle/oci-go-sdk/v65 v65.128.0
 	github.com/prometheus/client_golang v1.25.0
@@ -21,11 +21,11 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.uber.org/goleak v1.3.0
 	golang.org/x/sync v0.24.0
-	google.golang.org/api v0.309.0
+	google.golang.org/api v0.310.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.37.1
-	k8s.io/apimachinery v0.37.1
-	k8s.io/client-go v0.37.1
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/client-go v0.37.2
 	k8s.io/klog/v2 v2.140.0
 	sigs.k8s.io/node-feature-discovery/api/nfd v0.20.1
 	sigs.k8s.io/yaml v1.6.0
@@ -35,17 +35,17 @@ require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
 	cloud.google.com/go/auth v0.24.1-0.20261001053825-dbc26066f70a // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.4 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.7 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.7 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.22 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.10.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.38.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.51.5 // indirect
-	github.com/aws/smithy-go v1.28.6 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.12.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.39.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.6 // indirect
+	github.com/aws/smithy-go v1.28.7 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -77,7 +77,7 @@ require (
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/s2a-go v0.1.11 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.23 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.24 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -116,7 +116,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
-	k8s.io/streaming v0.37.1 // indirect
+	k8s.io/streaming v0.37.2 // indirect
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
