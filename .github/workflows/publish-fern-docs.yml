@@ -224,8 +224,7 @@ open(sys.argv[1], 'w').write(text)
 " "$f"
               done
               # Fix broken ../../charts/ relative links that 404 on the Fern site
-              sed -i'' -e 's|\](../../charts/topograph/\([^)]*\))|](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/\1)|g' "fern/versions/${version}-content"/providers/infiniband.md 2>/dev/null || true
-              sed -i'' -e 's|\](../../charts/topograph/\([^)]*\))|](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/\1)|g' "fern/versions/${version}-content"/engines/k8s.md 2>/dev/null || true
+              find "fern/versions/${version}-content" -name '*.md' -print0 | xargs -0 sed -i'' -e 's|\](../../charts/topograph/\([^)]*\))|](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/\1)|g' 2>/dev/null || true
               # Escape {, }, < for MDX — but only outside fenced code blocks and inline code spans
               find "fern/versions/${version}-content" -name '*.md' -print0 | while IFS= read -r -d '' f; do
                 awk '
