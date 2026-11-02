@@ -11,22 +11,51 @@ contributors. For architecture and the provider/engine boundary, see
 git clone https://github.com/dsx-ai-factory/topograph.git
 cd topograph
 make build                    # produces bin/topograph, bin/node-observer, bin/node-data-broker, bin/kwok-nodes
-git fetch origin main:master  # make lint needs a local `master` ref — see "Local Test Loop" below
 make qualify                  # fmt + vet + lint + test — run this before every push
 ```
 
-## Prerequisites
+## Development tools
 
-| Tool | Purpose | Notes |
-|---|---|---|
-| [Go 1.27.1+](https://go.dev/dl/) | Language runtime | See `go.mod` for the exact minimum; newer minor versions are fine |
-| `make` | Build automation | Pre-installed on macOS/Linux |
-| [golangci-lint](https://golangci-lint.run/usage/install/) | Go linting | `brew install golangci-lint`, or see the [install guide](https://golangci-lint.run/usage/install/) for `go install`/binary options; CI runs it via `golangci/golangci-lint-action@v9` |
-| [helm 3.10+ or 4.x](https://helm.sh/docs/intro/install/) | Chart lint/test | Required for `make chart-test`; CI pins `v4.1.1` in `.github/workflows/chart-test.yaml` |
-| [docker](https://docs.docker.com/get-docker/) | Container image builds | Only needed for `make image-build` / `make docker-buildx` |
+| Tool | Purpose / requirement |
+| --- | --- |
+| Git, Make, C compiler (`cc`) | Source control, builds, and race-enabled tests |
+| [Go](https://go.dev/dl/) | Build and test; minimum version is defined in `go.mod` |
+| [golangci-lint](https://golangci-lint.run/docs/welcome/install/) 2.14.0+ | `make lint`; CI pins its version in `.github/workflows/go.yml` |
+| [kind](https://kind.sigs.k8s.io/) and [kubectl](https://kubernetes.io/docs/tasks/tools/) | Local Kubernetes clusters and demos |
+| [Helm](https://helm.sh/docs/intro/install/) 3.10+ or 4.x | Chart linting and tests |
+| [Mike Farah yq](https://github.com/mikefarah/yq) v4 and [jq](https://jqlang.org/) | YAML and JSON processing in scripts |
+| [Docker](https://docs.docker.com/get-started/get-docker/) and Buildx | Container image builds and local Kubernetes demos |
+| curl | Downloads in setup and demo scripts |
+| Node.js 22+ | Optional; workflow tests under `.github/tests/` |
 
-There is no `make dev-env-setup` / tool-manifest step in this repo — install
-the tools above with your system package manager and you're ready to build.
+Keep kubectl within [one minor version](https://kubernetes.io/releases/version-skew-policy/)
+of the cluster's Kubernetes version. Check each demo's README for additional requirements.
+
+### macOS installation
+
+These commands are for **macOS**. Commands and package names may differ in other
+development environments.
+
+Install Apple's Command Line Tools if needed; they provide Git, Make, and `cc`:
+
+```bash
+xcode-select --install
+```
+
+With [Homebrew](https://brew.sh/) installed and on `PATH`:
+
+```bash
+brew install go golangci-lint kind kubernetes-cli helm yq jq
+brew install --cask docker-desktop
+open -a Docker
+
+# Optional: only needed for workflow tests
+brew install node
+```
+
+Complete Docker Desktop's initial setup, enable its CLI tools on `PATH`, and wait
+for the engine to start before running demos. Docker Desktop includes
+[Buildx](https://docs.docker.com/build/concepts/overview/); macOS includes curl.
 
 ## Clone and Build
 
@@ -43,30 +72,18 @@ make clean                  # remove bin/
 ```bash
 make fmt        # go fmt ./...
 make vet        # go vet ./...
-make lint       # golangci-lint run --new-from-rev, computed from a local `master` ref
+make lint       # golangci-lint run --new-from-rev, computed from origin `main` ref
 make test       # go test -race -coverprofile=coverage.out ./...
 make coverage   # human-readable per-package summary (runs test first)
 make qualify    # fmt + vet + lint + test, in that order — run this before pushing
 ```
 
-`make lint` computes its diff base from a local `master` ref
-(`git rev-list master.. --count`), but this repo's default branch is `main`
-— a fresh clone has no local `master` and the target fails with a revision
-error. Work around it by syncing a local `master` ref to `origin/main`
-before running `make lint` or `make qualify`. Keep this ref as a
-lint-only bookkeeping branch — don't check it out or commit on it:
+`make lint` requires the local `origin/main` remote-tracking reference. If it
+is missing, the target stops before running the linter and prints a recovery
+command:
 
 ```bash
-git fetch origin main:master
-```
-
-This only works while `master` isn't checked out and hasn't diverged from
-`origin/main` (git fetch won't fetch into your current branch, and refuses
-a non-fast-forward update). If it fails for either reason, switch off
-`master` first, then reset it directly instead of fetching into it:
-
-```bash
-git branch -f master origin/main
+git fetch origin main:refs/remotes/origin/main
 ```
 
 Run a single package's tests directly with the standard Go toolchain while
@@ -96,11 +113,39 @@ missing (pinned version in `Makefile` via `HELM_UNITTEST_VERSION`).
 make mod        # go mod tidy
 ```
 
+### License headers
+
+```bash
+make license-headers       # add the standard license header to files that have none
+make license-header-check  # list files without a header, or with an older NVIDIA one; CI runs this
+```
+
+Both run [addlicense](https://github.com/google/addlicense) at a pinned
+version through `go run`, over the files git tracks, so `git add` a new file
+before running them. The header
+text is `scripts/license-header.tmpl`. `make license-headers` skips Helm
+templates (`charts/topograph/templates/`), which take the header by hand as a
+`{{- /* ... */ -}}` comment so it does not render into the manifest. addlicense
+does not read `.tpl` files or `NOTES.txt`, so the check requires that comment to
+open them.
+
+The header is NVIDIA's combined SPDX and Apache 2.0 notice. Its year is the
+year the file was created: `make license-headers` uses the current year, which
+is right for new files. When adding a header to an older file by hand, use the
+year of its first commit (`git log --diff-filter=A --format=%ad -- <file>`).
+NVIDIA's copyright guidance warns against post-dating a notice.
+
+addlicense accepts any existing copyright header, so the check also fails on
+the two older NVIDIA forms: the `Copyright <year> NVIDIA CORPORATION` block and
+the long Apache 2.0 boilerplate with `Copyright (c) <year>, NVIDIA CORPORATION.`.
+Replace such a header with the standard one and keep its year or year range. A header naming another copyright
+holder is left as its author wrote it.
+
 ## Running a Binary Locally
 
 The three long-running service binaries (`topograph`, `node-observer`,
-`node-data-broker`) each read a YAML config via `-c`/`-config` and print
-their version via `-version`. There's no `AUTO_MODE` / interactive
+`node-data-broker`) each read a YAML config via `-c`/`--config` and print
+their version via `--version`. There's no `AUTO_MODE` / interactive
 installer to worry about — just point the binary at a config file:
 
 ```bash
@@ -115,14 +160,14 @@ installer to worry about — just point the binary at a config file:
 ```
 
 `kwok-nodes` is a one-shot generator tool, not a service, and takes no
-config file — it reads a `tests/models/` fixture via `-model` and writes a
-KWOK node manifest via `-output`:
+config file — it reads a `tests/models/` fixture via `--model/-m` and writes a
+KWOK node manifest via `--output`:
 
 ```bash
-./bin/kwok-nodes -model small-tree.yaml -output -
+./bin/kwok-nodes --model small-tree.yaml --output -
 ```
 
-The `-model` flag also accepts file paths to use external model files.
+The `--model` flag also accepts file paths to use external model files.
 
 For an end-to-end local Kubernetes environment (KWOK-based, no real cluster
 needed), see the interactive demos under [`demos/`](demos/) — e.g.
@@ -150,10 +195,21 @@ require maintainer coordination first — see
 ## Building Container Images
 
 ```bash
-make image-build     # builds ghcr.io/dsx-ai-factory/topograph:<current-branch> for host OS/arch
+make image-build     # builds ghcr.io/dsx-ai-factory/topograph:<version> for host OS/arch
 make image-push       # image-build, then docker push
 make docker-buildx    # multi-platform build (linux/arm64,linux/amd64) and push via buildx
 ```
+
+`<version>` is `GIT_REF`, the same value stamped into the binaries' `--version`
+output (see the comment above `GIT_REF` in the `Makefile`): the `vX.Y.Z` tag
+at `HEAD` (`vX.Y.Z-dirty` when tracked files are modified), else the current
+branch name, else the short commit SHA, else `unknown` when no git metadata is
+available. Pass `GIT_REF=...` to set it for `make build`, `make deb`,
+`make rpm` and the default image tag. The image build is the exception: the
+Dockerfile runs `make` again inside the build without `GIT_REF`, so the
+binaries in the image always take their version from the git metadata in the
+build context, and `make image-build GIT_REF=...` changes only the tag. Passing
+the value into the Docker build is tracked in #606.
 
 Override the target/tag with `IMAGE_REPO` and `IMAGE_TAG`, e.g.:
 
@@ -161,32 +217,117 @@ Override the target/tag with `IMAGE_REPO` and `IMAGE_TAG`, e.g.:
 IMAGE_REPO=ghcr.io/myuser/topograph IMAGE_TAG=dev make image-build
 ```
 
+Release images are published by the Docker workflow. On a release tag
+checkout, `make image-push` and `make docker-buildx` therefore refuse to push a
+default `v*` tag to `ghcr.io/dsx-ai-factory/topograph`; set `IMAGE_TAG`
+explicitly or push to another `IMAGE_REPO`.
+
 ## Packaging (Slurm deb/rpm)
 
 ```bash
-make deb    # ARCH=$(GOARCH) scripts/build-deb.sh <git-ref> <package-revision>
-make rpm    # ARCH=$(GOARCH) scripts/build-rpm.sh <git-ref> <package-revision>
+make deb    # ARCH=$(GOARCH) scripts/build-deb.sh <version> <package-revision>
+make rpm    # ARCH=$(GOARCH) scripts/build-rpm.sh <version> <package-revision>
 ```
+
+The package version is the same `GIT_REF` value as the default image tag,
+normalized
+by `scripts/build-deb.sh` and `scripts/build-rpm.sh` (for example, the leading
+`v` is dropped). When no git metadata is available (for example a source
+tarball) it is `unknown` and `make` prints a warning; build from a tag
+checkout or pass `GIT_REF=vX.Y.Z`. `PACKAGE_REVISION` sets the optional
+package release.
 
 ## CI Parity
 
-CI doesn't invoke `make test` / `make lint` directly — it runs the
+CI doesn't invoke `make test` / `make lint` directly. It runs the
 underlying tools with CI-specific flags, which are close to but not
-identical to the local `make` targets:
+identical to the local `make` targets.
 
-- `.github/workflows/go.yml` — build; `go test -v -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...`
-  (coverage-instrumented, but *without* `-race`, unlike `make test`);
-  `golangci/golangci-lint-action@v9` (not `make lint`, so it isn't affected
-  by the local `master`-ref issue above); and `govulncheck`
-- `.github/workflows/chart-test.yaml` — `make chart-test` on every push/PR
-- `.github/workflows/k8s-test.yaml` — Kubernetes integration tests (kind +
-  KWOK) on `pull-request/*` branches
-- `.github/workflows/slinky-test.yaml` — Slinky engine integration tests
-- `.github/workflows/docker.yml` — container image build (manual trigger)
-- `.github/workflows/helm-release.yaml` — Helm chart release (manual trigger)
+Pull request checks run on the `pull-request/<n>` branch that copy-pr-bot
+pushes for each PR; the first four also run on `main`:
+
+- `.github/workflows/go.yml`: build; `go test -v -coverpkg=./... -coverprofile=coverage.out -covermode=atomic ./...`
+  (coverage-instrumented, but _without_ `-race`, unlike `make test`);
+  golangci-lint through `golangci/golangci-lint-action`; `make vet`; a
+  `go fmt` check; and `govulncheck ./...`
+- `.github/workflows/license-scan.yml`: `go-licenses check ./...` against
+  the Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, and MIT allow list, and
+  `make license-header-check`
+- `.github/workflows/workflow-lint.yaml`: when `.github/**` changes, plus
+  weekly and on demand so zizmor's online audits catch new advisories
+  against pinned actions. actionlint fails the run on any finding; zizmor
+  uploads its security findings to code scanning without failing the run
+- `.github/workflows/workflow-tests.yaml`: when `.github/**` changes, plus on
+  demand, `node --test '.github/tests/**/*.test.mjs'`: unit tests for the
+  scripts inside workflows, the security rules every workflow keeps, and the
+  check that every label a form or workflow applies is in `.github/labels.yml`
+- `.github/workflows/chart-test.yaml`: `make chart-test`
+- `.github/workflows/k8s-test.yaml`: Kubernetes integration tests (kind +
+  KWOK); can also be run manually
+- `.github/workflows/slinky-test.yaml`: Slinky engine integration tests; can
+  also be run manually
+- `.github/workflows/fern-docs-ci.yml`: Fern docs checks when `docs/` or
+  `fern/` changes
+- `.github/workflows/fern-docs-preview-build.yml` and
+  `.github/workflows/fern-docs-preview-comment.yml`: build a Fern docs
+  preview when `docs/` or `fern/` changes and post its link on the PR
+
+`.github/workflows/pr-title.yaml` runs on the pull request itself rather than
+on the `pull-request/<n>` branch, since it reads only the title: it checks that
+the title follows the Conventional Commits format in `CONTRIBUTING.md`. It has
+no local equivalent.
+
+Release and maintenance workflows:
+
+- `.github/workflows/docker.yml`: on manual dispatch, builds the
+  `linux/amd64` and `linux/arm64` image, uploads it to NVIDIA staging, and
+  attests its provenance
+- `.github/workflows/publish-fern-docs.yml`: on a `vX.Y.Z` tag push or
+  manual dispatch, publishes the versioned docs site
+- `.github/workflows/helm-release.yaml`: on manual dispatch, packages the Helm
+  chart and uploads it to NGC
+- `.github/workflows/scorecard.yaml`: OpenSSF Scorecard analysis on pushes
+  to `main`, weekly, and on demand
+
+After internal security approval, the chart is promoted unchanged to the public
+Helm repository at `https://helm.ngc.nvidia.com/nvidia/topograph`, as described in
+[RELEASE.md](RELEASE.md).
+
+Every `actions/setup-go` step reads the Go version from `go.mod`, so a
+toolchain bump there also moves the CI jobs that use it. The container
+image build does not: `Dockerfile` pins its own `golang` builder image,
+which Dependabot's `docker` ecosystem bumps, so keep it on the same Go
+version as `go.mod`. Every action is pinned to a commit SHA, and
+Dependabot keeps those pins current.
+
+To lint workflow changes before pushing, run
+[actionlint](https://github.com/rhysd/actionlint) and
+[zizmor](https://docs.zizmor.sh/) from the repository root, at the
+versions pinned in `workflow-lint.yaml`. actionlint picks up
+`.github/actionlint.yaml`, which lists the self-hosted runner labels. CI
+turns off actionlint's shellcheck and pyflakes integrations, so pass the
+same flags to get the same result. zizmor runs its online audits (action
+references and known advisories) only when it has a GitHub token, as it
+does in CI; without one it checks offline findings only. CI also passes
+`--no-exit-codes`, because the findings accepted in `workflow-lint.yaml`
+would otherwise fail the run:
+
+```bash
+actionlint -shellcheck= -pyflakes=
+GH_TOKEN="$(gh auth token)" zizmor --no-exit-codes .
+```
+
+To run the workflow tests as CI does, run this from the repository root. It
+needs Node 22 or later, the version on `ubuntu-latest`, and
+[yq](https://github.com/mikefarah/yq) v4 on `PATH`; no npm install is needed.
+Keep the glob quoted so that Node expands it, not the shell:
+
+```bash
+node --test '.github/tests/**/*.test.mjs'
+```
 
 `make qualify` and `make chart-test` (when charts changed) passing locally
-is a strong signal, not a guarantee of an identical CI run — in particular,
+is a strong signal, not a guarantee of an identical CI run. In particular,
 `make test`'s `-race` detector runs checks CI's coverage-only invocation
 doesn't, and the reverse is also possible in principle.
 

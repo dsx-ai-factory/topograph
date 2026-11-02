@@ -1,7 +1,17 @@
-/*
- * Copyright 2024-2026 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package slurm
 
@@ -178,61 +188,6 @@ func TestGetPartitionNodes(t *testing.T) {
 
 	// getPartitionNodes (the concrete implementation used in production) calls
 	// exec.Exec("scontrol", ...) and is not testable without a running Slurm daemon.
-}
-
-func TestAggregateComputeInstances(t *testing.T) {
-	testCases := []struct {
-		name    string
-		i2n     map[string]string
-		regions map[string]string
-		cis     []topology.ComputeInstances
-	}{
-		{
-			name: "Case 1: no data",
-			cis:  []topology.ComputeInstances{},
-		},
-		{
-			name:    "Case 2: full match",
-			i2n:     map[string]string{"i1": "n1", "i2": "n2", "i3": "n3", "i4": "n4", "i5": "n5"},
-			regions: map[string]string{"n1": "r1", "n2": "r1", "n3": "r2", "n4": "r2", "n5": "r3"},
-			cis: []topology.ComputeInstances{
-				{
-					Region:    "r1",
-					Instances: map[string]string{"i1": "n1", "i2": "n2"},
-				},
-				{
-					Region:    "r2",
-					Instances: map[string]string{"i3": "n3", "i4": "n4"},
-				},
-				{
-					Region:    "r3",
-					Instances: map[string]string{"i5": "n5"},
-				},
-			},
-		},
-		{
-			name:    "Case 3: partial match",
-			i2n:     map[string]string{"i1": "n1", "i2": "n2", "i3": "n3", "i4": "n4", "i5": "n5"},
-			regions: map[string]string{"n1": "r1", "n3": "r2", "n4": "r2"},
-			cis: []topology.ComputeInstances{
-				{
-					Region:    "r1",
-					Instances: map[string]string{"i1": "n1"},
-				},
-				{
-					Region:    "r2",
-					Instances: map[string]string{"i3": "n3", "i4": "n4"},
-				},
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			cis := aggregateComputeInstances(tc.i2n, tc.regions)
-			require.ElementsMatch(t, tc.cis, cis)
-		})
-	}
 }
 
 func TestParsePartitionNodes(t *testing.T) {

@@ -1,18 +1,17 @@
-/*
- * Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package topology
 
@@ -56,10 +55,10 @@ func NewRequest(prv Provider, eng Engine) *Request {
 func (p *Request) String() string {
 	var sb strings.Builder
 	sb.WriteString("TopologyRequest:\n")
-	fmt.Fprintf(&sb, "  Provider:%s\n", spacer(p.Provider.Name))
+	fmt.Fprintf(&sb, "  Provider:%s\n", spacer(escapeLineBreaks(p.Provider.Name)))
 	sb.WriteString(map2string(p.Provider.Creds, "  Credentials", true, "\n"))
 	sb.WriteString(map2string(p.Provider.Params, "  Parameters", false, "\n"))
-	fmt.Fprintf(&sb, "  Engine:%s\n", spacer(p.Engine.Name))
+	fmt.Fprintf(&sb, "  Engine:%s\n", spacer(escapeLineBreaks(p.Engine.Name)))
 	sb.WriteString(map2string(p.Engine.Params, "  Parameters", false, "\n"))
 	sb.WriteString("  Nodes:")
 	for _, nodes := range p.Nodes {
@@ -92,9 +91,16 @@ func spacer(value string) string {
 	return ""
 }
 
+// escapeLineBreaks keeps a client-supplied value on one line, so a request
+// written to the log cannot start a forged log line.
+func escapeLineBreaks(s string) string {
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	return strings.ReplaceAll(s, "\r", `\r`)
+}
+
 func map2string[T string | any](m map[string]T, prefix string, hide bool, suffix string) string {
 	var sb strings.Builder
-	sb.WriteString(prefix)
+	sb.WriteString(escapeLineBreaks(prefix))
 	sb.WriteString(": [")
 	if n := len(m); n != 0 {
 		keys := make([]string, 0, n)
@@ -105,9 +111,9 @@ func map2string[T string | any](m map[string]T, prefix string, hide bool, suffix
 		terms := make([]string, 0, n)
 		for _, key := range keys {
 			if hide {
-				terms = append(terms, fmt.Sprintf("%s:***", key))
+				terms = append(terms, fmt.Sprintf("%s:***", escapeLineBreaks(key)))
 			} else {
-				terms = append(terms, fmt.Sprintf("%s:%v", key, m[key]))
+				terms = append(terms, escapeLineBreaks(fmt.Sprintf("%s:%v", key, m[key])))
 			}
 		}
 		sb.WriteString(strings.Join(terms, " "))

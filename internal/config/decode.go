@@ -1,18 +1,17 @@
-/*
- * Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package config
 
@@ -166,11 +165,11 @@ func DecodeTime(dataString string) (time.Time, error) {
 	return t, invalidError(err, "time", dataString)
 }
 
-func decodeOther(t reflect.Type,
-	data any, dataString string) (any, error) {
+func decodeOther(t reflect.Type, data any, dataString string) (any, error) {
 	switch t.Kind() { // nolint: exhaustive
 	case reflect.Uint:
-		val, err := strconv.ParseUint(dataString, 10, 64)
+		// Bit size 0 is the platform's uint size, so the conversion cannot overflow.
+		val, err := strconv.ParseUint(dataString, 10, 0)
 
 		return uint(val), invalidError(err, "uint", dataString)
 	case reflect.Uint64:
@@ -191,7 +190,8 @@ func decodeOther(t reflect.Type,
 		return uint8(val), invalidError(err, "uint8", dataString)
 
 	case reflect.Int:
-		val, err := strconv.ParseInt(dataString, 10, 64)
+		// Bit size 0 is the platform's int size, so the conversion cannot overflow.
+		val, err := strconv.ParseInt(dataString, 10, 0)
 
 		return int(val), invalidError(err, "int", dataString)
 	case reflect.Int64:

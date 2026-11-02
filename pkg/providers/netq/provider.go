@@ -1,7 +1,17 @@
-/*
- * Copyright 2025 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package netq
 
@@ -102,21 +112,7 @@ func (p *Provider) GenerateTopologyConfig(ctx context.Context, _ *int, instances
 	return graph, nil
 }
 
-// Instances2NodeMap implements slurm.instanceMapper
-func (p *Provider) Instances2NodeMap(ctx context.Context, nodes []string) (map[string]string, error) {
-	i2n := make(map[string]string)
-	for _, node := range nodes {
-		i2n[node] = node
-	}
-
-	return i2n, nil
-}
-
-// GetInstancesRegions implements slurm.instanceMapper
-func (p *Provider) GetInstancesRegions(ctx context.Context, nodes []string) (map[string]string, error) {
-	res := make(map[string]string)
-	for _, node := range nodes {
-		res[node] = "local"
-	}
-	return res, nil
+// GetNodeInstances implements slurm.instanceMapper
+func (p *Provider) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, "local"), nil
 }

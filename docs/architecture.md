@@ -8,12 +8,7 @@ Topograph consists of five major components:
 4. **Provider**
 5. **Engine**
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/topograph-arch-community-dark.png" />
-    <img src="assets/topograph-arch-community-light.png" width="100%" alt="Topograph architecture diagram" />
-  </picture>
-</p>
+![Topograph architecture diagram](assets/topograph-arch-community-light.png)
 
 ## Design invariant
 
@@ -95,7 +90,7 @@ The Engine translates this internal representation into the format expected by t
 
 Topograph is a Go module, `github.com/dsx-ai-factory/topograph`. Its exported API is documented as godoc and browsable on pkg.go.dev:
 
-- <https://pkg.go.dev/github.com/dsx-ai-factory/topograph>
+- [https://pkg.go.dev/github.com/dsx-ai-factory/topograph](https://pkg.go.dev/github.com/dsx-ai-factory/topograph)
 
 The packages an external caller is most likely to import are `pkg/topology` (the canonical `Graph`, `Vertex`, `DomainMap`, and the topology constants), `pkg/providers` (the `Provider` interface and the registry types), and `pkg/engines` (the `Engine` interface). Packages under `internal/` are not importable from outside the module by design.
 
@@ -103,7 +98,7 @@ The canonical types carry godoc comments: `Graph`, `Vertex`, `FabricTier`, `Doma
 
 ## Documentation and versioning
 
-`docs/` is the source of truth for public documentation. It is published through Fern to <https://docs.nvidia.com/topograph>. `docs/index.yml` drives the sidebar and `fern/docs.yml` declares the site and its versions; `fern/` holds site configuration and theme assets only, never page content.
+`docs/` is the source of truth for public documentation. It is published through Fern to [https://docs.nvidia.com/topograph](https://docs.nvidia.com/topograph). `docs/index.yml` drives the sidebar and `fern/docs.yml` declares the site and its versions; `fern/` holds site configuration and theme assets only, never page content.
 
 The site is versioned per release, and readers select a version from the site's version picker:
 
@@ -133,7 +128,7 @@ The API Server serves everything on one port (`http.port` in the config, `49021`
 
 `/healthz` answers as soon as the HTTP server is listening. It does not test provider reachability, credentials, or the last generation result, so a healthy pod tells you nothing about whether topology generation is working. Use the metrics and logs below for that.
 
-The Helm chart wires `/healthz` into both `livenessProbe` and `readinessProbe` on the API Server Deployment. The node-data-broker DaemonSet serves its own `/healthz` on `nodeDataBroker.port` (`8080` by default) and uses it for its startup, liveness, and readiness probes. The broker applies its node annotations first and only then starts that endpoint, so a Ready broker pod means the annotations for that node have been written.
+The Helm chart wires `/healthz` into both `livenessProbe` and `readinessProbe` on the API Server Deployment. The node-data-broker DaemonSet serves its own `/healthz` on `nodeDataBroker.port` (`8080` by default) and uses it for its startup, liveness, and readiness probes. The broker applies its node annotations first and only then starts that endpoint, so a Ready broker pod means the annotations for that node have been written. The node-observer Deployment likewise serves `/healthz` on `nodeObserver.port` (`8080` by default) for its liveness and readiness probes; it answers while the process runs.
 
 ### Metrics
 
@@ -172,7 +167,7 @@ When updates seem slow, this is usually why:
 | `k8s` | Writes node labels directly through the Kubernetes API: `fabric.topograph.run/tier-N` closest-first, `accelerator.topograph.run/domain`, and `accelerator.topograph.run/sub-domain`. The `fabricLabels` parameter overrides the fabric tier keys and `acceleratorLabel` overrides the accelerator domain key; the sub-domain key is always `accelerator.topograph.run/sub-domain`. Returns `OK`. A failed label write surfaces as `502`. |
 | `nfd` | Creates or updates NFD `NodeFeature` and `NodeFeatureGroup` objects in the namespace named by the `NFD_NAMESPACE` environment variable, which is required; the Helm chart sets it from `nfdNamespace` and rejects an `env.NFD_NAMESPACE` override. Returns `OK nodeFeatures=<n> nodeFeatureGroups=<m>`. With `cleanup` enabled it refuses to apply an empty result rather than deleting the existing topology. |
 | `slinky` | Writes the Slurm topology into the ConfigMap named by `topologyConfigmapName` in `namespace`, under the key given by `topologyConfigPath`. `configUpdateMode: none` skips the ConfigMap write. With `useDynamicNodes: true`, it also reconciles the `topology.slinky.slurm.net/spec` annotation on Kubernetes nodes, including when the ConfigMap write is skipped. |
-| `graph` | Returns instance-oriented JSON as the response body, or writes it to `topologyConfigPath` and returns `OK`. |
+| `graph` | Returns per-instance network layers and accelerator labels as JSON in the response body, or writes it to `topologyConfigPath` and returns `OK`. |
 
 An engine that returns `OK` has already applied its side effect. The body is a completion marker, not the topology.
 

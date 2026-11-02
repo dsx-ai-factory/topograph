@@ -29,12 +29,12 @@ sudo dpkg -i bin/topograph-*.deb        # Debian / Ubuntu
 sudo rpm -ivh bin/topograph-*.rpm       # RHEL / Rocky / SUSE
 ```
 
-The package installs the service but does not start it. Edit `/etc/topograph/topograph-config.yaml` to set at minimum:
+The package installs the service but does not start it. Choose a [supported provider](../overview.md#supported-providers) for your environment and edit `/etc/topograph/topograph-config.yaml` to set at minimum:
 
 ```yaml
 http:
   port: 49021
-provider: <provider>                     # aws, gcp, oci, nebius, nscale, netq, infiniband-bm, ...
+provider: <provider>
 engine: slurm
 requestAggregationDelay: 15s
 ```

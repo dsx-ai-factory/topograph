@@ -122,7 +122,7 @@ without a usable source value retain the provider-derived labels.
 
 [KEP-4962: Standardizing the Representation of Cluster Network Topology](https://github.com/kubernetes/enhancements/issues/4962) proposed reserved label keys under the `topology.kubernetes.io/` namespace, but it was closed without being adopted. Topograph therefore publishes its topology contract under the project-controlled, vendor-neutral `fabric.topograph.run/*` and `accelerator.topograph.run/*` namespaces. If Kubernetes adopts stable standard topology label keys in the future, Topograph will evaluate aligning with or publishing those keys alongside its project-scoped labels.
 
-A related upstream effort, [KEP-5732: Topology Aware Scheduling](https://github.com/kubernetes/enhancements/issues/5732) (beta in Kubernetes v1.37), introduces topology-aware workload scheduling that consumes existing node labels via a caller-provided key. It does not define a new label namespace — operators point it at whatever label keys are present, including Topograph's `fabric.topograph.run/*` keys.
+A related upstream effort, [KEP-5732: Topology Aware Scheduling](https://github.com/kubernetes/enhancements/issues/5732) (alpha in Kubernetes v1.37), introduces topology-aware workload scheduling that consumes existing node labels via a caller-provided key. It does not define a new label namespace — operators point it at whatever label keys are present, including Topograph's `fabric.topograph.run/*` keys.
 
 ## Without Topograph
 
@@ -157,6 +157,13 @@ Topograph sets the following annotations on nodes as internal bookkeeping metada
 | `topograph.run/instance` | The cloud instance ID or node identifier as returned by the provider |
 | `topograph.run/region` | The provider region associated with this node |
 | `topograph.run/cluster-id` | The cluster identifier (where reported by the provider) |
+
+The instance ID and region annotations are the default input sources. Operators
+can select existing node labels or annotations for both fields
+using [`nodeMetadata`](../api.md#node-instance-id-and-region-sources). Both sources
+are required when this section is non-null. This changes
+where Topograph reads identity; the Node Data Broker continues to write the
+default keys when deployed. Custom source values are never copied back to Nodes.
 
 Additional annotations are set on topology ConfigMaps (used by the Slinky engine):
 

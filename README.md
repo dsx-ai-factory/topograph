@@ -37,7 +37,7 @@ Topograph is a component that discovers the physical network topology of a clust
 Requires Kubernetes 1.27 or later, Helm 3.10+ or 4.x, `kubectl` with permission to install a chart and create a namespace, and credentials for whichever provider matches your environment.
 
 ```bash
-helm repo add topograph https://dsx-ai-factory.github.io/topograph
+helm repo add topograph https://helm.ngc.nvidia.com/nvidia/topograph
 helm repo update
 
 helm install topograph topograph/topograph \
@@ -46,7 +46,7 @@ helm install topograph topograph/topograph \
   --set engine.name=k8s
 ```
 
-Replace `<provider>` with one of `aws`, `crusoe`, `gcp`, `oci`, `nebius`, `nscale`, `lambdai`, `netq`, `infiniband-k8s`, `dra`, `kubernetes` or `test`. Provider credentials and parameters are passed as Helm values; the full values shape is in [`charts/topograph/values.yaml`](charts/topograph/values.yaml).
+Replace `<provider>` with a name from the [supported providers](docs/overview.md#supported-providers). Provider credentials and parameters are passed as Helm values; the full values shape is in [`charts/topograph/values.yaml`](charts/topograph/values.yaml).
 
 To confirm it worked, run the bundled chart tests, which probe `/healthz` and `/metrics` inside the cluster, then look for the labels the `k8s` engine writes onto nodes a few seconds after install:
 
@@ -77,12 +77,12 @@ make deb                             # Debian / Ubuntu, writes bin/topograph-*.d
 sudo dpkg -i bin/topograph-*.deb     # or: sudo rpm -ivh bin/topograph-*.rpm
 ```
 
-The package installs the service but does not start it. Set at least the provider and engine in `/etc/topograph/topograph-config.yaml`:
+The package installs the service but does not start it. Set at least the provider and engine in `/etc/topograph/topograph-config.yaml`, choosing a [supported provider](docs/overview.md#supported-providers) for your environment:
 
 ```yaml
 http:
   port: 49021
-provider: aws                        # or gcp, oci, nebius, nscale, netq, infiniband-bm, ...
+provider: aws
 engine: slurm
 requestAggregationDelay: 15s
 ```
@@ -148,8 +148,8 @@ Topograph sits between topology sources and schedulers, and replaces neither.
 
 | Artifact | Where it comes from |
 |---|---|
-| Container image | `ghcr.io/dsx-ai-factory/topograph` |
-| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://dsx-ai-factory.github.io/topograph` |
+| Container image | `nvcr.io/nvidia/topograph/topograph` |
+| Helm chart | [`charts/topograph/`](charts/topograph/) in this repository, published to the chart repository at `https://helm.ngc.nvidia.com/nvidia/topograph` |
 | `.deb` package | `make deb`, written to `bin/` |
 | `.rpm` package | `make rpm`, written to `bin/` |
 
@@ -160,6 +160,7 @@ Packaged chart releases and their SHA-256 checksums are also attached to [GitHub
 - [Overview](docs/overview.md)
 - [Architecture](docs/architecture.md)
 - [Configuration and API](docs/api.md)
+- [Topograph roadmap](https://github.com/orgs/dsx-ai-factory/projects/6)
 
 ## Community
 
@@ -169,6 +170,9 @@ Ask questions and connect with other users in the
 Before contributing, read the [contribution guide](CONTRIBUTING.md) and
 [Code of Conduct](CODE_OF_CONDUCT.md). For local build/test/lint setup, see
 the [Development Guide](DEVELOPMENT.md).
+
+Planned work and current priorities are tracked on the
+[Topograph roadmap](https://github.com/orgs/dsx-ai-factory/projects/6).
 
 Project roles and decision-making are described in
 [Governance](GOVERNANCE.md). See [Maintainers](MAINTAINERS.md) for the current

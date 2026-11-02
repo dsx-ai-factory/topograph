@@ -1,7 +1,17 @@
-/*
- * Copyright 2026 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package crusoe
 
@@ -23,11 +33,13 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
-const NAME = "crusoe"
+const (
+	NAME = "crusoe"
 
-// region is the only region a Crusoe Kubernetes cluster spans. Crusoe deploys
-// one cluster per region, so the provider reports a constant.
-const region = "local"
+	// region is the only region a Crusoe Kubernetes cluster spans. Crusoe deploys
+	// one cluster per region, so the provider reports a constant.
+	region = "local"
+)
 
 type Provider struct {
 	client      kubernetes.Interface
@@ -107,22 +119,9 @@ func nodeMetadataFromNodeList(nodeList *corev1.NodeList) []nodeMetadata {
 	return nodes
 }
 
-// Instances2NodeMap implements slurm.instanceMapper.
-func (p *Provider) Instances2NodeMap(_ context.Context, nodes []string) (map[string]string, error) {
-	i2n := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		i2n[node] = node
-	}
-	return i2n, nil
-}
-
-// GetInstancesRegions implements slurm.instanceMapper.
-func (p *Provider) GetInstancesRegions(_ context.Context, nodes []string) (map[string]string, error) {
-	regions := make(map[string]string, len(nodes))
-	for _, node := range nodes {
-		regions[node] = region
-	}
-	return regions, nil
+// GetNodeInstances implements slurm.instanceMapper
+func (p *Provider) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, region), nil
 }
 
 // GetNodeAnnotations returns the identity annotations the node-data-broker

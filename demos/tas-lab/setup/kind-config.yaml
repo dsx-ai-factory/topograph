@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# kind cluster for the TAS lab: GenericWorkload and TopologyAwareWorkloadScheduling enabled, one control plane, four workers. The nodes carry no
+# topology labels here; Topograph adds fabric.topograph.run/tier-N (see topograph.sh).
+# The node image is not set here: setup/cluster.sh passes KIND_NODE_IMAGE from versions.env
+# to kind (--image), which applies it to every node.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: tas-lab
+featureGates:
+  GenericWorkload: true
+  TopologyAwareWorkloadScheduling: true
+runtimeConfig:
+  scheduling.k8s.io/v1beta1: "true"
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        scheduler:
+          extraArgs:
+            feature-gates: "GenericWorkload=true,TopologyAwareWorkloadScheduling=true"
+            bind-address: "0.0.0.0"
+        apiServer:
+          extraArgs:
+            feature-gates: "GenericWorkload=true,TopologyAwareWorkloadScheduling=true"
+  - role: worker
+  - role: worker
+  - role: worker
+  - role: worker

@@ -37,12 +37,7 @@ then to switch `s3`, Topograph will apply the following labels to the node:
   fabric.topograph.run/tier-2: s3
 ```
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/topograph-k8s-community-dark.png" />
-    <img src="../assets/topograph-k8s-community-light.png" width="100%" alt="Topograph Kubernetes engine flow diagram" />
-  </picture>
-</p>
+![Topograph Kubernetes engine flow diagram](../assets/topograph-k8s-community-light.png)
 
 ### Relationship to the kubelet Topology Manager
 
@@ -206,7 +201,41 @@ and `patch` access to Nodes for the Kubernetes engine; it no longer requires
 Node `update`. Deployments using `rbac.create: false` must grant the same
 permissions to the configured ServiceAccount.
 
+### Reusing existing node identity metadata
+
+Use `config.nodeMetadata` to read instance ID and region from existing node labels
+or annotations. For example:
+
+```yaml
+config:
+  nodeMetadata:
+    instanceID:
+      type: annotation
+      key: example.com/instance-id
+    region:
+      type: label
+      key: topology.kubernetes.io/region
+nodeDataBroker:
+  enabled: false
+```
+
+Disable the broker only when your environment also supplies any other metadata
+or discovery it provides for the selected provider. With the broker disabled,
+the observer does not wait for its DaemonSet. Omit `config.nodeMetadata` or set it
+to `null` to retain both default Topograph annotations. Otherwise, both `instanceID`
+and `region` must specify a non-empty `type` and `key`. Configured sources are
+authoritative: missing or empty values do not fall back to those annotations. See the
+[configuration reference](../api.md#node-instance-id-and-region-sources) for
+validation and update behavior. Restart Topograph after changing the configuration.
+
+The `infiniband-k8s` provider requires broker pods to run `ibnetdiscover`, so keep
+`nodeDataBroker.enabled: true` for that provider even with custom identity sources.
+
 ## Exposing the Topograph API
+
+The API ConfigMap also carries `config.nodeMetadata`, used by provider and engine
+node reads regardless of whether the API is exposed through a Service, Ingress,
+or Gateway API route. Source selection is described above.
 
 The Topograph API server listens on port `49021` by default. The Helm chart always creates a Kubernetes `Service`; how that Service is exposed depends on your deployment topology and access requirements.
 
@@ -421,14 +450,14 @@ networkPolicy:
 | all (under default-deny) | kube-apiserver Service IP on `443` or endpoint IP on `6443` (see above) |
 | `netq` | the NetQ server IP (resolve the `apiUrl` host) on its port (`443` by default) |
 | BCM (planned) | the BCM head-node CIDR on `8081` |
-| `aws`, `gcp`, `oci`, `nebius`, `nscale`, `lambdai`, `cw` | the cloud API over `443`; if the provider reads instance metadata, `169.254.169.254/32` — **IMDS access is a credential-exposure vector**, so scope it tightly and prefer workload identity where the provider supports it |
+| Cloud providers ([supported providers](../overview.md#supported-providers)) | the cloud API over `443`; if the provider reads instance metadata, `169.254.169.254/32` — **IMDS access is a credential-exposure vector**, so scope it tightly and prefer workload identity where the provider supports it |
 | `dra`, `infiniband-k8s` | none beyond the kube-apiserver + DNS (they operate in-cluster) |
 
 > **On NMC / Calico clusters** the tenant baseline is a cluster-wide Calico `GlobalNetworkPolicy` default-deny that already allows kube-apiserver and DNS egress and governs intra-tenant traffic by namespace-list membership. There, prefer adding the Topograph namespace to the NMC network-policy `user.namespaceList` (and the BCM CIDR to `bcmHeadNodeCidrs`) rather than this chart policy; this `networkPolicy` is aimed at clusters that expect each workload to ship its own default-deny allow-rules.
 
 ### Node Observer RBAC
 
-The node-observer `ClusterRole` grants `pods [list, watch]` unconditionally, `apps/daemonsets [list, watch]` when `nodeDataBroker.enabled=true`, and `nodes [list, watch]` only when `nodeObserver.topograph.trigger.nodeSelector` is set. Set `nodeObserver.rbac.create: false` to suppress the `ClusterRole`/`ClusterRoleBinding` when managing RBAC externally.
+The node-observer `ClusterRole` grants `pods [list, watch]` unconditionally, `apps/daemonsets [list, watch]` when `nodeDataBroker.enabled=true`, and `nodes [list, watch]` when the rendered observer trigger has a nonempty `nodeSelector`, nonempty `nodeLabels`, or `nodeReadiness: true`. For the `kubernetes` provider, the chart derives these defaults from `provider.params.nodeSelector`, `topologyLabels`, and `requireReady`; an explicit `trigger.nodeLabels` overrides the default watched labels. When managing RBAC externally, include node list/watch access whenever any of these conditions applies. Set `nodeObserver.rbac.create: false` to suppress the `ClusterRole`/`ClusterRoleBinding` when managing RBAC externally.
 
 When reusing an existing ServiceAccount for Topograph, node-observer, or
 node-data-broker, set the component's `serviceAccount.create` value to `false`
@@ -458,13 +487,7 @@ The Helm chart ships two layers of validation for operators.
 
 ### Schema-backed values validation at install time
 
-`charts/topograph/values.schema.json` is a JSON Schema that Helm enforces during `helm template` and `helm install`. Misspelled provider names, wrong engine enums, out-of-range replica counts, bad pull policies, invalid service port numbers, and malformed `serviceMonitor` / `tests` / `ingress` shapes are rejected with a clear `at '/field/path': <explanation>` error before any template rendering happens. For example, `--set engine.name=bogus` produces:
-
-```
-Error: values don't meet the specifications of the schema(s) in the following chart(s):
-topograph:
-- at '/engine/name': value must be one of 'graph', 'k8s', 'nfd', 'slinky', 'slurm'
-```
+`charts/topograph/values.schema.json` is a JSON Schema that Helm enforces during `helm template` and `helm install`. Out-of-range replica counts, bad pull policies, invalid service port numbers, and malformed `serviceMonitor` / `tests` / `ingress` shapes are rejected with a clear `at '/field/path': <explanation>` error before any template rendering happens. `provider.name` and `engine.name` must be strings, but accepted names are validated by Topograph's runtime registries rather than chart allowlists.
 
 The schema is deliberately narrow: per-provider credential requirements are documented in prose in `docs/providers/<name>.md` rather than enforced in the schema, because credential field sets evolve with upstream provider changes.
 
@@ -478,7 +501,7 @@ The chart ships two `helm test` hook pods (`charts/topograph/templates/tests/`) 
 Run the suite after installation:
 
 ```bash
-helm repo add topograph https://dsx-ai-factory.github.io/topograph
+helm repo add topograph https://helm.ngc.nvidia.com/nvidia/topograph
 helm repo update
 helm install topograph topograph/topograph \
   --namespace topograph --create-namespace
@@ -496,7 +519,9 @@ Phase:          Succeeded
 
 Both pods clean themselves up on success (`helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`). On failure the pods persist so operators can inspect logs via `kubectl logs -n <ns> <pod-name>`; the next `helm test` invocation replaces the prior pods.
 
-**Air-gapped environments.** The test pods reuse the main topograph image by default — they invoke `busybox wget` from the Alpine-based `ghcr.io/dsx-ai-factory/topograph` image already pulled by the Deployment. No additional image pull is required by `helm test`, so the suite works in environments where only mirrored images are reachable. If your mirrored image lacks `busybox wget`, override the test image:
+The test pods do not mount a service account token (`automountServiceAccountToken: false`) and set small CPU and memory requests and limits (requests `10m` / `16Mi`, limits `100m` / `128Mi`), so the pods are admitted in namespaces whose `ResourceQuota` requires requests and limits. If a namespace `LimitRange` sets a minimum or a `maxLimitRequestRatio`, adjust the values to fit it. Override the defaults with `tests.resources`.
+
+**Air-gapped environments.** The test pods reuse the main topograph image by default — they invoke `busybox wget` from the Alpine-based `nvcr.io/nvidia/topograph/topograph` image already pulled by the Deployment. No additional image pull is required by `helm test`, so the suite works in environments where only mirrored images are reachable. If your mirrored image lacks `busybox wget`, override the test image:
 
 ```yaml
 tests:
@@ -514,4 +539,4 @@ tests:
 
 ### Chart README
 
-For installation, prerequisites, values reference, and configuration examples, see [`charts/topograph/README.md`](../../charts/topograph/README.md) — also surfaced via `helm show readme topograph/topograph`.
+For installation, prerequisites, values reference, and configuration examples, see [`charts/topograph/README.md`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/README.md) — also surfaced via `helm show readme topograph/topograph`.

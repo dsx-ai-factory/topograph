@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Topograph for the TAS lab: the test provider replays tests/models/tas-lab.yaml (two leaf
+# switches under one spine) and the k8s engine writes fabric.topograph.run/tier-N on the
+# four kind workers. setup/topograph.sh pulls the image named by TOPOGRAPH_IMG_URL and
+# TOPOGRAPH_IMG_TAG (versions.env), loads it into kind, and adds image.repository and image.tag
+# to a copy of this file before installing; the image must embed the tas-lab model.
+image:
+  pullPolicy: IfNotPresent
+
+provider:
+  name: test
+  params:
+    modelFileName: tas-lab.yaml
+    generateResponseCode: 202
+    topologyResponseCode: 200
+engine:
+  name: k8s
+
+config:
+  requestAggregationDelay: 2s
+
+# Only label the workers, never the control plane.
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+nodeObserver:
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  topograph:
+    trigger:
+      nodeSelector:
+        tas-lab: worker
+
+nodeDataBroker:
+  enabled: false

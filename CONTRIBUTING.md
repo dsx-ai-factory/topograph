@@ -22,7 +22,9 @@ features, and any other change:
 - **Features or enhancements**: file a [feature request](https://github.com/dsx-ai-factory/topograph/issues/new?template=feature_request.yml)
   describing the problem and your proposed solution.
 - Search [existing issues](https://github.com/dsx-ai-factory/topograph/issues) first to
-  avoid duplicates, and comment on the issue to claim it before starting work.
+  avoid duplicates, and claim the issue before starting work by commenting
+  `/assign` on it. That assigns it to you if nobody else holds it; comment
+  `/unassign` to release it if you stop working on it.
 
 Opening the issue first gives maintainers a chance to weigh in on approach
 before code is written, and keeps the change from crossing one of this
@@ -53,8 +55,7 @@ triage bot. Priority is set informally, from a few concrete inputs:
   reproduce it, link duplicates); only a Maintainer decides whether
   something is worth working on next. There's no separate "triage
   meeting" — it happens asynchronously on the issue itself.
-- **The Roadmap issue.** The pinned **Roadmap & Focus Areas** issue on the
-  [issue tracker](https://github.com/dsx-ai-factory/topograph/issues) is the
+- **The Roadmap.** The [Topograph roadmap](https://github.com/orgs/dsx-ai-factory/projects/6) project board is the
   closest thing to a prioritized backlog — it lists the areas maintainers
   are actively steering the project toward. An issue that maps onto one of
   those areas is more likely to get picked up sooner than one that
@@ -110,9 +111,9 @@ scheduler-specific output from a provider, stop and reconsider the design.
    of hand-rolling detection logic inside the provider.
 5. Document it: add `docs/providers/<name>.md` (follow the shape of
    `aws.md` / `netq.md`), and add the provider to `docs/overview.md`'s
-   supported-provider list and "Choosing a Provider" scenario table.
+   [supported providers table](docs/overview.md#supported-providers).
 6. Optional: export a second `NamedLoaderSim` for a simulated/testable
-   variant (see `aws`, `gcp`, `oci`, `lambdai`).
+   variant (see the [simulation variants](docs/overview.md#supported-providers)).
 
 The full checklist and the `Provider` interface contract are the source of
 truth in [AGENTS.md § Adding a new provider](AGENTS.md#adding-a-new-provider).
@@ -240,6 +241,10 @@ package or area touched (e.g. `feat(provider/crusoe): ...`,
 under about 70 characters — it's what shows up in `git log --oneline` and in
 the PR list.
 
+Pull requests are squash merged, and the squash commit takes the pull request
+title as its subject, so the title must follow the same format. The `PR title`
+check (`pr-title.yaml`) fails until it does, and editing the title re-runs it.
+
 Examples:
 
 ```gitcommit
@@ -306,7 +311,12 @@ is in [MAINTAINERS.md](MAINTAINERS.md).
 
 - **Automated** — Go build/test/lint/`govulncheck` (`go.yml`), Helm chart
   lint/unittest (`chart-test.yaml`), Codecov patch/project coverage, and the
-  DCO bot all run on every push to the PR.
+  DCO bot all run on every push to the PR. When `.github/` changes, workflow
+  lint (`workflow-lint.yaml`: actionlint and zizmor) and workflow tests
+  (`workflow-tests.yaml`: unit tests for the scripts inside workflows, the
+  workflow security rules, and the label list in `.github/labels.yml`) run too.
+  The `PR title` check (`pr-title.yaml`) runs when the PR is opened, pushed
+  to, or edited.
 - **Human** — adherence to the provider/engine boundary, test coverage on new
   code paths, and doc updates when a contract changes (see the
   [Documentation Impact Evaluation table](AGENTS.md#documentation-impact-evaluation)
@@ -333,9 +343,15 @@ If you haven't heard anything after 5 business days:
    [#topology-aware-scheduling](https://kubernetes.slack.com/archives/C012XSGFZQE)
    or [#gpu-nvidia](https://kubernetes.slack.com/archives/C09N46EFJR0) — if
    the PR thread goes quiet.
-3. For a stalled issue rather than a PR, check the pinned **Roadmap & Focus
-   Areas** issue on the [issue tracker](https://github.com/dsx-ai-factory/topograph/issues)
-   to see if it's already being tracked there.
+3. For a stalled issue rather than a PR, check the
+   [Topograph roadmap](https://github.com/orgs/dsx-ai-factory/projects/6) to see if it's already being tracked there.
+
+If your PR stops merging cleanly into `main`, the Merge Conflict Check
+workflow (`conflict-check.yaml`) adds the `needs-rebase` label and comments
+once to ask you to resolve the conflicts. Rebase onto the latest `main`, or
+merge `main` into your branch, and push. The check runs after every push to
+`main`, so the label comes off on the first run that finds the PR merges
+cleanly, not when you push the fix. Draft PRs are not checked.
 
 Keep the PR in draft while you're still reshaping it — draft PRs don't page
 reviewers, so that's the cheapest phase to rework history or force-push in.
@@ -349,7 +365,7 @@ Community discussion happens on the [Kubernetes Slack](https://slack.k8s.io/):
 - [#topology-aware-scheduling](https://kubernetes.slack.com/archives/C012XSGFZQE) — topology-aware scheduling across the ecosystem
 - [#gpu-nvidia](https://kubernetes.slack.com/archives/C09N46EFJR0) — NVIDIA GPU support on Kubernetes
 
-For the project's current direction and a list of areas where contributions are especially welcome, see the pinned **Roadmap & Focus Areas** issue on the [issue tracker](https://github.com/dsx-ai-factory/topograph/issues).
+For the project's current direction and a list of areas where contributions are especially welcome, see the [Topograph roadmap](https://github.com/orgs/dsx-ai-factory/projects/6).
 
 ## Community standards
 

@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Fixture for .github/tests/harness.test.mjs. GitHub never runs it, because it
+# lives outside .github/workflows/.
+
+name: Harness Sample
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - id: greet
+        name: Greet
+        env:
+          GREETING: hello
+        run: |
+          echo "$GREETING from the fixture"
+
+      - id: scripted
+        name: Scripted
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TITLE: fixture title
+        with:
+          script: |
+            core.info(process.env.TITLE);

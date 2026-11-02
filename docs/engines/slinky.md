@@ -14,12 +14,7 @@ The Slinky engine bridges the gap between Kubernetes infrastructure and SLURM wo
 2. **Topology Generation**: Creates SLURM topology configuration (tree or block format)
 3. **ConfigMap Management**: Updates the specified ConfigMap with new topology data including metadata annotations for tracking and debugging
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="../assets/topograph-slinky-community-dark.png" />
-    <img src="../assets/topograph-slinky-community-light.png" width="100%" alt="Topograph Slinky engine flow diagram" />
-  </picture>
-</p>
+![Topograph Slinky engine flow diagram](../assets/topograph-slinky-community-light.png)
 
 ## Configuration
 Topograph is deployed as a standard Kubernetes application using a [Helm chart](https://github.com/dsx-ai-factory/topograph/tree/main/charts/topograph).
@@ -161,10 +156,15 @@ engine:
 
 Nodes without the configured label retain the existing label-backed behavior:
 they are skipped rather than falling back individually to provider domains. If
-no usable domains can be built from the configured label and the Topograph
-instance annotation, topology generation fails with an actionable `502` error
+no usable domains can be built from the configured label and instance ID source,
+topology generation fails with an actionable `502` error
 that reports the configured key and why nodes were skipped. Replacing provider
 domains also suppresses provider accelerator sub-domains.
+
+The instance ID source defaults to the `topograph.run/instance` annotation.
+Configure both instance ID and region sources through
+[`nodeMetadata`](../api.md#node-instance-id-and-region-sources) to reuse existing
+node labels or annotations.
 
 For example, an operator may explicitly select
 `nvidia.com/gpu.clique`, but the Slinky engine no longer assumes that key.

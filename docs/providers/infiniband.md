@@ -23,6 +23,8 @@ For **Multi-Node NVLink (MNNVL) Kubernetes clusters** (e.g. GB200 NVL72), do not
 
 All three variants are single-region only (multi-region requests return a `400 Bad Request` error). No CSP credentials are required.
 
+Nodes are matched by the host name in each HCA's node description (for example `node-01 mlx5_0`). When that name and the cluster node name differ only by domain, as when Kubernetes registers nodes by FQDN (`node-01.example.com`) while the HCA reports the short name, the short names (up to the first `.`) are compared instead. This fallback applies only when at least one of the two names is short, so two different FQDNs (`node-01.a.lab` and `node-01.b.lab`) never match. A short name shared by more than one cluster node is skipped with a warning, as is a fallback match for a node that another HCA reports under a different host name; IP-address node names are compared as-is.
+
 ## Output
 
 All three variants produce the same fabric topology representation, and are in turn consumed by whichever engine you configure. The simulation variant has no accelerator-domain data:
@@ -93,7 +95,7 @@ For the Slurm engine, verify the generated `topology.conf` reflects the expected
 ### Prerequisites
 
 - Topograph deployed via Helm — when `accelerator.source` is `nvidia-smi`, the node-data-broker DaemonSet collects NVLink partition IDs from each node and stores them as Kubernetes node annotations (`topograph.run/cluster-id`). With `kubernetes-label` or `none`, the broker skips that collection.
-- The default **`ghcr.io/dsx-ai-factory/topograph`** image includes **`ibnetdiscover`** (Alpine `rdma-core`). No separate InfiniBand image is required. IB deployments typically run the broker **privileged** and mount host **`/sys/class`** so `ibnetdiscover` can reach IB devices — see [`values.k8s.ib-example.yaml`](../../charts/topograph/values.k8s.ib-example.yaml).
+- The default **`nvcr.io/nvidia/topograph/topograph`** image includes **`ibnetdiscover`** (Alpine `rdma-core`). No separate InfiniBand image is required. IB deployments typically run the broker **privileged** and mount host **`/sys/class`** so `ibnetdiscover` can reach IB devices — see [`values.k8s.ib-example.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.k8s.ib-example.yaml).
 - NVIDIA GPU Operator — standard on NVIDIA GPU Kubernetes clusters; manages the device plugin DaemonSet used to read NVLink clique IDs. Required only for NVLink domain discovery; on clusters without NVLink-connected GPUs this does not apply and the provider will still discover the IB switch tree.
 
 ### How It Works

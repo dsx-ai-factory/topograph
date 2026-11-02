@@ -1,18 +1,17 @@
-/*
- * Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package topology
 
@@ -176,4 +175,30 @@ func TestGetNodeNames(t *testing.T) {
 	nodeMap := map[string]bool{"n1": true, "n2": true, "n3": true, "n4": true}
 	require.ElementsMatch(t, nodeList, GetNodeNameList(cis))
 	require.Equal(t, nodeMap, GetNodeNameMap(cis))
+}
+
+func TestRequestStringEscapesLineBreaks(t *testing.T) {
+	forged := "x\nE1027 forged\r"
+	req := &Request{
+		Provider: Provider{
+			Name:   forged,
+			Creds:  map[string]any{forged: "secret"},
+			Params: map[string]any{forged: forged},
+		},
+		Engine: Engine{
+			Name:   forged,
+			Params: map[string]any{"plugin": forged},
+		},
+		Nodes: []ComputeInstances{{Region: forged, Instances: map[string]string{forged: forged}}},
+	}
+
+	expected := `TopologyRequest:
+  Provider: x\nE1027 forged\r
+  Credentials: [x\nE1027 forged\r:***]
+  Parameters: [x\nE1027 forged\r:x\nE1027 forged\r]
+  Engine: x\nE1027 forged\r
+  Parameters: [plugin:x\nE1027 forged\r]
+  Nodes: x\nE1027 forged\r: [x\nE1027 forged\r:x\nE1027 forged\r]
+`
+	require.Equal(t, expected, req.String())
 }

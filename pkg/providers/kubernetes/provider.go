@@ -1,18 +1,17 @@
-/*
- * Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package kubernetes
 
@@ -107,15 +106,19 @@ func NodeTopologyLabels(values map[string]any) ([]string, error) {
 	return params.TopologyLabels, nil
 }
 
-// switchID retains a readable prefix while scoping each tier to its ancestors.
-// Hashing the full path keeps IDs stable and within Kubernetes' label limits.
-func switchID(values []string) string {
-	if len(values) == 1 {
-		return values[0]
+// switchID scopes each tier to its ancestors and avoids compute-node IDs.
+// The prefix is a valid label value but cannot be a Kubernetes Node name.
+// An instance annotation may use it, so also reserve all requested IDs.
+func switchID(values []string, nodeIDs map[string]string) string {
+	prefix := strings.TrimRight(values[0][:min(len(values[0]), 23)], "-_.")
+	path := strings.Join(values, "/")
+	for salt := 0; ; salt++ {
+		digest := sha256.Sum256([]byte(fmt.Sprintf("%s#%d", path, salt)))
+		id := fmt.Sprintf("switch_%s-%x", prefix, digest[:16])
+		if _, reserved := nodeIDs[id]; !reserved {
+			return id
+		}
 	}
-	digest := sha256.Sum256([]byte(strings.Join(values, "/")))
-	prefix := strings.TrimRight(values[0][:min(len(values[0]), 30)], "-_.")
-	return fmt.Sprintf("%s-%x", prefix, digest[:16])
 }
 
 type Provider struct {
@@ -211,7 +214,7 @@ func (p *Provider) GenerateTopologyConfig(ctx context.Context, _ *int, cis []top
 		}
 		tiers := make([]topology.FabricTier, len(values))
 		for i := range values {
-			tiers[i].ID = switchID(values[i:])
+			tiers[i].ID = switchID(values[i:], requested)
 		}
 		topo.Append(&topology.InstanceTopology{InstanceID: id, FabricTiers: tiers})
 		eligible[id] = name

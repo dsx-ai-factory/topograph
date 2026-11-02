@@ -1,22 +1,22 @@
-/*
- * Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package kubernetes
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -27,6 +27,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	kubernetesengine "github.com/dsx-ai-factory/topograph/pkg/engines/k8s"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	"github.com/dsx-ai-factory/topograph/pkg/translate"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -58,12 +59,12 @@ func TestTopologyTiers(t *testing.T) {
 			}
 			if len(keys) == 1 {
 				require.Len(t, graph.Tiers.Vertices, 1)
-				require.Len(t, graph.Tiers.Vertices["rack-1"].Vertices, 3)
+				require.Len(t, graph.Tiers.Vertices[switchID([]string{"rack-1"}, nil)].Vertices, 3)
 				return
 			}
 			require.Len(t, graph.Tiers.Vertices, 2)
-			east := graph.Tiers.Vertices["east"].Vertices[switchID([]string{"rack-1", "east"})]
-			west := graph.Tiers.Vertices["west"].Vertices[switchID([]string{"rack-1", "west"})]
+			east := graph.Tiers.Vertices[switchID([]string{"east"}, nil)].Vertices[switchID([]string{"rack-1", "east"}, nil)]
+			west := graph.Tiers.Vertices[switchID([]string{"west"}, nil)].Vertices[switchID([]string{"rack-1", "west"}, nil)]
 			require.Len(t, east.Vertices, 2)
 			require.Len(t, west.Vertices, 1)
 			require.Equal(t, "slurm-a", east.Vertices["instance-a"].Name)
@@ -88,8 +89,8 @@ func TestEligibleRequestedNodes(t *testing.T) {
 	graph, herr := p.GenerateTopologyConfig(context.Background(), nil, requested)
 	require.Nil(t, herr)
 	require.Len(t, graph.Tiers.Vertices, 1)
-	require.Len(t, graph.Tiers.Vertices["r1"].Vertices, 1)
-	require.Contains(t, graph.Tiers.Vertices["r1"].Vertices, "a")
+	require.Len(t, graph.Tiers.Vertices[switchID([]string{"r1"}, nil)].Vertices, 1)
+	require.Contains(t, graph.Tiers.Vertices[switchID([]string{"r1"}, nil)].Vertices, "a")
 	graph, herr = p.GenerateTopologyConfig(context.Background(), nil, nil)
 	require.Nil(t, herr)
 	require.Empty(t, graph.Tiers.Vertices)
@@ -97,7 +98,7 @@ func TestEligibleRequestedNodes(t *testing.T) {
 	require.NoError(t, err)
 	graph, herr = p.GenerateTopologyConfig(context.Background(), nil, requested)
 	require.Nil(t, herr)
-	require.Len(t, graph.Tiers.Vertices["r1"].Vertices, 1)
+	require.Len(t, graph.Tiers.Vertices[switchID([]string{"r1"}, nil)].Vertices, 1)
 }
 
 func TestInvalidTopologyLabel(t *testing.T) {
@@ -127,10 +128,10 @@ func TestParseParams(t *testing.T) {
 
 func TestStableLabelCompatibleSwitchIDs(t *testing.T) {
 	for _, rack := range []string{"r1", strings.Repeat("r", 29) + "-" + strings.Repeat("x", 33)} {
-		id := switchID([]string{rack, "east", "region"})
+		id := switchID([]string{rack, "east", "region"}, nil)
 		require.Empty(t, validation.IsValidLabelValue(id))
-		require.Equal(t, id, switchID([]string{rack, "east", "region"}))
-		require.NotEqual(t, id, switchID([]string{rack, "west", "region"}))
+		require.Equal(t, id, switchID([]string{rack, "east", "region"}, nil))
+		require.NotEqual(t, id, switchID([]string{rack, "west", "region"}, nil))
 	}
 	client := fake.NewSimpleClientset(readyNode("b", "r1", "east"))
 	p, err := New(client, map[string]any{"topologyLabels": []string{"rack", "zone"}})
@@ -138,12 +139,44 @@ func TestStableLabelCompatibleSwitchIDs(t *testing.T) {
 	requested := []topology.ComputeInstances{{Instances: map[string]string{"a": "a", "b": "b"}}}
 	before, herr := p.GenerateTopologyConfig(context.Background(), nil, requested)
 	require.Nil(t, herr)
-	id := switchID([]string{"r1", "east"})
+	id := switchID([]string{"r1", "east"}, nil)
 	_, err = client.CoreV1().Nodes().Create(context.Background(), readyNode("a", "r0", "east"), metav1.CreateOptions{})
 	require.NoError(t, err)
 	after, herr := p.GenerateTopologyConfig(context.Background(), nil, requested)
 	require.Nil(t, herr)
-	require.Equal(t, before.Tiers.Vertices["east"].Vertices[id], after.Tiers.Vertices["east"].Vertices[id])
+	require.Equal(t, before.Tiers.Vertices[switchID([]string{"east"}, nil)].Vertices[id], after.Tiers.Vertices[switchID([]string{"east"}, nil)].Vertices[id])
+}
+
+func TestSwitchIDsDoNotCollideWithNodes(t *testing.T) {
+	for _, keys := range [][]string{{"rack"}, {"rack", "zone"}} {
+		t.Run(strings.Join(keys, "/"), func(t *testing.T) {
+			// Cover both the former raw outer-tier ID and an annotation that
+			// deliberately matches the new switch namespace.
+			annotation := switchID([]string{"worker-a"}, nil)
+			a := readyNode("worker-a", "worker-a", "worker-a")
+			b := readyNode("worker-b", "worker-a", "worker-a")
+			b.Annotations = map[string]string{topology.KeyNodeInstance: annotation}
+			requested := map[string]string{"worker-a": "worker-a", annotation: "worker-b"}
+			p, err := New(fake.NewSimpleClientset(a, b), map[string]any{"topologyLabels": keys})
+			require.NoError(t, err)
+			graph, herr := p.GenerateTopologyConfig(context.Background(), nil, []topology.ComputeInstances{{Instances: requested}})
+			require.Nil(t, herr)
+			labels, err := kubernetesengine.NewTopologyLabeler(kubernetesengine.NewTopologyLabelKeys(nil, "")).BuildNodeLabels(graph)
+			require.NoError(t, err)
+			for _, nodeLabels := range labels {
+				for _, id := range nodeLabels {
+					require.Empty(t, validation.IsValidLabelValue(id))
+					require.NotContains(t, requested, id)
+				}
+			}
+			nt, err := translate.NewNetworkTopology(graph, &translate.Config{Plugin: topology.TopologyTree})
+			require.NoError(t, err, "Slinky must accept the graph without self-edges or repeated IDs")
+			var output bytes.Buffer
+			_, herr = nt.GenerateTopologyConfig(&output, false)
+			require.Nil(t, herr)
+			require.Contains(t, output.String(), "worker-")
+		})
+	}
 }
 
 func TestNodeDegradation(t *testing.T) {
@@ -155,8 +188,8 @@ func TestNodeDegradation(t *testing.T) {
 	requested := []topology.ComputeInstances{{Instances: map[string]string{"good": "good", "bad": "bad"}}}
 	graph, herr := p.GenerateTopologyConfig(context.Background(), nil, requested)
 	require.Nil(t, herr)
-	require.Contains(t, graph.Tiers.Vertices["r1"].Vertices, "good", "NotReady nodes stay in the topology by default")
-	require.Len(t, graph.Tiers.Vertices["r1"].Vertices, 1)
+	require.Contains(t, graph.Tiers.Vertices[switchID([]string{"r1"}, nil)].Vertices, "good", "NotReady nodes stay in the topology by default")
+	require.Len(t, graph.Tiers.Vertices[switchID([]string{"r1"}, nil)].Vertices, 1)
 	p.params.RequireReady = true
 	graph, herr = p.GenerateTopologyConfig(context.Background(), nil, requested)
 	require.Nil(t, graph)

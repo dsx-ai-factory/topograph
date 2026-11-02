@@ -1,10 +1,11 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,15 +22,51 @@ TARGETS := topograph node-observer node-data-broker kwok-nodes
 CMD_DIR := ./cmd
 OUTPUT_DIR := ./bin
 
-IMAGE_REPO ?=ghcr.io/dsx-ai-factory/topograph
-GIT_REF ?=$(shell git rev-parse --abbrev-ref HEAD)
+# Published image repository. image-push and docker-buildx refuse to push a
+# release-like tag to it unless IMAGE_TAG is set explicitly (see
+# guard-release-image-tag below).
+RELEASE_IMAGE_REPO := ghcr.io/dsx-ai-factory/topograph
+IMAGE_REPO ?=$(RELEASE_IMAGE_REPO)
+# Version stamped into the binaries; also the default image tag and deb/rpm
+# version. Resolved in order:
+#   1. a release tag (v*) pointing exactly at HEAD, for tag builds, which check
+#      out a detached HEAD; other tags such as docs/vX.Y.Z are ignored.
+#      --tags is needed because CI checkouts carry the release tag as a
+#      lightweight ref, and --dirty appends "-dirty" (vX.Y.Z-dirty) when
+#      tracked files are modified;
+#   2. the current branch name, for branch builds such as release-X.Y;
+#   3. the short commit SHA, for any other detached checkout;
+#   4. "unknown" when git or the .git directory is unavailable, for example
+#      when building from a source tarball.
+# A GIT_REF from the command line or environment takes precedence. The second
+# assignment evaluates the git commands once instead of on every reference.
+GIT_REF ?=$(shell git describe --tags --exact-match --dirty --match 'v[0-9]*' 2>/dev/null || \
+  { ref=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null) && [ "$$ref" != HEAD ] && echo "$$ref"; } || \
+  git rev-parse --short HEAD 2>/dev/null || \
+  echo unknown)
+GIT_REF := $(GIT_REF)
 IMAGE_TAG ?=$(GIT_REF)
+
+# Recipe guard for image-push and docker-buildx: on a release tag checkout
+# IMAGE_TAG defaults to vX.Y.Z (or vX.Y.Z-dirty), and pushing that to
+# RELEASE_IMAGE_REPO would overwrite the image the Docker workflow published.
+# Fails unless IMAGE_TAG was set explicitly or IMAGE_REPO points elsewhere.
+define guard-release-image-tag
+@if [ "$(IMAGE_REPO)" = "$(RELEASE_IMAGE_REPO)" ] && [ "$(origin IMAGE_TAG)" = file ]; then \
+  case "$(IMAGE_TAG)" in v[0-9]*) \
+    echo "error: refusing to push the release-like tag $(IMAGE_REPO):$(IMAGE_TAG);" \
+      "release images are published by the Docker workflow." \
+      "Set IMAGE_TAG explicitly or use another IMAGE_REPO." >&2; \
+    exit 1;; \
+  esac; \
+fi
+endef
 
 .PHONY: build
 build:
-	@for target in $(TARGETS); do \
+	@set -e; for target in $(TARGETS); do \
 	  echo "Building $${target} for $(GOOS)/$(GOARCH)"; \
-	  CGO_ENABLED=0 go build -a -o $(OUTPUT_DIR)/$${target} \
+	  CGO_ENABLED=0 go build -a -trimpath -o $(OUTPUT_DIR)/$${target} \
 	    -ldflags '-extldflags "-static" -X github.com/dsx-ai-factory/topograph/internal/version.Version=$(GIT_REF)' \
 	    $(CMD_DIR)/$${target}; \
 	done
@@ -86,7 +123,11 @@ vet:
 
 .PHONY: lint
 lint:
-	$(LINTER_BIN) run --new-from-rev "HEAD~$(git rev-list master.. --count)" ./...
+	@base=$$(git merge-base HEAD refs/remotes/origin/main) || { \
+	  echo "error: cannot determine lint base from origin/main; ensure the reference exists: git fetch origin main:refs/remotes/origin/main" >&2; \
+	  exit 1; \
+	}; \
+	$(LINTER_BIN) run --new-from-rev "$$base" ./...
 
 .PHONY: qualify
 qualify: fmt vet lint test
@@ -96,6 +137,34 @@ qualify: fmt vet lint test
 mod:
 	go mod tidy
 
+# License headers, through addlicense at a pinned version, over the files git
+# tracks (`git add` a new file first). New headers use the standard NVIDIA SPDX
+# and Apache 2.0 notice in scripts/license-header.tmpl. Helm templates take that
+# header by hand as a {{- /* */ -}} comment, since a `#` comment renders into
+# the manifest.
+# addlicense accepts any copyright header and skips .tpl and NOTES.txt, so the
+# check also greps for chart files without the header and for the two older
+# NVIDIA forms. The older-form grep is transitional: it stops branches cut
+# before the headers were standardized from bringing those forms back, and can
+# be removed once those pull requests have merged or been rebased.
+ADDLICENSE ?= go run github.com/google/addlicense@v1.2.0
+LICENSE_HEADER_OLD := Copyright (\(c\) )?[0-9-]+,? NVIDIA CORPORATION([.]|[[:space:]]*$$)
+
+.PHONY: license-headers
+license-headers:
+	git ls-files -z | xargs -0 $(ADDLICENSE) -f scripts/license-header.tmpl \
+	  -ignore 'charts/topograph/templates/**' \
+	  -ignore 'tests/output/**'
+
+.PHONY: license-header-check
+license-header-check:
+	git ls-files -z | xargs -0 $(ADDLICENSE) -check \
+	  -ignore 'tests/output/**'
+	@! git grep -l -E '$(LICENSE_HEADER_OLD)' || \
+	  { echo "Replace these older NVIDIA headers with scripts/license-header.tmpl, keeping the year."; exit 1; }
+	@! git grep -L 'SPDX-FileCopyrightText' -- 'charts/*/templates/*.tpl' 'charts/*/templates/NOTES.txt' || \
+	  { echo "Add the license header to these Helm files."; exit 1; }
+
 .PHONY: coverage
 coverage: test
 	go tool cover -func=coverage.out
@@ -104,12 +173,17 @@ coverage: test
 image-build:
 	$(DOCKER_BIN) build --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile .
 
+# The guard runs before the build, so image-build is invoked as a sub-make
+# (with the resolved repository and tag) rather than listed as a prerequisite.
 .PHONY: image-push
-image-push: image-build
+image-push:
+	$(guard-release-image-tag)
+	$(MAKE) image-build IMAGE_REPO=$(IMAGE_REPO) IMAGE_TAG=$(IMAGE_TAG)
 	$(DOCKER_BIN) push $(IMAGE_REPO):$(IMAGE_TAG)
 
 .PHONY: docker-buildx
 docker-buildx:
+	$(guard-release-image-tag)
 	- $(DOCKER_BIN) buildx create --name=topograph-builder
 	$(DOCKER_BIN) buildx use topograph-builder
 	$(DOCKER_BIN) buildx build --platform $(PLATFORMS) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile --push .
@@ -121,4 +195,8 @@ ssl:
 
 .PHONY: deb rpm
 deb rpm: build
+	@if [ "$(GIT_REF)" = unknown ]; then \
+	  echo "warning: no git metadata found, so the package version is \"unknown\";" \
+	    "pass GIT_REF=vX.Y.Z to set it." >&2; \
+	fi
 	ARCH=$(GOARCH) scripts/build-$@.sh $(GIT_REF) $(PACKAGE_REVISION)

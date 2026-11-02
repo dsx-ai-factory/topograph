@@ -1,18 +1,17 @@
-/*
- * Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package server
 
@@ -209,10 +208,21 @@ func readRequest(w http.ResponseWriter, r *http.Request) *topology.Request {
 		}
 	}
 
-	klog.Info(tr.String())
-
 	if err = validate(tr); err != nil {
 		return httpError(w, tr.Provider.Name, tr.Engine.Name, err.Error(), http.StatusBadRequest, time.Since(start))
+	}
+
+	// Logged after validate, so the provider and engine names are registered
+	// names, not raw client input. The full request lists every node, so only
+	// a summary is logged by default; String escapes line breaks in the
+	// client's values so the verbose dump cannot forge log lines.
+	nodes := 0
+	for _, ci := range tr.Nodes {
+		nodes += len(ci.Instances)
+	}
+	klog.InfoS("Topology request", "provider", tr.Provider.Name, "engine", tr.Engine.Name, "regions", len(tr.Nodes), "nodes", nodes)
+	if v := klog.V(4); v.Enabled() {
+		v.Infof("Topology request: %s", tr.String())
 	}
 
 	return tr
@@ -271,10 +281,25 @@ func getresult(w http.ResponseWriter, r *http.Request) {
 func writeResultResponse(uid string, w http.ResponseWriter) {
 	res := srv.async.queue.Get(uid)
 
+	// The result is plain text (or JSON) and never meant to be rendered, so
+	// say so instead of letting the client sniff the content type. http.Error
+	// sets the same headers for the error branch.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
 	switch res.Status {
 	case http.StatusOK:
+		// The queue stores whatever its handler returns, so check the type
+		// rather than panic on a handler that returns something else.
+		data, ok := res.Ret.([]byte)
+		if !ok {
+			msg := fmt.Sprintf("request ID %s has an unexpected result type %T", uid, res.Ret)
+			klog.Error(msg)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(res.Status)
-		_, _ = w.Write(res.Ret.([]byte))
+		_, _ = w.Write(data)
 	case http.StatusAccepted:
 		w.WriteHeader(res.Status)
 		_, _ = w.Write([]byte(res.Message))

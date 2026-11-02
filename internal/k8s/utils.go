@@ -1,7 +1,17 @@
-/*
- * Copyright 2025-2026 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package k8s
 
@@ -43,6 +53,8 @@ func NodeListOptions(params map[string]any) (*metav1.ListOptions, error) {
 	return &metav1.ListOptions{LabelSelector: labels.Set(config.NodeSelector).String()}, nil
 }
 
+// GetNodes lists Nodes and resolves request-specific identity sources into their
+// in-memory canonical annotations. The Kubernetes objects remain unchanged.
 func GetNodes(ctx context.Context, client kubernetes.Interface, opt *metav1.ListOptions) (*corev1.NodeList, error) {
 	if opt == nil {
 		opt = &metav1.ListOptions{}
@@ -53,7 +65,7 @@ func GetNodes(ctx context.Context, client kubernetes.Interface, opt *metav1.List
 		return nil, fmt.Errorf("failed to list node in the cluster: %v", err)
 	}
 
-	return nodes, nil
+	return resolveNodeMetadata(ctx, nodes), nil
 }
 
 func GetPodsByLabels(ctx context.Context, client kubernetes.Interface, namespace string, l map[string]string) (*corev1.PodList, error) {
@@ -131,9 +143,9 @@ func ExecInPod(ctx context.Context, client kubernetes.Interface, config *rest.Co
 	return &stdout, nil
 }
 
-// GetComputeInstances builds a ComputeInstances list from the node annotations
-// written by the node-data-broker (instance ID and region). Nodes missing either
-// annotation are skipped with a warning.
+// GetComputeInstances builds a ComputeInstances list from the identity
+// annotations returned by GetNodes (broker defaults or configured metadata
+// sources). Nodes missing either annotation are skipped with a warning.
 func GetComputeInstances(nodes *corev1.NodeList) []topology.ComputeInstances {
 	regions := make(map[string]map[string]string)
 	regionNames := []string{}

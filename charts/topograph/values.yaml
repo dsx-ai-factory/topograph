@@ -1,9 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Default values for topology-generator.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
 provider:
-  # name: "aws", "crusoe", "oci", "gcp", "nebius", "nscale", "lambdai", "netq", "infiniband-k8s", "dra", "kubernetes" or "test".
+  # See [supported providers](https://github.com/dsx-ai-factory/topograph/blob/main/docs/overview.md#supported-providers).
   name: test
   # params:
   #   accelerator:
@@ -55,8 +70,9 @@ service:
 
 replicaCount: 1
 
+# Official NGC container image shared by all Topograph components.
 image:
-  repository: ghcr.io/dsx-ai-factory/topograph
+  repository: nvcr.io/nvidia/topograph/topograph
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
   pullPolicy: IfNotPresent
@@ -92,6 +108,19 @@ lifecycle: {}
 
 config:
   requestAggregationDelay: 15s
+  # Optional existing node metadata sources. Omit nodeMetadata or set it to null
+  # to use the annotations topograph.run/instance and topograph.run/region.
+  # When set, both instanceID and region are required, each with a non-empty
+  # type (label or annotation) and key; missing/empty values do not fall
+  # back to the default annotation. Disable nodeDataBroker.enabled only when
+  # all required metadata and discovery functions are supplied elsewhere.
+  # nodeMetadata:
+  #   instanceID:
+  #     type: annotation
+  #     key: example.com/instance-id
+  #   region:
+  #     type: label
+  #     key: topology.kubernetes.io/region
   # Optional secret with API credentials
   # credentialsSecret:
 
@@ -313,11 +342,29 @@ tests:
   image:
     repository: ""
     tag: ""
+  # Resources for each test pod's container. The probes run a single busybox
+  # wget against the Service, so the small requests are enough and the limits
+  # leave ample headroom. Setting both lets `helm test` pods be admitted in
+  # namespaces whose ResourceQuota requires requests and limits. If a namespace
+  # LimitRange sets a minimum or a maxLimitRequestRatio, adjust these values to
+  # fit it. The test pods also set automountServiceAccountToken: false, as they
+  # never call the Kubernetes API.
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
 
 # Node Observer watches configured node/pod changes and Topograph API readiness,
 # then triggers topology regeneration.
 nodeObserver:
   replicaCount: 1
+
+  # Port serving the /healthz endpoint that the liveness and readiness probes
+  # call.
+  port: 8080
 
   serviceAccount:
     create: true

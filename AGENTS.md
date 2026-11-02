@@ -17,7 +17,7 @@ it and is not repeated here:
 | Issue-first workflow, DCO sign-off, commit and branch conventions, review process, AI-assisted contribution policy | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | What each runtime component does and how a request flows between them | [docs/architecture.md](docs/architecture.md) |
 | Every label and annotation key the Kubernetes engine writes | [docs/reference/node-labels.md](docs/reference/node-labels.md) |
-| Provider selection, supported providers, the "Choosing a Provider" scenario table | `docs/overview.md` |
+| Supported providers and engines | `docs/overview.md` |
 | API endpoints, request parameters, response fields, config schema | `docs/api.md` |
 | How to report a suspected vulnerability | `SECURITY.md` |
 | Release history and operator-facing migration notes | `CHANGELOG.md` |
@@ -53,7 +53,7 @@ engine, or emitting scheduler-specific output from a provider, stop and reconsid
 cmd/                  # Entry points: topograph, node-observer, node-data-broker, kwok-nodes
 pkg/
   accelerator/        # Pluggable accelerator-domain discovery composed by providers
-  providers/          # One directory per provider: aws, crusoe, dra, dsx, gcp, infiniband, lambdai, nebius, netq, nscale, oci, test
+  providers/          # One directory per provider: aws, crusoe, dra, dsx, firebird, gcp, infiniband, lambdai, nautobot, nebius, netq, nscale, oci, test
   engines/            # One directory per engine: graph, k8s, nfd, slinky, slurm
   topology/           # Canonical Graph, Vertex tree, and topology constants (DO NOT CHANGE CASUALLY)
   registry/           # Central NamedLoader wiring for providers + engines
@@ -66,7 +66,7 @@ pkg/
   models/             # Go types and loader for YAML simulation models (the YAML files live in tests/models/)
   test/               # Cross-package test helpers
 internal/             # Shared utilities not part of the public API
-  cluset, component, config, exec, files, httperr, httpreq, k8s, kwok, version
+  cluset, component, config, exec, files, healthz, httperr, httpreq, k8s, kwok, version
 charts/topograph/     # Helm chart for all Kubernetes components; tests/ holds the helm-unittest suites + snapshots
 CHANGELOG.md          # Release history (Keep a Changelog format); update [Unreleased] for user-facing PRs
 docs/                 # Public-facing docs: overview.md, architecture.md, api.md + providers/, engines/, reference/ subdirectories
@@ -74,6 +74,7 @@ demos/                # Interactive Kubernetes/KWOK deployment demos
 tests/models/         # YAML simulation fixtures
 config/               # Sample topograph-config.yaml
 scripts/              # Build scripts (deb, rpm, SSL, clean)
+.claude/skills/       # Agent skills; topograph-managing-openvex triages image scan findings into .openvex.json
 localdev/             # Developer-local workspace, not tracked; personal scratch files
 ```
 
@@ -87,7 +88,7 @@ carries the doc updates named in the Documentation Impact Evaluation table below
 
 | Task in scope | Files an agent may modify |
 |---|---|
-| Add a provider, or fix or extend an existing one | `pkg/providers/<name>/`, the one-line registry entry in `pkg/registry/registry.go`, and the docs the provider checklist requires: `docs/providers/<name>.md`, the provider list and "Choosing a Provider" table in `docs/overview.md`, and a `docs/index.yml` entry when the page is new |
+| Add a provider, or fix or extend an existing one | `pkg/providers/<name>/`, the one-line registry entry in `pkg/registry/registry.go`, and the docs the provider checklist requires: `docs/providers/<name>.md`, the supported providers table in `docs/overview.md`, and a `docs/index.yml` entry when the page is new |
 | Fix a bug or add tests inside an existing engine, without changing its output format | `pkg/engines/<engine>/`, `pkg/translate/` |
 | Server plumbing, config parsing, metrics, shared helpers | `pkg/server/`, `pkg/config/`, `pkg/metrics/`, `pkg/ib/`, `pkg/node_observer/`, `internal/` |
 | Command-line entry points and flags | `cmd/` |
@@ -144,14 +145,15 @@ covers only what the tooling cannot tell you.
 
 - `go fmt ./...` is authoritative; do not hand-format
 - `golangci-lint` runs in CI with `--new-from-rev` so only new issues block; fix warnings in code you touch
-- Copyright header on every new Go file:
+- License header on every new file: run `make license-headers`, which adds the standard NVIDIA SPDX and Apache 2.0 header (`scripts/license-header.tmpl`) in each file type's comment syntax, for example in Go:
   ```go
-  /*
-   * Copyright <year> NVIDIA CORPORATION
-   * SPDX-License-Identifier: Apache-2.0
-   */
+  // SPDX-FileCopyrightText: Copyright (c) <year> NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  // SPDX-License-Identifier: Apache-2.0
+  //
+  // Licensed under the Apache License, Version 2.0 (the "License");
+  // ... (the rest of the Apache 2.0 notice)
   ```
-  A few files predating this convention still carry the long Apache 2.0 boilerplate; match the short SPDX form above for new files rather than copying those.
+  `make license-header-check` runs in CI (`license-scan.yml`) and fails on a file with no header. It also fails on the two older NVIDIA forms, the short `Copyright <year> NVIDIA CORPORATION` block and the long Apache 2.0 boilerplate with `Copyright (c) <year>, NVIDIA CORPORATION.`; replace such a header with the standard one and keep its year. A header naming another copyright holder stays as its author wrote it. The year is the year the file was created, never a later one: new files take the current year, and a header added to an older file takes the year of its first commit (`git log --diff-filter=A --format=%ad -- <file>`). Helm templates are skipped by `make license-headers`, because a `#` comment renders into the manifest; add the header by hand as a `{{- /* ... */ -}}` comment, as the existing templates do.
 
 ### Provider interface
 
@@ -245,8 +247,8 @@ spine := &topology.Vertex{ID: node.SpineID, Vertices: map[string]*topology.Verte
 2. Expose a `NamedLoader` function with signature `func NamedLoader() (string, providers.Loader)`; this is how the registry wires the provider
 3. Register in `pkg/registry/registry.go` by adding `<name>.NamedLoader` to the `providers.NewRegistry(...)` call list
 4. Add `docs/providers/<name>.md` following the shape of `aws.md` / `netq.md` (prerequisites, credentials, parameters, how it works, verification)
-5. Update `docs/overview.md`: add the provider to the "Currently supported providers" list and the "Choosing a Provider" scenario table
-6. If the provider has a simulated variant for testing, export a second `NamedLoaderSim` and register it alongside (see `aws`, `gcp`, `oci`, `lambdai`)
+5. Update `docs/overview.md`: add the provider to the "Supported Providers" table
+6. If the provider has a simulated variant for testing, export a second `NamedLoaderSim` and register it alongside; see the [simulation variants](docs/overview.md#supported-providers)
 
 ### Adding a new engine
 
@@ -276,6 +278,9 @@ Do not invent label or annotation keys in provider code; values flow through the
 canonical graph and the engine decides the key. The default keys, the optional
 `fabricLabels` and `acceleratorLabel` overrides, and the value semantics are all in
 [docs/reference/node-labels.md](docs/reference/node-labels.md).
+
+Before changing Kubernetes node identity resolution, read the configurable instance
+ID and region source contract in [docs/api.md](docs/api.md#node-instance-id-and-region-sources).
 
 ## 4. Pull Request Guidelines
 
@@ -334,7 +339,7 @@ The following changes imply specific doc updates in the same PR:
 
 | Change | Docs update required |
 |---|---|
-| New / changed / removed provider | `docs/providers/<name>.md` + `docs/overview.md` provider list + "Choosing a Provider" scenario table |
+| New / changed / removed provider | `docs/providers/<name>.md` + `docs/overview.md` supported providers table |
 | New / changed / removed engine | `docs/engines/<engine>.md` |
 | New / changed chart template (Ingress, HTTPRoute, NetworkPolicy, ServiceMonitor, etc.) | `docs/engines/k8s.md` "Exposing the Topograph API" section |
 | New / changed chart values schema | `charts/topograph/values.yaml` comments, `NOTES.txt` output, and any docs that reference the values |
@@ -364,4 +369,5 @@ template wholesale.
 - [ ] User-facing changes recorded in `CHANGELOG.md` `[Unreleased]` when applicable
 - [ ] `pkg/topology/` changes were discussed in an issue first
 - [ ] No credential, API key, token, or environment variable value appears anywhere in the diff
+- [ ] Every new file has a license header (`make license-header-check`)
 - [ ] Every commit has a DCO sign-off

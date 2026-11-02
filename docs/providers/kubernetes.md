@@ -69,10 +69,12 @@ A missing or invalid value omits that Node with a warning, or fails generation
 when `onMissingLabel: fail` is configured. If the engine requested Nodes but none
 have usable topology, generation fails and preserves the last successful output.
 An intentionally empty engine selection still produces an empty graph. Invalid
-labels on excluded Nodes do not block generation. Switch IDs combine a readable
-prefix with a digest of their ancestor path. They are valid Kubernetes label
-values, distinguish repeated rack labels across zones, and remain stable when
-unrelated Nodes join or leave.
+labels on excluded Nodes do not block generation. Every switch ID has a
+`switch_` prefix and a digest of its full ancestor path, including the outermost
+tier. IDs are checked against requested instance IDs to avoid collisions with
+Node identity annotations. They are valid Kubernetes label values, distinguish
+repeated rack labels across zones, and remain stable when unrelated Nodes join
+or leave unless a new instance ID conflicts with an existing switch ID.
 
 ## Updates and verification
 

@@ -1,18 +1,17 @@
-/*
- * Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package server
 
@@ -26,12 +25,20 @@ import (
 
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/pkg/config"
+	"github.com/dsx-ai-factory/topograph/pkg/engines"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
+	"github.com/dsx-ai-factory/topograph/pkg/registry"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 type resolvingEngine struct {
 	received []topology.ComputeInstances
 	calls    int
+	output   func() ([]byte, *httperr.Error)
 }
 
 func (e *resolvingEngine) ResolveComputeInstances(_ context.Context, instances []topology.ComputeInstances, _ any) ([]topology.ComputeInstances, *httperr.Error) {
@@ -40,8 +47,70 @@ func (e *resolvingEngine) ResolveComputeInstances(_ context.Context, instances [
 	return instances, nil
 }
 
-func (*resolvingEngine) GenerateOutput(_ context.Context, _ *topology.Graph, _ map[string]any) ([]byte, *httperr.Error) {
+func (e *resolvingEngine) GenerateOutput(_ context.Context, _ *topology.Graph, _ map[string]any) ([]byte, *httperr.Error) {
+	if e.output != nil {
+		return e.output()
+	}
 	return nil, nil
+}
+
+func TestKubernetesProviderFailurePreservesOutput(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset(
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-a", Labels: map[string]string{"rack": "r1"}}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "topology", Namespace: "slurm"}},
+	)
+	prv, err := kubernetesprovider.New(client, map[string]any{"topologyLabels": []string{"rack"}})
+	require.NoError(t, err)
+	outputCalls := 0
+	eng := &resolvingEngine{output: func() ([]byte, *httperr.Error) {
+		outputCalls++
+		cm, err := client.CoreV1().ConfigMaps("slurm").Get(ctx, "topology", metav1.GetOptions{})
+		require.NoError(t, err)
+		cm.Data = map[string]string{"topology.conf": "last successful topology"}
+		_, err = client.CoreV1().ConfigMaps("slurm").Update(ctx, cm, metav1.UpdateOptions{})
+		require.NoError(t, err)
+		return []byte(cm.Data["topology.conf"]), nil
+	}}
+	oldSrv := srv
+	oldProvider, oldEngine := registry.Providers["kubernetes"], registry.Engines["test-output"]
+	t.Cleanup(func() {
+		srv = oldSrv
+		registry.Providers["kubernetes"] = oldProvider
+		if oldEngine == nil {
+			delete(registry.Engines, "test-output")
+		} else {
+			registry.Engines["test-output"] = oldEngine
+		}
+	})
+	srv = &HttpServer{cfg: &config.Config{}}
+	registry.Providers["kubernetes"] = func(context.Context, providers.Config) (providers.Provider, *httperr.Error) { return prv, nil }
+	registry.Engines["test-output"] = func(context.Context, engines.Config) (engines.Engine, *httperr.Error) { return eng, nil }
+	request := &topology.Request{
+		Provider: topology.Provider{Name: "kubernetes"},
+		Engine:   topology.Engine{Name: "test-output"},
+		Nodes:    []topology.ComputeInstances{{Instances: map[string]string{"worker-a": "worker-a"}}},
+	}
+	_, herr := processTopologyRequest(request)
+	require.Nil(t, herr)
+	require.Equal(t, 1, outputCalls)
+	before, err := client.CoreV1().ConfigMaps("slurm").Get(ctx, "topology", metav1.GetOptions{})
+	require.NoError(t, err)
+	client.ClearActions()
+	require.NoError(t, client.CoreV1().Nodes().Delete(ctx, "worker-a", metav1.DeleteOptions{}))
+	data, herr := processTopologyRequest(request)
+	require.Nil(t, data)
+	require.NotNil(t, herr)
+	require.Equal(t, http.StatusServiceUnavailable, herr.Code())
+	require.Equal(t, 1, outputCalls, "failed generation must not call the output engine")
+	after, err := client.CoreV1().ConfigMaps("slurm").Get(ctx, "topology", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, before.Data, after.Data)
+	for _, action := range client.Actions() {
+		if action.GetResource().Resource == "configmaps" {
+			require.Equal(t, "get", action.GetVerb(), "failed generation must not write the ConfigMap")
+		}
+	}
 }
 
 type resolvingProvider struct {

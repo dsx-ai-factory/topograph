@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Labels that the issue forms, .github/labeler.yml, and workflow scripts apply.
+# Nothing syncs this file to GitHub: a maintainer creates each label once, and
+# a change that applies a new label adds it here in the same PR.
+# .github/tests/labels.test.mjs fails when a form, labeler.yml, or a workflow
+# script names a label that is not listed here.
+#
+# Each entry is a name, a color as a quoted 6-digit hex string without `#`,
+# and a description. Colors and descriptions match the labels as they exist on
+# GitHub today.
+
+- name: bug
+  color: "d73a4a"
+  description: "Something isn't working"
+
+- name: enhancement
+  color: "a2eeef"
+  description: "New feature or request"
+
+- name: documentation
+  color: "0075ca"
+  description: "Improvements or additions to documentation"
+
+- name: question
+  color: "d876e3"
+  description: "Further information is requested"
+
+- name: needs-triage
+  color: "fbca04"
+  description: "New issue a maintainer has not triaged yet"
+- name: needs-rebase
+  color: "e11d21"
+  description: "Conflicts with main; the author needs to rebase or merge main"

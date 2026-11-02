@@ -4,7 +4,7 @@
 
 Topograph accepts its configuration file path using the `-c` command-line parameter. The configuration file is a YAML document. A sample configuration file is located at `config/topograph-config.yaml`.
 
-The configuration file supports the following parameters:
+Choose a provider name from the [supported providers](./overview.md#supported-providers). The configuration file supports the following parameters:
 
 ```yaml
 # serving topograph endpoint
@@ -15,7 +15,7 @@ http:
   ssl: false
 
 # provider: the provider that topograph will use (optional)
-# Valid options include "aws", "oci", "gcp", "nebius", "nscale", "netq", "kubernetes", "dra", "infiniband-k8s", "infiniband-bm" or "test".
+# See the supported providers table in overview.md#supported-providers.
 # Can be overridden if the provider is specified in a topology request to topograph
 provider: test
 
@@ -29,7 +29,8 @@ engine: slurm
 # processing only if no new requests arrive during the specified duration.
 requestAggregationDelay: 15s
 
-# pageSize: sets the page size for topology requests against a CSP API (optional).
+# pageSize: sets the page size for topology requests against provider APIs (optional).
+# Nautobot uses this as the GraphQL limit and advances offset between pages.
 # Non-positive values emit a warning and use the provider default.
 pageSize: 100
 
@@ -54,6 +55,46 @@ ssl:
 #  PATH:
 ```
 
+### Node instance ID and region sources
+
+By default, Kubernetes node identity comes from the `topograph.run/instance` and
+`topograph.run/region` annotations written by the Node Data Broker. To reuse
+existing node metadata, set `nodeMetadata` in the Topograph configuration file:
+
+```yaml
+nodeMetadata:
+  instanceID:
+    type: annotation
+    key: example.com/instance-id
+  region:
+    type: label
+    key: topology.kubernetes.io/region
+```
+
+Each field independently selects a `label` or `annotation` and a valid Kubernetes
+metadata key. Omit `nodeMetadata` or set it to `null` to retain both default
+annotation sources. When `nodeMetadata` is non-null, both `instanceID` and `region`
+are required, each with non-empty `type` and `key`. Empty sections (`{}`), missing
+or null sources, unsupported source types, and invalid metadata keys fail startup.
+Configured values are trimmed of surrounding whitespace. Missing or empty values
+are logged and treated as unavailable, without falling back to the default
+annotation; nodes without the required identity are excluded from automatic
+instance resolution.
+
+Source selection applies to Kubernetes node reads throughout provider discovery
+and engine translation. It does not change explicitly supplied request node
+mappings, broker output keys, or non-Kubernetes discovery. The selected values are
+used in memory; Topograph does not copy them into annotations on the cluster's
+Nodes. Source values are read on each topology generation; changing them alone
+does not trigger the node observer. After changing source values, submit a new
+topology request to `/v1/generate` to refresh the topology.
+
+With Helm, place the same section under `config.nodeMetadata`. Set
+`nodeDataBroker.enabled: false` when existing sources also cover any other
+metadata or node-local discovery required by your provider. The node observer
+then skips broker readiness checks. Restart the Topograph deployment after
+changing its configuration.
+
 ## API
 
 Topograph exposes five endpoints for interacting with the service. Below are the details of each endpoint:
@@ -70,7 +111,7 @@ Topograph exposes five endpoints for interacting with the service. Below are the
 - **Payload:** The request body is a JSON object organized into three top-level sections:
 
   - **provider**: (optional) Selects the topology source and provides any provider-specific authentication or parameters.
-    - **name**: (optional) A string specifying the Service Provider, such as `aws`, `oci`, `gcp`, `nebius`, `nscale`, `netq`, `kubernetes`, `dra`, `infiniband-k8s`, `infiniband-bm` or `test`. This parameter will override the provider set in the topograph config.
+    - **name**: (optional) A name from the [supported providers](./overview.md#supported-providers). This parameter will override the provider set in the topograph config.
     - **creds**: (optional) A key-value map with provider-specific parameters for authentication.
     - **params**: (optional) A key-value map with provider-specific parameters. The `test` provider uses these parameters for response simulation; for complete behavior and examples, see [Test Mode and Test Provider](./providers/test.md).
       - **topologyLabels**: Required for [`kubernetes`](./providers/kubernetes.md). A nonempty list of distinct Node label keys, closest fabric tier first. An optional `nodeSelector` map filters Nodes. `requireReady` enables readiness filtering (default `false`); `onMissingLabel` chooses `skip` (default) or `fail` for Nodes with incomplete labels.

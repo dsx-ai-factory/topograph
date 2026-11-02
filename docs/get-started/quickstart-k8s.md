@@ -6,6 +6,8 @@ Topograph installs on a Kubernetes cluster via a Helm chart. This quickstart cov
 - **[`nfd` engine](#engine-nfd)** — publishes topology as Node Feature Discovery `NodeFeature` and `NodeFeatureGroup` custom resources for NFD-aware consumers
 - **[`slinky` engine](#engine-slinky)** — writes Slurm topology configuration into a `ConfigMap` for [Slinky](https://github.com/SlinkyProject) (Slurm-on-Kubernetes) deployments
 
+If you run RKE2, including RKE2 on SLES, also read [Install on RKE2 (SUSE)](rke2-suse.md).
+
 Prerequisites, install flow, and verification are common to all three engines —
 they differ only in a few `engine.*` values and in what downstream artifact is
 produced.
@@ -26,7 +28,7 @@ produced.
 Base install command (pick the engine-specific flags from the two sections below):
 
 ```bash
-helm repo add topograph https://dsx-ai-factory.github.io/topograph
+helm repo add topograph https://helm.ngc.nvidia.com/nvidia/topograph
 helm repo update
 helm install topograph topograph/topograph \
   --version <chart-version> \
@@ -36,8 +38,7 @@ helm install topograph topograph/topograph \
   # ... engine-specific flags ...
 ```
 
-Replace `<provider>` with one of the supported values (`aws`, `gcp`, `oci`,
-`nebius`, `nscale`, `netq`, `infiniband-k8s`, `lambdai`). For Slinky
+Replace `<provider>` with a name from the [supported providers](../overview.md#supported-providers) that matches your environment. For Slinky
 `topology/block` deployments only, `dra` is also supported when every
 participating node already has a valid `nvidia.com/gpu.clique` label; see the
 [DRA provider documentation](../providers/dra.md). To see available chart
@@ -57,7 +58,7 @@ The bundled test hooks probe `/healthz` and `/metrics` inside the cluster and ex
 
 Engine-specific verification (seeing the actual topology output) differs — see each engine's section below.
 
-## Engine: `k8s` <a name="engine-k8s"></a>
+## Engine: `k8s`
 
 Engine-specific install flag:
 
@@ -77,7 +78,7 @@ If labels are missing, inspect the Topograph logs:
 kubectl logs -n topograph -l app.kubernetes.io/name=topograph
 ```
 
-## Engine: `nfd` <a name="engine-nfd"></a>
+## Engine: `nfd`
 
 Engine-specific install flag:
 
@@ -99,7 +100,7 @@ kubectl get nodefeaturegroups.nfd.k8s-sigs.io -n node-feature-discovery
 Use this engine only for consumers that understand NFD groups. For native
 Kubernetes pod affinity and topology keys, use `engine: k8s`.
 
-## Engine: `slinky` <a name="engine-slinky"></a>
+## Engine: `slinky`
 
 Engine-specific install flags point the `slinky` engine at the Slinky deployment:
 

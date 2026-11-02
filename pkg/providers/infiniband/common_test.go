@@ -1,7 +1,17 @@
-/*
- * Copyright 2025 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package infiniband
 
@@ -9,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
@@ -18,10 +29,12 @@ import (
 )
 
 type testIBNetDiscover struct {
-	err bool
+	err  bool
+	runs int
 }
 
 func (h *testIBNetDiscover) Run(ctx context.Context, node string) (*bytes.Buffer, error) {
+	h.runs++
 	if h.err {
 		return nil, errors.New("error")
 	}
@@ -103,4 +116,25 @@ func TestGetIbTree(t *testing.T) {
 			require.Equal(t, tc.root, root)
 		})
 	}
+}
+
+func TestGetIbTreeFQDNNodes(t *testing.T) {
+	instances := map[string]string{}
+	for i := 1; i <= 4; i++ {
+		name := fmt.Sprintf("b07-p1-dgx-07-c%02d.example.com", i)
+		instances[name] = name
+	}
+	cis := []topology.ComputeInstances{{Region: "on-prem", Instances: instances}}
+
+	ibnetdiscover := &testIBNetDiscover{}
+	root, err := getIbTree(context.TODO(), cis, ibnetdiscover)
+	require.NoError(t, err)
+
+	// ibnetdiscover output reports short host names; once they resolve to
+	// the FQDN node names, a single run covers every node on the fabric.
+	require.Equal(t, 1, ibnetdiscover.runs)
+	leaf := root.Vertices["S-2c5eab0300b879c0"].Vertices["S-2c5eab0300c25f00"].Vertices["S-2c5eab0300c26140"]
+	require.NotNil(t, leaf)
+	require.Len(t, leaf.Vertices, 4)
+	require.Contains(t, leaf.Vertices, "b07-p1-dgx-07-c01.example.com")
 }

@@ -1,0 +1,127 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# CodeQL static analysis for the Go code. Results are uploaded to the
+# repository code scanning dashboard (Security > Code scanning).
+#
+# golangci-lint, go vet and govulncheck do not do interprocedural taint
+# tracking. CodeQL does, which covers injection, path traversal, SSRF and
+# unsafe deserialization through the API server, the cloud provider clients
+# and the wrappers around local tools such as ibnetdiscover.
+#
+# This file replaces GitHub's CodeQL "default setup" on purpose: default setup
+# lives in repository settings rather than reviewed code, and it only triggers
+# on pull_request events. This repository uses copy-pr-bot, which mirrors each
+# vetted PR to a pull-request/N branch and runs CI on the push to that branch,
+# so the triggers below follow the same flow as go.yml and license-scan.yml.
+# Because CI runs on pull-request/N push events, PR results appear in code
+# scanning under that branch, not as annotations on the pull request.
+# Do not enable default setup alongside this workflow; GitHub rejects advanced
+# setup uploads while default setup is active.
+
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    # A push that only touches docs cannot change the Go dataflow, so skip the
+    # build and analysis. The latest code scanning result for the branch stays
+    # in place, and the weekly schedule re-analyzes main regardless. Remove
+    # paths-ignore before making the analysis job a required status check, or
+    # docs-only PRs would wait forever on a check that never runs.
+    paths-ignore:
+      - "docs/**"
+      - "fern/**"
+      - "**.md"
+  schedule:
+    # Mondays at 07:00 UTC, so new queries shipped with CodeQL bundle updates
+    # run against main even in weeks without code changes.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+# A newer push to a pull-request/N branch supersedes the analysis still running
+# for it, so cancel that run. Every other run (pushes to main, the schedule, and
+# manual runs, including a manual run on a pull-request/N branch) gets a group of
+# its own, keyed on the run ID, so it neither cancels nor is cancelled by a push
+# run. A shared group would not be enough even with cancel-in-progress off:
+# GitHub keeps one pending run per group and cancels the older pending one, so a
+# burst of main pushes could skip commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/pull-request/') && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/pull-request/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (go)
+    runs-on: linux-amd64-cpu8
+    # make build alone takes about 3 minutes in go.yml on this runner; tracing,
+    # extraction and the security-extended analysis add to that.
+    timeout-minutes: 45
+    permissions:
+      # Clone the repository. Job-level permissions replace the workflow-level
+      # block, so this has to be restated here.
+      contents: read
+      # Upload the SARIF result to the code scanning dashboard.
+      security-events: write
+      # actions: read is deliberately absent. GitHub documents it as needed
+      # only for private repositories, and this repository is public. Add it
+      # here if the repository ever becomes private.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Set up Go before CodeQL init so the build tracer sees the toolchain
+      # that go.mod asks for rather than whatever the runner ships with.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Track go.mod so a toolchain bump cannot leave this job behind.
+          go-version-file: go.mod
+          cache: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: go
+          # Trace our own build rather than the autobuilder, so CodeQL extracts
+          # exactly the packages that ship in the binaries.
+          build-mode: manual
+          # security-extended adds lower precision and lower severity security
+          # queries on top of the default suite, which suits a service that
+          # handles untrusted HTTP input. security-and-quality is not used: its
+          # extra maintainability queries overlap with golangci-lint and would
+          # mostly add noise to the code scanning dashboard.
+          queries: security-extended
+
+      # Build every cmd/ target, as the build job in go.yml does. Every package
+      # under pkg/ and internal/ is reached from these entry points except the
+      # pkg/test helpers, which only tests import. The -a flag in make build
+      # recompiles the standard library for each target; that only costs build
+      # time under the CodeQL tracer, it does not change what gets extracted.
+      - name: Build
+        run: make build
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: "/language:go"

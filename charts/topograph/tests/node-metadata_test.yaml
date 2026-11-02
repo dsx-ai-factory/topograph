@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+suite: existing node metadata without a broker
+release:
+  name: chart-ci
+  namespace: topograph
+tests:
+  - it: configures mixed metadata sources without a broker or readiness gate
+    templates:
+      - templates/configmap.yml
+      - templates/nodeDataBroker/daemonset.yaml
+      - templates/nodeObserver/deployment.yaml
+    set:
+      nodeDataBroker.enabled: false
+      nodeObserver.env.TEST: value
+      config.nodeMetadata:
+        instanceID:
+          type: annotation
+          key: example.com/id
+        region:
+          type: label
+          key: topology.kubernetes.io/region
+    asserts:
+      - matchRegex:
+          path: data["topograph-config.yaml"]
+          pattern: "nodeMetadata:\\n  instanceID:\\n    key: example.com/id\\n    type: annotation\\n  region:\\n    key: topology.kubernetes.io/region\\n    type: label"
+        template: templates/configmap.yml
+      - hasDocuments:
+          count: 0
+        template: templates/nodeDataBroker/daemonset.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_DATA_BROKER_NAME
+        template: templates/nodeObserver/deployment.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_DATA_BROKER_NAMESPACE
+        template: templates/nodeObserver/deployment.yaml
+

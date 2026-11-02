@@ -13,7 +13,7 @@ the provider only has to read the Kubernetes API.
 ## When to Use This Provider
 
 Use it on Crusoe Managed Kubernetes. On any other platform use the provider
-that matches it — see [Choosing a Provider](../overview.md).
+that matches it — see [Supported Providers](../overview.md#supported-providers).
 
 The provider supplies the switch fabric hierarchy, so pair it with
 `topology/tree`. On rack-scale NVLink systems it also supplies an accelerator

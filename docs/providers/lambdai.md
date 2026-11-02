@@ -107,12 +107,13 @@ serviceAccount:
 ### 3. Install with Helm (no credentials Secret)
 
 ```bash
-helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
+helm install --wait topograph topograph \
+  --repo https://helm.ngc.nvidia.com/nvidia/topograph \
   --version <chart-version> -n topograph --create-namespace \
   -f values.k8s.lambdai-workload-identity-example.yaml
 ```
 
-See [`values.k8s.lambdai-workload-identity-example.yaml`](../../charts/topograph/values.k8s.lambdai-workload-identity-example.yaml) for a complete example. Unlike the static-token flow, **no `config.credentialsSecret` is set**.
+See [`values.k8s.lambdai-workload-identity-example.yaml`](https://github.com/dsx-ai-factory/topograph/blob/main/charts/topograph/values.k8s.lambdai-workload-identity-example.yaml) for a complete example. Unlike the static-token flow, **no `config.credentialsSecret` is set**.
 
 ### How it works
 
@@ -260,7 +261,8 @@ Install with Helm (see the [Kubernetes quickstart](../get-started/quickstart-k8s
 kubectl create secret generic lambdai-creds \
   --from-file=credentials.yaml=creds.yaml -n topograph
 
-helm install topograph oci://ghcr.io/dsx-ai-factory/topograph/topograph \
+helm install --wait topograph topograph \
+  --repo https://helm.ngc.nvidia.com/nvidia/topograph \
   --version <chart-version> -n topograph --create-namespace \
   --set provider.name=lambdai \
   --set provider.params.url=https://cloud.example.com \

@@ -69,33 +69,37 @@ attestation for either, no checksum file, and no assets on their GitHub release 
 expected for those releases, not a supply chain problem.
 
 An official release publishes a multi-architecture container image at
-`ghcr.io/dsx-ai-factory/topograph:vX.Y.Z`, a Helm chart package in the chart repository at
-`https://dsx-ai-factory.github.io/topograph`, and a SHA-256 checksum file beside the chart package. The
+`nvcr.io/nvidia/topograph/topograph:vX.Y.Z`, a Helm chart package in the chart repository at
+`https://helm.ngc.nvidia.com/nvidia/topograph`, and a SHA-256 checksum file beside the chart package. The
 chart package and its checksum are also attached to the GitHub release.
 
 The image and the chart package each carry SLSA build provenance produced by GitHub artifact
 attestations, which are signed through Sigstore. Verify what you downloaded before installing it,
 substituting the release you are checking for `vX.Y.Z` and `X.Y.Z`.
 
+Artifacts are built from the dedicated `vX.Y.Z` branch and promoted unchanged
+after internal approval. Their provenance identifies `refs/heads/vX.Y.Z`;
+the release tag subsequently records the same approved source commit.
+
 Container image:
 
 ```bash
-gh attestation verify oci://ghcr.io/dsx-ai-factory/topograph:vX.Y.Z \
+gh attestation verify oci://nvcr.io/nvidia/topograph/topograph:vX.Y.Z \
   --repo dsx-ai-factory/topograph \
   --signer-workflow dsx-ai-factory/topograph/.github/workflows/docker.yml \
-  --source-ref refs/tags/vX.Y.Z
+  --source-ref refs/heads/vX.Y.Z
 ```
 
 Helm chart package and its checksum:
 
 ```bash
-curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-X.Y.Z.tgz
-curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-X.Y.Z.tgz.sha256
+helm pull topograph --repo https://helm.ngc.nvidia.com/nvidia/topograph --version X.Y.Z
+curl -fsSLO https://helm.ngc.nvidia.com/nvidia/topograph/topograph-X.Y.Z.tgz.sha256
 sha256sum --check topograph-X.Y.Z.tgz.sha256
 gh attestation verify topograph-X.Y.Z.tgz \
   --repo dsx-ai-factory/topograph \
-  --signer-workflow dsx-ai-factory/topograph/.github/workflows/release.yml \
-  --source-ref refs/tags/vX.Y.Z
+  --signer-workflow dsx-ai-factory/topograph/.github/workflows/helm-release.yaml \
+  --source-ref refs/heads/vX.Y.Z
 ```
 
 For a release covered by this section, treat a failed verification, a missing attestation, or an

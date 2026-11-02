@@ -1,18 +1,17 @@
-/*
- * Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package ib
 
@@ -20,8 +19,13 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"maps"
+	"net"
 	"regexp"
+	"slices"
 	"strings"
+
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
@@ -52,6 +56,7 @@ func GenerateTopologyConfig(data []byte, instances []topology.ComputeInstances) 
 		return nil, nil, fmt.Errorf("failed to parse ibnetdiscover output: %v", err)
 	}
 	nodes := topology.GetNodeNameMap(instances)
+	hca = resolveNodeNames(hca, nodes)
 	roots := buildTree(switches, hca, nodes)
 
 	top := make([]*topology.Vertex, 0, len(roots))
@@ -199,4 +204,81 @@ func extractNodeName(name string) string {
 		return m[1]
 	}
 	return ""
+}
+
+// resolveNodeNames maps HCA host names to cluster node names.
+// The HCA node description usually carries the short host name, while
+// the cluster may register nodes by their FQDN (e.g. RKE2 on SLES), or
+// the other way round. Names that match exactly are kept. Otherwise the
+// short names (up to the first dot) are compared, if at least one of the
+// two names is short, and a match is used only when it identifies exactly
+// one cluster node. Two different FQDNs never match.
+//
+// A fallback match is also dropped when another HCA reports a different
+// host name for the same node, either exactly or through its own fallback,
+// so that a node is never placed under the leaf switches of two hosts.
+// Several HCAs reporting the same host name (one host with several HCAs)
+// are kept.
+func resolveNodeNames(hca map[string]string, nodesInCluster map[string]bool) map[string]string {
+	byShortName := make(map[string][]string)
+	for node := range nodesInCluster {
+		short := shortHostName(node)
+		byShortName[short] = append(byShortName[short], node)
+	}
+
+	resolved := make(map[string]string, len(hca))
+	// cluster node -> host names reported by the HCAs that resolved to it
+	reported := make(map[string]map[string]bool)
+	fallback := make(map[string]string) // HCA ID -> cluster node
+	for id, name := range hca {
+		resolved[id] = name
+		if nodesInCluster[name] {
+			addReported(reported, name, name)
+			continue
+		}
+		var candidates []string
+		for _, node := range byShortName[shortHostName(name)] {
+			if isShortHostName(name) || isShortHostName(node) {
+				candidates = append(candidates, node)
+			}
+		}
+		switch len(candidates) {
+		case 0:
+		case 1:
+			fallback[id] = candidates[0]
+			addReported(reported, candidates[0], name)
+		default:
+			slices.Sort(candidates)
+			klog.Warningf("HCA host name %q matches multiple nodes %v; skipping", name, candidates)
+		}
+	}
+
+	for id, node := range fallback {
+		if names := reported[node]; len(names) > 1 {
+			klog.Warningf("HCA host name %q matches node %q, which other HCAs report as %v; skipping",
+				hca[id], node, slices.Sorted(maps.Keys(names)))
+			continue
+		}
+		resolved[id] = node
+	}
+	return resolved
+}
+
+func addReported(reported map[string]map[string]bool, node, name string) {
+	if reported[node] == nil {
+		reported[node] = make(map[string]bool)
+	}
+	reported[node][name] = true
+}
+
+func isShortHostName(name string) bool {
+	return shortHostName(name) == name
+}
+
+func shortHostName(name string) string {
+	if net.ParseIP(name) != nil {
+		return name
+	}
+	short, _, _ := strings.Cut(name, ".")
+	return short
 }

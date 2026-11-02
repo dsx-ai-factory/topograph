@@ -1,7 +1,17 @@
-/*
- * Copyright 2024-2026 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package node_observer
 
@@ -26,12 +36,15 @@ const (
 )
 
 type Config struct {
-	GenerateTopologyURL string            `yaml:"generateTopologyUrl"`
-	Trigger             Trigger           `yaml:"trigger"`
-	APIServer           APIServer         `yaml:"apiServer,omitempty"`
-	Provider            topology.Provider `yaml:"provider"`
-	Engine              topology.Engine   `yaml:"engine"`
-	RetryDelay          metav1.Duration   `yaml:"retryDelay"`
+	GenerateTopologyURL string `yaml:"generateTopologyUrl"`
+	// HealthzPort serves /healthz for the liveness and readiness probes.
+	// 0 (the default) serves nothing.
+	HealthzPort int               `yaml:"healthzPort,omitempty"`
+	Trigger     Trigger           `yaml:"trigger"`
+	APIServer   APIServer         `yaml:"apiServer,omitempty"`
+	Provider    topology.Provider `yaml:"provider"`
+	Engine      topology.Engine   `yaml:"engine"`
+	RetryDelay  metav1.Duration   `yaml:"retryDelay"`
 }
 
 type Trigger struct {
@@ -77,6 +90,10 @@ func NewConfigFromFile(fname string) (*Config, error) {
 	}
 	if len(trigger.NodeSelector) == 0 && len(trigger.NodeLabels) == 0 && !trigger.NodeReadiness && trigger.PodSelector == nil && cfg.APIServer.PodSelector == nil {
 		return nil, fmt.Errorf("must specify nodeSelector, nodeLabels, nodeReadiness and/or podSelector in trigger, or apiServer.podSelector")
+	}
+
+	if cfg.HealthzPort < 0 {
+		return nil, fmt.Errorf("healthzPort must not be negative")
 	}
 
 	if cfg.RetryDelay.Duration == 0 {

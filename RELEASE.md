@@ -1,6 +1,8 @@
 # Release Process
 
-This document outlines the release process for Topograph.
+This document describes how Topograph releases are prepared and published.
+Container images, Helm charts, and other release artifacts must complete
+NVIDIA's internal security review and approval process before public release.
 
 ## Release cadence and responsibility
 
@@ -8,231 +10,185 @@ Topograph targets one minor release per calendar quarter. The cadence is
 time-based: work that is not ready for a scheduled release moves to a later
 release rather than delaying the release solely to include it.
 
-For each release, the active maintainers nominate one active maintainer to
-serve as the release person. The nomination should be recorded in the release
-tracking issue or another public project record before publication begins.
+For each release, the active maintainers nominate one active NVIDIA maintainer
+to serve as the release manager. Record the nomination in the release tracking
+issue or another public project record before publication begins.
 
-Only the nominated release person may initiate that release by running the
-publication workflows and publishing the GitHub release. If the release person
-cannot complete the release, the maintainers nominate a replacement before
-another person initiates it.
+**At this moment, only NVIDIA employees with the required internal access may serve as release
+manager or cut a release.** The role requires access to NVIDIA's internal
+security review and release systems. GitHub maintainer or repository write
+access alone is insufficient. External contributors, including external
+maintainers, cannot serve as release manager.
 
-The active maintainer roster is maintained in [MAINTAINERS.md](./MAINTAINERS.md),
-and maintainer release authority is defined in [GOVERNANCE.md](./GOVERNANCE.md).
-
-## Prerequisites
-
-- Nomination as the release person for the release
-- Repository write access, including access to GitHub Actions and GitHub Releases
-- Understanding of semantic versioning (`vMAJOR.MINOR.PATCH`)
-- A clean release commit with all required CI checks passing
+The active maintainer roster is maintained in [MAINTAINERS.md](./MAINTAINERS.md).
+The release manager eligibility requirement in this document applies in
+addition to the project roles described in [GOVERNANCE.md](./GOVERNANCE.md).
 
 ## Version management
 
-- Official versions use `vX.Y.Z`, where `X`, `Y`, and `Z` are the major,
-  minor, and patch versions.
-- Each minor release line has one long-lived branch named `release-X.Y`, such
-  as `release-1.2`. Release candidates, the `vX.Y.0` release, and all subsequent
-  `vX.Y.Z` patch releases are prepared from that branch.
-- Git tags and GitHub releases use the canonical version, such as `v1.2.0` or
-  `v1.2.1`; release branches do not include the patch version.
-- The Helm chart `version` omits the `v` prefix, while `appVersion` includes it.
-  For example, release `v1.2.0` uses `version: "1.2.0"` and
+- Each release, including every patch release, has a dedicated branch named
+  `vX.Y.Z`, such as `v1.2.0` or `v1.2.1`. Development continues on `main`.
+- Prepare the final release metadata on that branch before building artifacts.
+  In `charts/topograph/Chart.yaml`, set `version` to `X.Y.Z` and `appVersion`
+  to `vX.Y.Z`. For example, `v1.2.0` uses `version: "1.2.0"` and
   `appVersion: "v1.2.0"`.
-- Release candidates increment the candidate suffix in the Helm chart version,
-  such as `1.2.0-rc.1` and `1.2.0-rc.2`, while remaining on `release-1.2`.
-
-This follows the
-[Kubernetes release-branch model](https://kubernetes.io/releases/release/):
-development continues on `main`, while a `release-X.Y` branch is retained for
-stabilization and patch releases.
+- Prepare the corresponding dated release section and comparison links in
+  `CHANGELOG.md`, leaving an **Unreleased** section for future changes.
+- Build and review the final version through one cycle. The approved image
+  and chart are promoted to the public repositories without rebuilding.
+- After approval, create an annotated tag named `vX.Y.Z` at the exact source
+  commit used for the approved artifacts. The branch and tag share a name;
+  use explicit `refs/heads/` and `refs/tags/` references to distinguish them.
 
 ## Release procedure
 
-### Create and maintain the release branch
+### Prepare the release branch
 
-Create the release branch from `main` when the changes intended for the first
-release candidate have merged. A branch is created only once for a minor
-release line; patch releases reuse it.
+1. Create a dedicated branch from the intended source commit. For a release
+   from `main`:
 
-```bash
-git switch main
-git pull --ff-only origin main
-git switch -c release-1.2
-git push -u origin release-1.2
-```
+   ```bash
+   git switch main
+   git pull --ff-only origin main
+   git switch -c v1.2.0
+   git push -u origin refs/heads/v1.2.0:refs/heads/v1.2.0
+   ```
 
-After the branch is created:
+   Each patch release gets its own branch. When preparing a patch from an
+   earlier release, select that release's explicit tag reference as the base
+   and include the intended fixes through reviewed pull requests.
 
-- New feature development continues on `main`.
-- Bug fixes, test fixes, and documentation changes that also apply to future
-  releases merge into `main` first, then are cherry-picked through a reviewed
-  pull request targeting `release-1.2`.
-- Release-specific changes, such as chart and changelog preparation, may be
-  submitted directly as a pull request targeting `release-1.2`.
-- Do not rebase or force-push the shared release branch, and do not merge the
-  release branch back into `main`.
-
-### Prerelease cycle
-
-Prepare every release candidate on the release branch.
-
-1. Confirm that every change intended for the candidate is present on
-   `release-1.2` and that required CI checks pass.
-
-2. Create a preparation branch from `release-1.2`. In
-   `charts/topograph/Chart.yaml`, set `version` to the release-candidate
-   version. Omit the `v` prefix and include the candidate number, such as
-   `1.2.0-rc.1`. Leave `appVersion` unchanged for now.
-
-   Run the [quality gates](#quality-gates), commit with DCO sign-off, and open a
-   pull request targeting `release-1.2`. Merge it after review and required CI
-   checks pass.
-
-3. In GitHub, run the **Docker** workflow against `release-1.2`. The workflow
-   publishes the Topograph container image with two tags: the release branch
-   name and the short commit SHA. It also generates signed
-   SLSA provenance for the image and publishes it to GHCR.
-
-4. Set `appVersion` in `charts/topograph/Chart.yaml` to the short commit SHA
-   produced in the previous step. Submit this change through another reviewed
-   pull request targeting `release-1.2` and merge it after required CI checks
-   pass.
-
-5. Run the **Release Helm Charts** workflow against `release-1.2`. The
-   workflow publishes the chart package to the Topograph Helm repository. For
-   example, version `1.2.0-rc.1` is published as:
-
-   `https://dsx-ai-factory.github.io/topograph/topograph-1.2.0-rc.1.tgz`
-
-   The workflow also publishes
-   `topograph-1.2.0-rc.1.tgz.sha256` beside the chart package and generates
-   signed SLSA provenance for the chart package.
-
-6. Run the release-candidate test cycle.
-
-   If testing reveals that generally applicable changes are needed, merge them
-   into `main` and cherry-pick them through a pull request to `release-1.2`.
-   When the changes for the next candidate are ready, increment the candidate
-   number in `Chart.yaml` (for example, from `1.2.0-rc.1` to
-   `1.2.0-rc.2`) and repeat steps 1 through 6.
-
-### Official release
-
-Use these steps for both the initial `vX.Y.0` release and later `vX.Y.Z` patch
-releases. The release branch must already exist; do not create a version-named
-branch for an official release.
-
-1. Confirm that every change intended for the release is present on the
-   corresponding release branch and that required CI checks pass. For example,
-   release `v1.2.0` and patch release `v1.2.1` both come from `release-1.2`.
-
-2. Create a preparation branch from `release-1.2` and update
+2. Submit a preparation pull request targeting `v1.2.0` that updates
    `charts/topograph/Chart.yaml`:
 
-   - Set `version` to the release version without the `v` prefix, such as
-     `1.2.0`.
-   - Set `appVersion` to the canonical release version, such as `v1.2.0`.
+   ```yaml
+   version: "1.2.0"
+   appVersion: "v1.2.0"
+   ```
 
-3. Prepare `CHANGELOG.md`:
+   Confirm that the chart's image repository is
+   `nvcr.io/nvidia/topograph/topograph`. Keeping the final public image address
+   in the chart allows the approved package to be promoted unchanged.
 
-   - Consolidate the relevant entries and remove redundant intermediate
-     entries.
-   - Move the released changes from **Unreleased** to a section named
-     `## [1.2.0] - YYYY-MM-DD`.
-   - Keep an empty **Unreleased** section for future changes.
-   - Add or update the comparison link for the release.
+3. In the same pull request, consolidate the release notes in `CHANGELOG.md`,
+   move the relevant **Unreleased** entries into `## [1.2.0] - YYYY-MM-DD`, and
+   update the comparison links. Leave an **Unreleased** section for future work.
 
-4. Run the [quality gates](#quality-gates), commit the changes with DCO
-   sign-off, push the preparation branch, and create a pull request targeting
-   `release-1.2`.
+4. Run the [quality gates](#quality-gates) applicable before publication,
+   commit with DCO sign-off, and merge after review and required CI checks pass.
+   Record the exact release branch commit SHA used for the build.
 
-5. Merge the release pull request after review and required CI checks pass. Do
-   not publish official release artifacts from the branch name; the canonical
-   tag must identify the exact source commit used to build them.
+New feature development continues on `main`. Generally applicable fixes merge
+there first and are cherry-picked through reviewed pull requests to the release
+branch. Do not rebase or force-push the shared release branch.
 
-6. Resolve the current tip of `release-1.2`, then create and push an annotated
-   tag that targets that exact commit. First run the script without `--push`
-   and inspect the displayed commit:
+### Build and complete internal security review
+
+1. Build the multi-architecture image and Helm chart from the recorded commit
+   on `v1.2.0`, using the final version metadata. The manual
+   [Docker workflow](./.github/workflows/docker.yml) and
+   [Helm workflow](./.github/workflows/helm-release.yaml) upload artifacts to
+   the configured NVIDIA staging repositories. Confirm their destinations
+   are restricted to staging before running them. Keep the branch at the
+   recorded commit while both builds run, and verify both builds used it.
+
+2. Record the source commit, staging image reference and manifest digest,
+   chart version and SHA-256 checksum, and signed build provenance. Test the
+   staged artifacts using NVIDIA's internal release instructions. If testing
+   needs an image override to access staging, apply it at deployment time;
+   preserve the chart package intended for promotion.
+
+3. Submit the image and chart through NVIDIA's internal security system.
+   Follow the internal instructions for the required checks and approvals.
+   Record approval for the exact image digest and chart checksum. Pending or
+   failed checks block public promotion.
+
+4. If a change is required, merge the correction through a reviewed pull
+   request to the same release branch, update the release notes as needed,
+   and repeat the build, testing, and internal security review for the changed
+   artifacts. Only the artifacts covered by the final approval may be promoted.
+
+### Promote and publish the release
+
+1. Confirm that the branch still points to the source commit recorded for the
+   approved artifacts. Freeze that commit for publication.
+
+2. Follow NVIDIA's internal promotion instructions to copy the approved image
+   to `nvcr.io/nvidia/topograph/topograph:v1.2.0` and the approved chart to
+   `https://helm.ngc.nvidia.com/nvidia/topograph`. Preserve the image manifest
+   digest and chart package bytes; do not rebuild, repackage, or edit either
+   artifact during promotion. Retain their checksums and provenance.
+
+3. Verify the public image digest and chart checksum against the approved
+   values using the commands in [release verification](#release-verification).
+
+4. Create the annotated source tag at the approved commit. First run:
 
    ```bash
    scripts/create-release-tag.sh v1.2.0
    ```
 
-   If validation succeeds and the commit is correct, re-run with `--push`. The
-   script repeats every validation before it creates and pushes the tag:
+   Compare the displayed commit with the approved source commit. Then run:
 
    ```bash
    scripts/create-release-tag.sh --push v1.2.0
    ```
 
-7. The tag push automatically starts these workflows:
+   The helper resolves `refs/heads/v1.2.0` on `origin`; keep that branch frozen
+   through both commands. The resulting `refs/tags/v1.2.0` must identify the
+   source commit of the approved artifacts. Tagging does not rebuild them.
 
-   - **Release** packages and attests the Helm chart, generates and verifies its
-     SHA-256 checksum, publishes both files to the Helm repository, and creates
-     the GitHub release with both files attached.
-   - **Docker** publishes the multi-architecture container image and its signed
-     SLSA provenance.
-   - **Publish Fern Docs** publishes the versioned documentation.
+5. Publish the GitHub release with the release notes and public NGC links.
+   Verify that any attached artifact copies match the approved files. The tag
+   triggers **Publish Fern Docs**; confirm versioned documentation publishes
+   successfully and complete the remaining release verification checks before
+   marking the release complete.
 
-8. Complete the [release verification](#release-verification) after all three
-   workflows finish successfully.
+6. Reconcile the dated changelog section and comparison links back to `main`
+   through a focused pull request, removing only the entries included in this
+   release from **Unreleased**. Preserve entries for later work. Do not merge
+   the release branch into `main`.
 
-9. Reconcile the released changelog metadata back to `main` through a focused
-   pull request. Copy the new dated release section and comparison link from
-   the release branch, and remove only the corresponding released entries from
-   **Unreleased** on `main`. Preserve entries added for the next release after
-   the release branch was created. Do not merge the release branch into
-   `main`.
+## Security review and publication
 
-## Workflow pipeline
+The nominated NVIDIA release manager completes the internal security review,
+records approval, and promotes the exact approved artifacts. A successful build
+alone does not complete a release. Changes to an artifact require renewed review
+and approval before promotion.
+
+Keep internal reports and operational details in the appropriate NVIDIA internal
+record. The public release record can summarize approval completion and identify
+the source commit, public artifact references, digests, and checksums.
+
+## Release flow
 
 ```mermaid
 flowchart TD
-    A[main] -->|Cut at first RC| B[release-X.Y]
-    A --> C[Next-release development]
-    B --> D[RC preparation PR<br/>X.Y.0-rc.N]
-    D --> E[Docker workflow<br/>image and provenance]
-    E --> F[Set appVersion<br/>to short SHA]
-    F --> G[Release Helm Charts<br/>package and provenance]
-    G --> H[Release-candidate<br/>test cycle]
-    H -->|Generally applicable fix| I[Merge fix into main]
-    I --> J[Cherry-pick PR<br/>to release-X.Y]
-    J --> D
-    H -->|Ready for GA| K[GA preparation PR<br/>to release-X.Y]
-    K --> L[Tag merged commit<br/>vX.Y.0]
-    L --> M[Retain release-X.Y<br/>for patch releases]
-    M -->|Approved backports| N[Patch preparation PR]
-    N --> O[Tag merged commit<br/>vX.Y.Z]
-    L --> P[Release workflow<br/>chart, checksum, provenance]
-    L --> Q[Docker workflow<br/>image and provenance]
-    L --> R[Publish Fern Docs<br/>versioned documentation]
-    O --> P
-    O --> Q
-    O --> R
-    P --> S[GitHub release]
-    S --> T[Reconcile CHANGELOG<br/>to main]
-    T --> A
+    A[main or selected release commit] --> B[Dedicated vX.Y.Z branch]
+    B --> C[Update Chart.yaml and CHANGELOG.md]
+    C --> D[Review and quality gates]
+    D --> E[Build image and chart in staging]
+    E --> F[Test and submit to internal security system]
+    F -->|Changes required| C
+    F -->|Approved| G[Promote the same artifacts to public NGC]
+    G --> H[Verify public digests and checksums]
+    H --> I[Tag the approved source commit]
+    I --> J[Publish GitHub release and versioned docs]
+    J --> K[Reconcile CHANGELOG to main]
 ```
-
-The nominated release person manually dispatches **Docker** and **Release Helm
-Charts** against `release-X.Y` for release candidates. Pushing an official
-`vX.Y.Z` tag from that release line triggers the **Release**, **Docker**, and
-**Publish Fern Docs** workflows.
 
 ## Released components
 
-An official release publishes:
+An official release provides:
 
-- A multi-architecture Topograph container image at
-  `ghcr.io/dsx-ai-factory/topograph:vX.Y.Z`
-- A Helm chart in the Topograph chart repository at
-  `https://dsx-ai-factory.github.io/topograph`
-- A SHA-256 checksum published beside the Helm chart package
-- A GitHub release and source tag named `vX.Y.Z`, with the Helm chart and its
-  checksum attached
+- A multi-architecture container image at
+  `nvcr.io/nvidia/topograph/topograph:vX.Y.Z`
+- A Helm chart in the public NGC repository at
+  `https://helm.ngc.nvidia.com/nvidia/topograph`
+- A GitHub release and source tag named `vX.Y.Z`, with release notes and links
+  to the public artifacts
 - Versioned documentation generated from the release tag
-- Signed SLSA build provenance for the container image and Helm chart package
+- Checksums and signed SLSA build provenance retained for artifact verification
 
 ## Quality gates
 
@@ -243,91 +199,76 @@ All releases must pass:
 - Required GitHub CI checks on the release pull request
 - Review of `CHANGELOG.md` for complete, user-facing release notes
 - DCO sign-off verification for every commit
-- Successful SLSA provenance generation for every published artifact
+- Successful SLSA provenance generation for release artifacts
+- Completion of NVIDIA's internal security review and approval process
+- Verification that public artifacts match the artifacts approved for publication
 
 ## Release verification
 
 Verify the published container image:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/dsx-ai-factory/topograph:v1.2.0
+docker buildx imagetools inspect nvcr.io/nvidia/topograph/topograph:v1.2.0
 ```
 
-Verify the published Helm chart:
+Compare the published manifest digest with the image digest approved for release.
+
+Download and inspect the published Helm chart:
 
 ```bash
-helm repo add topograph https://dsx-ai-factory.github.io/topograph
+helm repo add topograph https://helm.ngc.nvidia.com/nvidia/topograph
 helm repo update
 helm show chart topograph/topograph --version 1.2.0
+helm pull topograph/topograph --version 1.2.0
+sha256sum topograph-1.2.0.tgz
 ```
 
-Verify the container image's SLSA provenance:
+Compare the chart checksum with the checksum approved for release. Confirm that the chart's image repository and `appVersion` resolve
+to the expected public image and release tag.
 
-```bash
-gh attestation verify oci://ghcr.io/dsx-ai-factory/topograph:v1.2.0 \
-  --repo dsx-ai-factory/topograph \
-  --signer-workflow dsx-ai-factory/topograph/.github/workflows/docker.yml \
-  --source-ref refs/tags/v1.2.0
-```
-
-Download the Helm chart and verify its SLSA provenance:
-
-```bash
-curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-1.2.0.tgz
-curl -fsSLO https://dsx-ai-factory.github.io/topograph/topograph-1.2.0.tgz.sha256
-sha256sum --check topograph-1.2.0.tgz.sha256
-gh attestation verify topograph-1.2.0.tgz \
-  --repo dsx-ai-factory/topograph \
-  --signer-workflow dsx-ai-factory/topograph/.github/workflows/release.yml \
-  --source-ref refs/tags/v1.2.0
-```
+Verify signed provenance against the approved artifact digests and source
+commits, following the release verification instructions.
 
 Also confirm that:
 
-- The [GitHub release](https://github.com/dsx-ai-factory/topograph/releases) has the
-  correct tag, release notes, Helm chart, and checksum.
-- The **Docker**, **Release**, and **Publish Fern Docs** workflow
-  runs completed successfully.
-- The published chart references the expected container image tag.
+- Internal security review and approvals cover the published artifacts.
+- The [GitHub release](https://github.com/dsx-ai-factory/topograph/releases) has
+  the correct tag, release notes, and public NGC links.
+- Any attached artifact copies match the approved artifacts.
+- Artifact publication and **Publish Fern Docs** completed successfully for
+  the intended source references.
 
 ## Troubleshooting
 
-### Failed container or Helm publication
+### Failed artifact publication
 
-- Review the failed workflow's logs in GitHub Actions.
-- Correct code or configuration through a reviewed pull request to `main`.
-- Do not move or replace an existing release tag. If the release itself must be
-  corrected, prepare a new patch release.
-- To retry the **Release** workflow without changing its provenance context,
-  dispatch it from the existing tag:
+The release manager follows NVIDIA's internal release instructions to diagnose
+and retry publication of the same approved artifacts. If a published image
+digest or chart checksum differs from the approved artifact, stop the release
+and resolve the discrepancy before continuing.
 
-  ```bash
-  gh workflow run release.yml --ref v1.2.0 -f tag=v1.2.0
-  ```
+### Failed or pending security checks
 
-- To retry the **Docker** workflow, dispatch it from the same existing tag:
+Do not publish the affected artifacts. Follow NVIDIA's internal process to
+resolve findings and obtain the required approvals. Handle security-sensitive
+findings through [SECURITY.md](./SECURITY.md); do not post internal reports or
+vulnerability details in public issues or release notes.
 
-  ```bash
-  gh workflow run docker.yml --ref v1.2.0
-  ```
+If a fix changes an artifact, prepare it through a reviewed pull request and
+repeat the build, security review, and approval for the corrected version.
+Before publication, repeat this cycle on the same release branch. After
+publication, prepare a new patch release on its own version branch. Never move
+or replace an existing release tag or overwrite published artifacts.
 
 ### Failed documentation publication
 
-- Review the **Publish Fern Docs** workflow logs.
-- Confirm that the tag exists and matches `vX.Y.Z`.
-- After correcting the failure, manually dispatch **Publish Fern Docs** with
-  the existing tag. Do not create a replacement tag solely to retry the docs
-  publication.
+Review the **Publish Fern Docs** workflow logs and confirm that the tag exists
+and matches `vX.Y.Z`. After correcting the failure, manually dispatch the
+workflow with the existing tag. Do not create a replacement tag solely to retry
+documentation publication.
 
 ### Failed provenance generation
 
-- Review the **Generate SLSA provenance** step in the publishing workflow.
-- For container provenance, confirm that the Docker job grants the following:
-  `packages: write`, `id-token: write`, `attestations: write`, and
-  `artifact-metadata: write`.
-- For Helm provenance, confirm that the Helm job grants `id-token: write` and
-  `attestations: write`. It does not need `artifact-metadata: write` because the
-  chart attestation is stored by GitHub rather than pushed to an OCI registry.
-- Retry the failed publishing workflow from the same tag. For **Release**, use
-  the tag-bound manual dispatch command shown above so the new attestation still
-  names `refs/tags/v1.2.0` as its source.
+Review the **Generate SLSA provenance** step in the publishing workflow and its
+required permissions. Retry from the same source reference and retain the
+provenance for the artifact approved for publication. Missing provenance must be resolved before completing the release.
