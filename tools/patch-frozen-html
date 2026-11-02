@@ -29,7 +29,7 @@ import sys
 
 
 def patch(path):
-    text = open(path).read()
+    text = open(path, encoding="utf-8").read()
     original = text
 
     # <p><picture><source><img/></picture></p> → ![alt](src)
@@ -51,7 +51,7 @@ def patch(path):
     text = re.sub(r'\s*<a\s+name="[^"]*">\s*</a>', '', text)
 
     if text != original:
-        open(path, 'w').write(text)
+        open(path, 'w', encoding="utf-8").write(text)
 
 
 if __name__ == "__main__":
