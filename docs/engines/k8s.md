@@ -185,6 +185,13 @@ desired labels. It skips Nodes that are already current and patches only changed
 labels, including removing stale Topograph-managed tier labels. This avoids a
 separate Node GET followed by a full Node update for every reconciliation.
 
+After successful topology generation, Nodes in the resolved engine selection
+that are absent from the graph have their managed output labels removed. Other
+labels, including a configured accelerator-domain source label, are preserved.
+Nodes outside the request or engine selector, and Nodes without resolved identity
+metadata, are not cleanup targets. A failed provider request does not generate
+output, so it preserves existing labels.
+
 Client-go uses default limits of 5 QPS and burst 10. For Helm deployments,
 configure the chart-wide `kubeClient.qps` and `kubeClient.burst` values. The
 chart exposes them to Topograph as `KUBE_QPS` and `KUBE_BURST`, and the DRA

@@ -28,8 +28,130 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	internalk8s "github.com/dsx-ai-factory/topograph/internal/k8s"
+	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
+
+func TestGenerateOutputClearsProviderExcludedNodes(t *testing.T) {
+	for _, missingLabel := range []bool{false, true} {
+		for _, customLabels := range []bool{false, true} {
+			name := "unready"
+			if missingLabel {
+				name = "missing-label"
+			}
+			if customLabels {
+				name += "/custom-output"
+			}
+			t.Run(name, func(t *testing.T) {
+				ctx := context.Background()
+				outputKey := topology.FabricTierKey(0)
+				params := map[string]any{"nodeSelector": map[string]string{"pool": "gpu"}, "acceleratorDomainSourceLabel": "example.com/source-domain"}
+				if customLabels {
+					outputKey = "example.com/fabric"
+					params["fabricLabels"] = []string{outputKey}
+				}
+				newNode := func(name, pool string) *corev1.Node {
+					return &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+						Name:        name,
+						Labels:      map[string]string{"rack": "r1", "pool": pool, "example.com/workload": "keep", "example.com/source-domain": "source", outputKey: "old", topology.FabricTierKey(4): "stale", topology.KeyTopologyXclrDomain: "old-domain", topology.KeyTopologyXclrSubDomain: "old-subdomain"},
+						Annotations: map[string]string{topology.KeyNodeInstance: name, topology.KeyNodeRegion: "local"},
+					}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}
+				}
+				healthy, excluded := newNode("healthy", "gpu"), newNode("excluded", "gpu")
+				outside, unrequested := newNode("outside-selector", "cpu"), newNode("unrequested", "gpu")
+				client := fake.NewSimpleClientset(healthy, excluded, outside, unrequested)
+				prv, err := kubernetesprovider.New(client, map[string]any{"topologyLabels": []string{"rack"}, "requireReady": true})
+				require.NoError(t, err)
+				requested := []topology.ComputeInstances{{Instances: map[string]string{"healthy": "healthy", "excluded": "excluded", "outside-selector": "outside-selector", "missing": "missing"}}}
+				generate := func() NodeLabelMap {
+					p, err := getParameters(params)
+					require.NoError(t, err)
+					eng := &K8sEngine{client: client, params: p}
+					instances, herr := eng.ResolveComputeInstances(ctx, requested, prv)
+					require.Nil(t, herr)
+					graph, herr := prv.GenerateTopologyConfig(ctx, nil, instances)
+					require.Nil(t, herr)
+					desired, err := NewTopologyLabeler(p.labelKeys).BuildNodeLabels(graph)
+					require.NoError(t, err)
+					_, herr = eng.GenerateOutput(ctx, graph, nil)
+					require.Nil(t, herr)
+					return desired
+				}
+				require.Contains(t, generate(), "excluded")
+				node, err := client.CoreV1().Nodes().Get(ctx, "excluded", metav1.GetOptions{})
+				require.NoError(t, err)
+				if missingLabel {
+					delete(node.Labels, "rack")
+				} else {
+					node.Status.Conditions[0].Status = corev1.ConditionFalse
+				}
+				_, err = client.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+				require.NoError(t, err)
+				require.NotContains(t, generate(), "excluded", "cleanup must not put an excluded node back in the graph")
+				node, err = client.CoreV1().Nodes().Get(ctx, "excluded", metav1.GetOptions{})
+				require.NoError(t, err)
+				want := map[string]string{"pool": "gpu", "example.com/workload": "keep", "example.com/source-domain": "source"}
+				if !missingLabel {
+					want["rack"] = "r1"
+				}
+				require.Equal(t, want, node.Labels)
+				for _, untouched := range []*corev1.Node{outside, unrequested} {
+					actual, err := client.CoreV1().Nodes().Get(ctx, untouched.Name, metav1.GetOptions{})
+					require.NoError(t, err)
+					require.Equal(t, untouched.Labels, actual.Labels)
+				}
+				node.Labels["rack"] = "r1"
+				node.Status.Conditions[0].Status = corev1.ConditionTrue
+				_, err = client.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+				require.NoError(t, err)
+				require.Contains(t, generate(), "excluded")
+				node, err = client.CoreV1().Nodes().Get(ctx, "excluded", metav1.GetOptions{})
+				require.NoError(t, err)
+				require.NotEmpty(t, node.Labels[outputKey], "recovered nodes regain topology labels")
+			})
+		}
+	}
+}
+
+func TestGenerateOutputPreservesNodesWithoutResolvedMetadata(t *testing.T) {
+	client := fake.NewSimpleClientset(
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "identified", Labels: map[string]string{"rack": "r1"}, Annotations: map[string]string{topology.KeyNodeInstance: "id", topology.KeyNodeRegion: "local"}}},
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "unidentified", Labels: map[string]string{topology.FabricTierKey(0): "keep"}}},
+	)
+	params, err := getParameters(nil)
+	require.NoError(t, err)
+	eng := &K8sEngine{client: client, params: params}
+	instances, herr := eng.ResolveComputeInstances(context.Background(), nil, nil)
+	require.Nil(t, herr)
+	require.Equal(t, []topology.ComputeInstances{{Region: "local", Instances: map[string]string{"id": "identified"}}}, instances)
+	prv, err := kubernetesprovider.New(client, map[string]any{"topologyLabels": []string{"rack"}})
+	require.NoError(t, err)
+	graph, herr := prv.GenerateTopologyConfig(context.Background(), nil, instances)
+	require.Nil(t, herr)
+	_, herr = eng.GenerateOutput(context.Background(), graph, nil)
+	require.Nil(t, herr)
+	node, err := client.CoreV1().Nodes().Get(context.Background(), "unidentified", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{topology.FabricTierKey(0): "keep"}, node.Labels)
+}
+
+func TestGenerateOutputPreservesLabelsForAbsentGraph(t *testing.T) {
+	for _, graph := range []*topology.Graph{nil, {}} {
+		client := fake.NewSimpleClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+			Name: "worker", Labels: map[string]string{topology.FabricTierKey(0): "keep"},
+			Annotations: map[string]string{topology.KeyNodeInstance: "worker", topology.KeyNodeRegion: "local"},
+		}})
+		params, err := getParameters(nil)
+		require.NoError(t, err)
+		eng := &K8sEngine{client: client, params: params}
+		_, herr := eng.ResolveComputeInstances(context.Background(), nil, nil)
+		require.Nil(t, herr)
+		client.ClearActions()
+		_, herr = eng.GenerateOutput(context.Background(), graph, nil)
+		require.Nil(t, herr)
+		require.Empty(t, client.Actions(), "an absent graph must not reconcile away existing labels")
+	}
+}
 
 func TestGetComputeInstances(t *testing.T) {
 	nodeErr1 := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "err1"}}

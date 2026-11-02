@@ -29,7 +29,7 @@ Kubernetes DNS-label limit.
 {{- $trigger := deepCopy (default dict .Values.nodeObserver.topograph.trigger) -}}
 {{- if eq .Values.provider.name "kubernetes" -}}
 {{- $params := default dict .Values.provider.params -}}
-{{- if not (hasKey $trigger "nodeLabels") -}}
+{{- if or (not (hasKey $trigger "nodeLabels")) (kindIs "invalid" $trigger.nodeLabels) -}}
 {{- $_ := set $trigger "nodeLabels" (default list $params.topologyLabels) -}}
 {{- end -}}
 {{- if not $trigger.nodeSelector -}}

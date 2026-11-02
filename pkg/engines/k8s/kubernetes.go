@@ -41,12 +41,11 @@ func (eng *K8sEngine) ResolveComputeInstances(ctx context.Context, instances []t
 	if err != nil {
 		return nil, httperr.NewError(http.StatusBadGateway, err.Error())
 	}
-	if len(instances) != 0 {
-		eng.cacheRequestedNodes(instances, nodes)
-		return instances, nil
+	if len(instances) == 0 {
+		instances = k8s.GetComputeInstances(nodes)
 	}
-	eng.cacheNodes(nodes)
-	return k8s.GetComputeInstances(nodes), nil
+	eng.cacheRequestedNodes(instances, nodes)
+	return instances, nil
 }
 
 func (eng *K8sEngine) AddNodeLabels(ctx context.Context, nodeName string, labels map[string]string) error {

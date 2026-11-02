@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.
+
 - `GET /v1/topology` responses now carry `Content-Type: text/plain; charset=utf-8` and `X-Content-Type-Options: nosniff` for completed and pending requests, as error responses already did, instead of leaving the content type to sniffing. A result of an unexpected type returns HTTP 500 instead of panicking the handler.
 - The API server now logs a one-line summary of each accepted topology request (provider, engine, region and node counts) instead of every request in full, which lists every node; the full request is logged at verbosity 4. Line breaks in client input can no longer start new log entries: the full request escapes them in each value, and the outbound request URL logged at verbosity 4 is quoted.
 - Helm node-observer's `generateTopologyUrl` now prints an integer `service.port` as a number. An integer port, such as `--set service.port=8080`, previously produced an invalid URL ending in `:%!f(int64=8080)/v1/generate`.

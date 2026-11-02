@@ -18,6 +18,8 @@ package node_observer
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -66,19 +68,81 @@ func TestKubernetesNodeUpdates(t *testing.T) {
 }
 
 func TestKubernetesTrigger(t *testing.T) {
-	cfg := &Config{Provider: topology.Provider{Name: "kubernetes", Params: map[string]any{"topologyLabels": []string{"rack"}, "nodeSelector": map[string]string{"pool": "gpu"}}}}
-	trigger, err := cfg.nodeTrigger()
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{"pool": "gpu"}, trigger.NodeSelector)
-	require.Equal(t, []string{"rack"}, trigger.NodeLabels)
-	require.False(t, trigger.NodeReadiness)
-	cfg.Provider.Params["requireReady"] = true
-	trigger, err = cfg.nodeTrigger()
-	require.NoError(t, err)
-	require.True(t, trigger.NodeReadiness)
-	cfg.Trigger.NodeSelector = map[string]string{"pool": "cpu"}
-	_, err = cfg.nodeTrigger()
-	require.ErrorContains(t, err, "must match")
+	tests := []struct {
+		name       string
+		trigger    Trigger
+		params     map[string]any
+		wantLabels []string
+		wantReady  bool
+		wantErr    string
+	}{
+		{name: "provider defaults", wantLabels: []string{"rack"}},
+		{name: "readiness default", params: map[string]any{"requireReady": true}, wantLabels: []string{"rack"}, wantReady: true},
+		{name: "selector mismatch", trigger: Trigger{NodeSelector: map[string]string{"pool": "cpu"}}, wantErr: "must match"},
+		{name: "invalid trigger label", trigger: Trigger{NodeLabels: []string{"bad label"}}, wantErr: "trigger.nodeLabels"},
+		{name: "invalid provider params", params: map[string]any{"onMissingLabel": "ignore"}, wantErr: "onMissingLabel must be skip or fail"},
+		{name: "explicit empty labels", trigger: Trigger{NodeLabels: []string{}}, wantLabels: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := map[string]any{"topologyLabels": []string{"rack"}, "nodeSelector": map[string]string{"pool": "gpu"}}
+			for key, value := range tt.params {
+				params[key] = value
+			}
+			cfg := &Config{Provider: topology.Provider{Name: "kubernetes", Params: params}, Trigger: tt.trigger}
+			trigger, err := cfg.nodeTrigger()
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, map[string]string{"pool": "gpu"}, trigger.NodeSelector)
+			require.Equal(t, tt.wantLabels, trigger.NodeLabels)
+			require.Equal(t, tt.wantReady, trigger.NodeReadiness)
+		})
+	}
+}
+
+func TestKubernetesTriggerFromFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		labels      string
+		extraParams string
+		wantLabels  []string
+		wantErr     string
+	}{
+		{name: "null uses defaults", labels: "null", wantLabels: []string{"rack"}},
+		{name: "explicit empty list", labels: "[]", wantLabels: []string{}},
+		{name: "invalid trigger label", labels: "[bad label]", wantErr: "trigger.nodeLabels"},
+		{name: "invalid provider params", labels: "[custom/rack]", extraParams: "    onMissingLabel: ignore\n", wantErr: "onMissingLabel must be skip or fail"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := fmt.Sprintf(`generateTopologyUrl: "http://topograph.invalid/v1/generate"
+provider:
+  name: kubernetes
+  params:
+    topologyLabels: [rack]
+%strigger:
+  nodeLabels: %s
+apiServer:
+  podSelector:
+    matchLabels:
+      app: topograph
+`, tt.extraParams, tt.labels)
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(data), 0600))
+			cfg, err := NewConfigFromFile(path)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			trigger, err := cfg.nodeTrigger()
+			require.NoError(t, err)
+			require.Equal(t, tt.wantLabels, trigger.NodeLabels)
+		})
+	}
 }
 
 func TestProviderIndependentNodeLabels(t *testing.T) {

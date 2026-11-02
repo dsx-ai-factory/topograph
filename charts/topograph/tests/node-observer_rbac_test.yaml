@@ -163,6 +163,50 @@ tests:
             resources: [nodes]
             verbs: [list, watch]
 
+  - it: restores provider label defaults and node RBAC for a null override
+    templates:
+      - templates/nodeObserver/rbac.yaml
+      - templates/nodeObserver/configmap.yml
+    set:
+      provider.name: kubernetes
+      provider.params.topologyLabels: [rack]
+      nodeObserver.topograph.trigger.nodeLabels: null
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list, watch]
+        template: templates/nodeObserver/rbac.yaml
+        documentIndex: 0
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: 'nodeLabels:\n\s+- rack'
+        template: templates/nodeObserver/configmap.yml
+
+  - it: preserves an explicit empty label override without node RBAC
+    templates:
+      - templates/nodeObserver/rbac.yaml
+      - templates/nodeObserver/configmap.yml
+    set:
+      provider.name: kubernetes
+      provider.params.topologyLabels: [rack]
+      nodeObserver.topograph.trigger.nodeLabels: []
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list, watch]
+        template: templates/nodeObserver/rbac.yaml
+        documentIndex: 0
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: 'nodeLabels: \[\]'
+        template: templates/nodeObserver/configmap.yml
+
   - it: watches nodes when only readiness changes are requested
     templates:
       - templates/nodeObserver/rbac.yaml

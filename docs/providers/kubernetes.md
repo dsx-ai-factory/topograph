@@ -68,6 +68,11 @@ Every included Node must have a nonempty, valid value for every configured label
 A missing or invalid value omits that Node with a warning, or fails generation
 when `onMissingLabel: fail` is configured. If the engine requested Nodes but none
 have usable topology, generation fails and preserves the last successful output.
+With the `k8s` engine, a successful partial result clears managed output labels
+on engine-selected Nodes omitted from the graph; excluded Nodes are not added
+back as fabric vertices. An entirely unusable nonempty selection still fails
+and preserves existing output.
+
 An intentionally empty engine selection still produces an empty graph. Invalid
 labels on excluded Nodes do not block generation. Every switch ID has a
 `switch_` prefix and a digest of its full ancestor path, including the outermost
@@ -80,7 +85,9 @@ or leave unless a new instance ID conflicts with an existing switch ID.
 
 The Node Observer derives its Node selector and default watched topology labels
 from the provider configuration. Set `trigger.nodeLabels` to override the watched
-labels; other providers can use this field without a Node selector. An explicit,
+labels; other providers can use this field without a Node selector. Omitting
+`trigger.nodeLabels` or setting it to `null` uses the provider defaults. An
+explicit empty list disables the default label watch. An explicit,
 nonempty `trigger.nodeSelector` must match
 `provider.params.nodeSelector`. Additions, deletions, selector entry/exit, relevant
 label changes and broker identity changes request regeneration. Readiness changes
