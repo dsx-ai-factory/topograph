@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Patch MDX-unsafe HTML patterns in frozen version markdown files.
+
+Rewrites in-place:
+  - <p><picture><source><img/></picture></p> → ![alt](src)
+  - <p><img .../></p> → ![alt](src)
+  - <a name="..."></a> → removed (Fern auto-generates heading anchors)
+
+Usage: patch-frozen-html FILE...
+"""
+
+import re
+import sys
+
+
+def patch(path):
+    text = open(path, encoding="utf-8").read()
+    original = text
+
+    # <p><picture><source><img/></picture></p> → ![alt](src)
+    text = re.sub(
+        r'<p[^>]*>\s*<picture>\s*<source\b[^>]*/>\s*<img\s+src="([^"]+)"[^>]*\balt="([^"]*)"[^>]*/>\s*</picture>\s*</p>',
+        r'![\2](\1)',
+        text,
+        flags=re.DOTALL,
+    )
+
+    # <p><img .../></p> → ![alt](src)
+    text = re.sub(
+        r'<p[^>]*>\s*<img\s+src="([^"]+)"[^>]*\balt="([^"]*)"[^>]*/>\s*</p>',
+        r'![\2](\1)',
+        text,
+    )
+
+    # <a name="..."></a> → removed
+    text = re.sub(r'\s*<a\s+name="[^"]*">\s*</a>', '', text)
+
+    if text != original:
+        open(path, 'w', encoding="utf-8").write(text)
+
+
+if __name__ == "__main__":
+    for arg in sys.argv[1:]:
+        patch(arg)

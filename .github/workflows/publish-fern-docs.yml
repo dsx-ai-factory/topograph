@@ -197,6 +197,12 @@ jobs:
             if git show-ref --verify --quiet "refs/tags/${version}"; then
               mkdir -p "fern/versions/${version}-content"
               git archive "refs/tags/${version}" -- docs/ | tar -x --strip-components=1 -C "fern/versions/${version}-content"
+              # Patch MDX-unsafe HTML from older tags before escaping.
+              # Tags are immutable; these fixes mirror what main already has.
+              python3 tools/check-docs-mdx --fix "fern/versions/${version}-content" || true
+              find "fern/versions/${version}-content" -name '*.md' -exec python3 tools/patch-frozen-html {} +
+              # Fix broken ../../charts/ relative links — point at the matching tag, not main
+              find "fern/versions/${version}-content" -name '*.md' -print0 | xargs -0 sed -i'' -e "s|\](../../charts/topograph/\([^)]*\))|](https://github.com/dsx-ai-factory/topograph/blob/${version}/charts/topograph/\1)|g" 2>/dev/null || true
               # Escape {, }, < for MDX — but only outside fenced code blocks and inline code spans
               find "fern/versions/${version}-content" -name '*.md' -print0 | while IFS= read -r -d '' f; do
                 awk '
