@@ -8,12 +8,7 @@ Topograph consists of five major components:
 4. **Provider**
 5. **Engine**
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/topograph-arch-community-dark.png" />
-    <img src="assets/topograph-arch-community-light.png" width="100%" alt="Topograph architecture diagram" />
-  </picture>
-</p>
+![Topograph architecture diagram](assets/topograph-arch-community-light.png)
 
 ## Design invariant
 
@@ -95,7 +90,7 @@ The Engine translates this internal representation into the format expected by t
 
 Topograph is a Go module, `github.com/dsx-ai-factory/topograph`. Its exported API is documented as godoc and browsable on pkg.go.dev:
 
-- <https://pkg.go.dev/github.com/dsx-ai-factory/topograph>
+- [https://pkg.go.dev/github.com/dsx-ai-factory/topograph](https://pkg.go.dev/github.com/dsx-ai-factory/topograph)
 
 The packages an external caller is most likely to import are `pkg/topology` (the canonical `Graph`, `Vertex`, `DomainMap`, and the topology constants), `pkg/providers` (the `Provider` interface and the registry types), and `pkg/engines` (the `Engine` interface). Packages under `internal/` are not importable from outside the module by design.
 
@@ -103,7 +98,7 @@ The canonical types carry godoc comments: `Graph`, `Vertex`, `FabricTier`, `Doma
 
 ## Documentation and versioning
 
-`docs/` is the source of truth for public documentation. It is published through Fern to <https://docs.nvidia.com/topograph>. `docs/index.yml` drives the sidebar and `fern/docs.yml` declares the site and its versions; `fern/` holds site configuration and theme assets only, never page content.
+`docs/` is the source of truth for public documentation. It is published through Fern to [https://docs.nvidia.com/topograph](https://docs.nvidia.com/topograph). `docs/index.yml` drives the sidebar and `fern/docs.yml` declares the site and its versions; `fern/` holds site configuration and theme assets only, never page content.
 
 The site is versioned per release, and readers select a version from the site's version picker:
 

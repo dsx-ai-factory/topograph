@@ -25,12 +25,7 @@ A provider represents a cloud or on-premises environment, while an engine refers
 
 This design allows Topograph to abstract across multiple topology sources — including CSP APIs, NVIDIA NetQ, and system-level tools — and translate that information into scheduler-specific outputs, such as Slurm topology.conf, Kubernetes node labels, or Slinky ConfigMaps.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/topograph-engine-outputs-community-dark.png" />
-    <img src="assets/topograph-engine-outputs-community-light.png" width="100%" alt="Topograph engine output formats diagram" />
-  </picture>
-</p>
+![Topograph engine output formats diagram](assets/topograph-engine-outputs-community-light.png)
 
 Topograph runs as a service and exposes several endpoints, which are described in detail in API.md.
 
