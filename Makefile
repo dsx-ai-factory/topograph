@@ -153,11 +153,13 @@ LICENSE_HEADER_OLD := Copyright (\(c\) )?[0-9-]+,? NVIDIA CORPORATION([.]|[[:spa
 .PHONY: license-headers
 license-headers:
 	git ls-files -z | xargs -0 $(ADDLICENSE) -f scripts/license-header.tmpl \
-	  -ignore 'charts/topograph/templates/**'
+	  -ignore 'charts/topograph/templates/**' \
+	  -ignore 'tests/output/**'
 
 .PHONY: license-header-check
 license-header-check:
-	git ls-files -z | xargs -0 $(ADDLICENSE) -check
+	git ls-files -z | xargs -0 $(ADDLICENSE) -check \
+	  -ignore 'tests/output/**'
 	@! git grep -l -E '$(LICENSE_HEADER_OLD)' || \
 	  { echo "Replace these older NVIDIA headers with scripts/license-header.tmpl, keeping the year."; exit 1; }
 	@! git grep -L 'SPDX-FileCopyrightText' -- 'charts/*/templates/*.tpl' 'charts/*/templates/NOTES.txt' || \
