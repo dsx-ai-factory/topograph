@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	reEmptyLine, reHCA, reSwitch, reConn, reSwitchName, reNodeName *regexp.Regexp
+	reEmptyLine, reHCA, reSwitch, reConn, reSwitchName, reNodeName, reHCAPort *regexp.Regexp
 )
 
 func init() {
@@ -39,6 +39,7 @@ func init() {
 	reHCA = regexp.MustCompile(`^Ca\s+\d+\s+"([^"]+)"\s+# "([^"]+)"`)
 	reSwitch = regexp.MustCompile(`^Switch\s+\d+\s+"([^"]+)"\s+# "([^"]+)"`)
 	reConn = regexp.MustCompile(`^\[\d+\]\s+"([^"]+)"\[\d+\](\([0-9a-f]+\))?\s+# "([^"]+)"`)
+	reHCAPort = regexp.MustCompile(`^\[\d+\]\s+"H-([0-9a-fA-F]+)"\[(\d+)\]`)
 	reSwitchName = regexp.MustCompile(`^[^;:]+;([^;:]+):[^;:]+$`)
 	reNodeName = regexp.MustCompile(`^(\S+)\s\S+$`)
 }
@@ -129,6 +130,19 @@ func topologyFromSwitches(switches map[string]*Switch, hca map[string]string, in
 	merger.Merge()
 
 	return merger.TopTier()
+}
+
+// HCAPorts returns the HCA ports that a switch in the ibnetdiscover output
+// connects to, as "<node guid>/<port>" keys with a lowercase GUID. A port that
+// appears here sits on the subnet this output describes.
+func HCAPorts(data []byte) map[string]bool {
+	ports := make(map[string]bool)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if match := reHCAPort.FindStringSubmatch(line); len(match) != 0 {
+			ports[strings.ToLower(match[1])+"/"+match[2]] = true
+		}
+	}
+	return ports
 }
 
 // process output of ibnetdiscover

@@ -165,6 +165,20 @@ Switch	41 "S-b8cef603008032b8"		# "MF0;SJC3-A04-IB-ComputeLeaf-007:MQM8700/U1" e
 	}
 }
 
+func TestHCAPorts(t *testing.T) {
+	data := []byte("Switch 8 \"S-1\" # \"leaf\"\n" +
+		"[1] \"S-2\"[3] # \"spine\"\n" +
+		"[2] \"H-0002C903000A0B1C\"[1] # \"node-a mlx5_0\"\n" +
+		"[3] \"H-0002c903000a0b1c\"[2] # \"node-a mlx5_1\"\n\n" +
+		"Ca 2 \"H-0002c903000a0b1c\" # \"node-a mlx5_0\"\n" +
+		"[1](0002c903000a0b1d) \"S-1\"[2] # \"leaf\"\n")
+	require.Equal(t, map[string]bool{
+		"0002c903000a0b1c/1": true,
+		"0002c903000a0b1c/2": true,
+	}, HCAPorts(data))
+	require.Empty(t, HCAPorts([]byte("garbage")))
+}
+
 func TestBuildTree(t *testing.T) {
 	// Simulate switches and HCAs
 	switches := map[string]*Switch{

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -70,6 +71,124 @@ func TestParseIBPorts(t *testing.T) {
 	require.Equal(t, []IBPort{{CA: "mlx5_0", Port: "2"}, {CA: "mlx5_2", Port: "1"}}, ports)
 	_, err = parseIBPorts(bytes.NewBufferString("mlx5_0;touch /tmp/unwanted 1\n"))
 	require.ErrorContains(t, err, "invalid IB port listing")
+}
+
+func TestParseIBPortsGUID(t *testing.T) {
+	ports, err := parseIBPorts(bytes.NewBufferString("mlx5_0 1 0002C903000A0B1C\nmlx5_1 1 \n"))
+	require.NoError(t, err)
+	require.Equal(t, []IBPort{{CA: "mlx5_0", Port: "1", GUID: "0002c903000a0b1c"}, {CA: "mlx5_1", Port: "1"}}, ports)
+	_, err = parseIBPorts(bytes.NewBufferString("mlx5_0 1 not-a-guid\n"))
+	require.ErrorContains(t, err, "invalid IB port listing")
+	_, err = parseIBPorts(bytes.NewBufferString("mlx5_0 1 0002c903000a0b1c extra\n"))
+	require.ErrorContains(t, err, "invalid IB port listing")
+}
+
+// guidDiscoverer serves one fabric per CA name and counts the scans.
+type guidDiscoverer struct {
+	rails   []string // CA names, one rail each
+	scans   atomic.Int32
+	outputs map[string]string
+}
+
+func guidOf(node, rail string) string {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(node + "|" + rail))
+	return fmt.Sprintf("%016x", h.Sum64())
+}
+
+func (d *guidDiscoverer) Run(context.Context, string) (*bytes.Buffer, error) {
+	return nil, errors.New("unexpected unfiltered discovery")
+}
+
+func (d *guidDiscoverer) Ports(_ context.Context, node string) ([]IBPort, error) {
+	var ports []IBPort
+	for _, rail := range d.rails {
+		ports = append(ports, IBPort{CA: rail, Port: "1", GUID: guidOf(node, rail)})
+	}
+	return ports, nil
+}
+
+func (d *guidDiscoverer) RunPort(_ context.Context, _ string, port IBPort) (*bytes.Buffer, error) {
+	d.scans.Add(1)
+	return bytes.NewBufferString(d.outputs[port.CA]), nil
+}
+
+// railFixture is a compute-leaf fabric whose hosts use the GUIDs guidOf gives them on the rail.
+func railFixture(nodes []string, rail string) string {
+	var out bytes.Buffer
+	out.WriteString("# Topology file: test\n\n")
+	fmt.Fprintf(&out, "Switch 8 \"S-compute-%s\" # \"compute-%s\"\n", rail, rail)
+	for i, node := range nodes {
+		fmt.Fprintf(&out, "[%d] \"H-%s\"[1] # \"%s %s\"\n", i+1, guidOf(node, rail), node, rail)
+	}
+	out.WriteByte('\n')
+	for _, node := range nodes {
+		fmt.Fprintf(&out, "Ca 1 \"H-%s\" # \"%s %s\"\n\n", guidOf(node, rail), node, rail)
+	}
+	return out.String()
+}
+
+func TestSwitchSelectorScansOncePerRail(t *testing.T) {
+	var nodes []string
+	for i := range 40 {
+		nodes = append(nodes, fmt.Sprintf("n%02d", i))
+	}
+	discoverer := &guidDiscoverer{
+		rails: []string{"mlx5_0", "mlx5_1"},
+		outputs: map[string]string{
+			"mlx5_0": railFixture(nodes, "mlx5_0"),
+			"mlx5_1": railFixture(nodes, "mlx5_1"),
+		},
+	}
+	cis := []topology.ComputeInstances{{Instances: map[string]string{}}}
+	for _, n := range nodes {
+		cis[0].Instances[n] = n
+	}
+	root, err := getIbTree(context.Background(), cis, discoverer, testComputeSelector(t))
+	require.NoError(t, err)
+	require.NotEmpty(t, root.Vertices)
+	// 40 nodes x 2 ports would be 80 scans; every rail needs only one.
+	require.EqualValues(t, 2, discoverer.scans.Load())
+}
+
+func TestSwitchSelectorScansPortsWithoutGUID(t *testing.T) {
+	nodes := []string{"A", "B", "C"}
+	out := ibFixture("storage", map[string][]string{"compute-leaf": nodes})
+	var scans atomic.Int32
+	discoverer := scriptedIBNetDiscover{
+		ports: func(string) ([]IBPort, error) { return []IBPort{{CA: "mlx5_0", Port: "1"}}, nil },
+		runPort: func(context.Context, string, IBPort) (*bytes.Buffer, error) {
+			scans.Add(1)
+			return bytes.NewBufferString(out), nil
+		},
+	}
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"A": "A", "B": "B", "C": "C"}}}
+	_, err := getIbTree(context.Background(), cis, discoverer, testComputeSelector(t))
+	require.NoError(t, err)
+	require.EqualValues(t, 3, scans.Load())
+}
+
+func TestSwitchSelectorScansUncoveredNodes(t *testing.T) {
+	// The first scan only reaches A; B reports the same label but a GUID the scan did not list.
+	first := railFixture([]string{"A"}, "mlx5_0")
+	second := railFixture([]string{"B"}, "mlx5_0")
+	var scans atomic.Int32
+	discoverer := scriptedIBNetDiscover{
+		ports: func(node string) ([]IBPort, error) {
+			return []IBPort{{CA: "mlx5_0", Port: "1", GUID: guidOf(node, "mlx5_0")}}, nil
+		},
+		runPort: func(_ context.Context, node string, _ IBPort) (*bytes.Buffer, error) {
+			scans.Add(1)
+			if node == "A" {
+				return bytes.NewBufferString(first), nil
+			}
+			return bytes.NewBufferString(second), nil
+		},
+	}
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"A": "A", "B": "B"}}}
+	_, err := getIbTree(context.Background(), cis, discoverer, testComputeSelector(t))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, scans.Load())
 }
 
 type multiFabricDiscoverer struct {
