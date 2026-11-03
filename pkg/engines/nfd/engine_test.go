@@ -304,6 +304,77 @@ func TestGenerateOutputAllowsEmptyDesiredStateWithoutCleanup(t *testing.T) {
 	require.Equal(t, "OK nodeFeatures=0 nodeFeatureGroups=0\n", string(out))
 }
 
+func TestGenerateOutputClearsTopologyOfNodesWithoutTopology(t *testing.T) {
+	existing, err := makeNodeFeature("node-b", map[string]string{topologyTypeFabric + "0": "old-leaf"})
+	require.NoError(t, err)
+	existing.SetNamespace(testNFDNamespace)
+	dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
+		runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{
+			nodeFeatureGVR:      "NodeFeatureList",
+			nodeFeatureGroupGVR: "NodeFeatureGroupList",
+		},
+		existing,
+	)
+	eng := &NfdEngine{
+		client:        k8sfake.NewSimpleClientset(),
+		dynamicClient: dynamicClient,
+		params:        &Params{Cleanup: false},
+		namespace:     testNFDNamespace,
+	}
+
+	out, httpErr := eng.GenerateOutput(context.Background(), noTopologyTestGraph(), nil)
+	require.Nil(t, httpErr)
+	require.Equal(t, "OK nodeFeatures=2 nodeFeatureGroups=1\n", string(out))
+
+	features, err := dynamicClient.Resource(nodeFeatureGVR).Namespace(testNFDNamespace).List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, features.Items, 2)
+	nodeA := findNodeFeature(t, features.Items, "node-a")
+	require.Equal(t, map[string]string{topologyTypeFabric + "0": "leaf-1"}, attributeElements(t, nodeA, nfdFeatureSet))
+	nodeB := findNodeFeature(t, features.Items, "node-b")
+	require.Equal(t, map[string]string{nfdNodeName: "node-b"}, attributeElements(t, nodeB, nfdSystemName))
+	require.Empty(t, attributeElements(t, nodeB, nfdFeatureSet))
+
+	groups, err := dynamicClient.Resource(nodeFeatureGroupGVR).Namespace(testNFDNamespace).List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, groups.Items, 1)
+	findGroup(t, groups.Items, topologyTypeFabric+"0", "leaf-1")
+}
+
+func TestGenerateOutputRejectsGraphWithoutTopologyWithCleanup(t *testing.T) {
+	existing, err := makeNodeFeature("node-b", map[string]string{topologyTypeFabric + "0": "old-leaf"})
+	require.NoError(t, err)
+	existing.SetNamespace(testNFDNamespace)
+	dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
+		runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{
+			nodeFeatureGVR:      "NodeFeatureList",
+			nodeFeatureGroupGVR: "NodeFeatureGroupList",
+		},
+		existing,
+	)
+	eng := &NfdEngine{
+		client:        k8sfake.NewSimpleClientset(),
+		dynamicClient: dynamicClient,
+		params:        &Params{Cleanup: true},
+		namespace:     testNFDNamespace,
+	}
+	graph := topology.NewClusterTopology().ToGraph("test", []topology.ComputeInstances{{
+		Instances: map[string]string{"inst-b": "node-b"},
+	}}, 0, false)
+
+	out, httpErr := eng.GenerateOutput(context.Background(), graph, nil)
+	require.Nil(t, out)
+	require.Equal(t, http.StatusBadGateway, httpErr.Code())
+	require.ErrorContains(t, httpErr, "generated no NFD topology objects; keeping the existing topology")
+
+	stored, err := dynamicClient.Resource(nodeFeatureGVR).Namespace(testNFDNamespace).
+		Get(context.Background(), existing.GetName(), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{topologyTypeFabric + "0": "old-leaf"}, attributeElements(t, *stored, nfdFeatureSet))
+}
+
 func TestUpsertObjectRemovesStaleTopologyAttributes(t *testing.T) {
 	existing, err := makeNodeFeature("node-a", map[string]string{
 		topologyTypeFabric + "0": "leaf-1",
@@ -485,6 +556,22 @@ func testGraph() *topology.Graph {
 		},
 		Domains: domains,
 	}
+}
+
+// noTopologyTestGraph puts node-a under leaf-1 and node-b, which the provider
+// returned nothing for, under the no-topology placeholder.
+func noTopologyTestGraph() *topology.Graph {
+	cluster := topology.NewClusterTopology()
+	cluster.Append(&topology.InstanceTopology{
+		InstanceID:  "inst-a",
+		FabricTiers: topology.ClosestFirstFabricTiers("leaf-1"),
+	})
+	return cluster.ToGraph("test", []topology.ComputeInstances{{
+		Instances: map[string]string{
+			"inst-a": "node-a",
+			"inst-b": "node-b",
+		},
+	}}, 0, false)
 }
 
 func findNodeFeature(t *testing.T, items []unstructured.Unstructured, nodeName string) unstructured.Unstructured {
