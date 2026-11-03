@@ -55,7 +55,10 @@ that produces no usable topology fails generation explicitly.
 With a selector, the live providers enumerate active IB ports on every requested
 node and run `ibnetdiscover` on each port so a default storage port cannot hide
 a separate compute subnet. Scans run with bounded concurrency, and results are
-checked in node and port order. Equivalent compute rails are deduplicated; rails
+checked in node and port order. A port is not scanned again when an earlier scan
+already listed its adapter (node GUID and port number), so a cluster normally
+needs about one scan per rail rather than one per node and port. Ports that
+report no node GUID are always scanned. Equivalent compute rails are deduplicated; rails
 that give conflicting leaf groups for the same nodes fail generation rather
 than assign ambiguous tier-0 labels. The simulation provider applies the
 selector to its saved capture; it does not enumerate ports. Without a selector,

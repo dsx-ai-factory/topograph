@@ -40,12 +40,29 @@ type IBNetDiscover interface {
 type IBPort struct {
 	CA   string
 	Port string
+	// GUID is the node GUID of the channel adapter (16 lowercase hex digits).
+	// It is empty when the node did not report one.
+	GUID string
 }
 
-const listActiveIBPorts = `for d in /sys/class/infiniband/*; do [ -d "$d" ] || continue; for p in "$d"/ports/*; do [ -f "$p/state" ] || continue; case "$(cat "$p/state")" in *ACTIVE*) printf '%s %s\n' "${d##*/}" "${p##*/}";; esac; done; done`
+// key identifies the fabric attachment point that an ibnetdiscover scan covers.
+// It matches the "<guid>/<port>" keys returned by ib.HCAPorts.
+func (p IBPort) key() string {
+	return p.GUID + "/" + p.Port
+}
+
+func compareIBPorts(a, b IBPort) int {
+	if c := strings.Compare(a.CA, b.CA); c != 0 {
+		return c
+	}
+	return strings.Compare(a.Port, b.Port)
+}
+
+const listActiveIBPorts = `for d in /sys/class/infiniband/*; do [ -d "$d" ] || continue; for p in "$d"/ports/*; do [ -f "$p/state" ] || continue; case "$(cat "$p/state")" in *ACTIVE*) printf '%s %s %s\n' "${d##*/}" "${p##*/}" "$(tr -d : < "$d/node_guid" 2>/dev/null)";; esac; done; done`
 
 var validIBCA = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 var validIBPort = regexp.MustCompile(`^[0-9]+$`)
+var validIBGUID = regexp.MustCompile(`^[0-9A-Fa-f]{16}$`)
 
 // maxConcurrentIBPortDiscoveries limits simultaneous full-fabric scans.
 const maxConcurrentIBPortDiscoveries = 8
@@ -57,20 +74,22 @@ func parseIBPorts(output *bytes.Buffer) ([]IBPort, error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) != 2 {
+		if len(fields) != 2 && len(fields) != 3 {
 			return nil, fmt.Errorf("invalid IB port listing %q", line)
 		}
 		if !validIBCA.MatchString(fields[0]) || !validIBPort.MatchString(fields[1]) {
 			return nil, fmt.Errorf("invalid IB port listing %q", line)
 		}
-		ports = append(ports, IBPort{CA: fields[0], Port: fields[1]})
-	}
-	sort.Slice(ports, func(i, j int) bool {
-		if ports[i].CA == ports[j].CA {
-			return ports[i].Port < ports[j].Port
+		port := IBPort{CA: fields[0], Port: fields[1]}
+		if len(fields) == 3 {
+			if !validIBGUID.MatchString(fields[2]) {
+				return nil, fmt.Errorf("invalid IB port listing %q", line)
+			}
+			port.GUID = strings.ToLower(fields[2])
 		}
-		return ports[i].CA < ports[j].CA
-	})
+		ports = append(ports, port)
+	}
+	slices.SortFunc(ports, compareIBPorts)
 	return ports, nil
 }
 
@@ -90,7 +109,6 @@ func discoverIBPorts(ctx context.Context, ibnetdiscover IBNetDiscover, discoveri
 		if err := ctx.Err(); err != nil {
 			break
 		}
-		i, discovery := i, discovery
 		results[i].node = discovery.node
 		results[i].port = discovery.port
 		group.Go(func() error {
@@ -108,6 +126,77 @@ func discoverIBPorts(ctx context.Context, ibnetdiscover IBNetDiscover, discoveri
 		return nil, err
 	}
 	return results, nil
+}
+
+// listIBPortDiscoveries lists the active IB ports of every node, at most
+// maxConcurrentIBPortDiscoveries nodes at a time, in node and port order.
+func listIBPortDiscoveries(ctx context.Context, ibnetdiscover IBNetDiscover, nodes []string) ([]ibPortDiscovery, error) {
+	perNode := make([][]IBPort, len(nodes))
+	group := new(errgroup.Group)
+	group.SetLimit(maxConcurrentIBPortDiscoveries)
+	for i, node := range nodes {
+		if ctx.Err() != nil {
+			break
+		}
+		group.Go(func() error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			ports, err := ibnetdiscover.Ports(ctx, node)
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				klog.Warningf("failed to list active IB ports on %q: %v", node, err)
+				return nil
+			}
+			slices.SortFunc(ports, compareIBPorts)
+			perNode[i] = ports
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	var discoveries []ibPortDiscovery
+	for i, node := range nodes {
+		for _, port := range perNode[i] {
+			discoveries = append(discoveries, ibPortDiscovery{node: node, port: port})
+		}
+	}
+	return discoveries, nil
+}
+
+// nextIBPortBatch picks the next scans to run and returns what is left.
+// Ports already covered by a finished scan are dropped. Among ports with a GUID
+// only the first one per CA/port label joins a batch: nodes in the same rail
+// normally use the same label, so one scan per rail runs in parallel and the
+// rest are re-checked once its output is known. Ports without a GUID cannot be
+// deduplicated and are always scanned.
+func nextIBPortBatch(pending []ibPortDiscovery, covered map[string]bool) (batch, rest []ibPortDiscovery) {
+	labels := make(map[string]bool)
+	for _, d := range pending {
+		if d.port.GUID != "" {
+			if covered[d.port.key()] {
+				continue
+			}
+			label := d.port.CA + "/" + d.port.Port
+			if len(batch) >= maxConcurrentIBPortDiscoveries || labels[label] {
+				rest = append(rest, d)
+				continue
+			}
+			labels[label] = true
+		} else if len(batch) >= maxConcurrentIBPortDiscoveries {
+			rest = append(rest, d)
+			continue
+		}
+		batch = append(batch, d)
+	}
+	return batch, rest
 }
 
 func getIbTree(ctx context.Context, cis []topology.ComputeInstances, ibnetdiscover IBNetDiscover, selector *switchSelector) (*topology.Vertex, error) {
@@ -194,40 +283,37 @@ func getIbTree(ctx context.Context, cis []topology.ComputeInstances, ibnetdiscov
 			}
 		}
 	} else {
-		var discoveries []ibPortDiscovery
-		for _, node := range nodes {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			ports, err := ibnetdiscover.Ports(ctx, node)
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil, ctx.Err()
-				}
-				klog.Warningf("failed to list active IB ports on %q: %v", node, err)
-				continue
-			}
-			sort.Slice(ports, func(i, j int) bool {
-				if ports[i].CA == ports[j].CA {
-					return ports[i].Port < ports[j].Port
-				}
-				return ports[i].CA < ports[j].CA
-			})
-			for _, port := range ports {
-				discoveries = append(discoveries, ibPortDiscovery{node: node, port: port})
-			}
-		}
-		results, err := discoverIBPorts(ctx, ibnetdiscover, discoveries)
+		pending, err := listIBPortDiscoveries(ctx, ibnetdiscover, nodes)
 		if err != nil {
 			return nil, err
 		}
-		for _, result := range results {
-			if result.err != nil {
-				klog.Warningf("failed to run ibnetdiscover on %q port %s/%s: %v", result.node, result.port.CA, result.port.Port, result.err)
-				continue
+		// Ports whose fabric attachment (node GUID and port number) already
+		// appeared in a completed scan sit on a subnet that is already known,
+		// so scanning them again would only repeat the same output.
+		covered := make(map[string]bool)
+		for len(pending) > 0 {
+			var batch []ibPortDiscovery
+			batch, pending = nextIBPortBatch(pending, covered)
+			if len(batch) == 0 {
+				break
 			}
-			if err := processOutput(result.node, result.output); err != nil {
+			results, err := discoverIBPorts(ctx, ibnetdiscover, batch)
+			if err != nil {
 				return nil, err
+			}
+			for _, result := range results {
+				if result.err != nil {
+					klog.Warningf("failed to run ibnetdiscover on %q port %s/%s: %v", result.node, result.port.CA, result.port.Port, result.err)
+					continue
+				}
+				if err := processOutput(result.node, result.output); err != nil {
+					return nil, err
+				}
+				if result.output != nil {
+					for key := range ib.HCAPorts(result.output.Bytes()) {
+						covered[key] = true
+					}
+				}
 			}
 		}
 	}
