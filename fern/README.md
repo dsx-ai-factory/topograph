@@ -6,8 +6,11 @@ The `docs/` directory on `main` is the **source of truth**. This `fern/` directo
 
 ## Local preview
 
+From the repository root, install the CLI version pinned in `fern/fern.config.json`
+(also used by CI):
+
 ```bash
-npm install -g fern-api@4.42.1
+npm install -g "fern-api@$(jq -r .version fern/fern.config.json)"
 fern check
 HOST=0.0.0.0 fern docs dev   # bind to host IP for remote access
 # navigate to http://<host>:3000/topograph/dev
