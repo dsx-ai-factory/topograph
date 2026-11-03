@@ -299,6 +299,72 @@ test('a comment from an earlier conflict does not count for the current one', as
   assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [['rest.issues.createComment', 16]]);
 });
 
+test('a comment made in the same second as the label counts', async () => {
+  // GitHub timestamps have 1-second resolution, and the label and the
+  // comment usually go on in the same second.
+  const { github, calls } = fakeGithub([
+    pr(22, {
+      mergeable: false,
+      labels: ['needs-rebase'],
+      events: [{ event: 'labeled', label: { name: 'needs-rebase' }, created_at: '2026-10-20T00:00:00Z' }],
+      comments: [
+        { body: `@author22 please rebase.\n\n${MARKER}`, created_at: '2026-10-20T00:00:00Z', user: { login: 'github-actions[bot]' } },
+      ],
+    }),
+  ]);
+
+  await run(github);
+
+  assert.deepEqual(writes(calls), []);
+});
+
+test('with no labeled event, any marker comment counts', async () => {
+  // #23 has needs-rebase, but listEvents shows no needs-rebase labeled
+  // event, so there is no cutoff; the check stays quiet rather than
+  // risk a second comment.
+  const { github, calls } = fakeGithub([
+    pr(23, {
+      mergeable: false,
+      labels: ['needs-rebase'],
+      events: [{ event: 'labeled', label: { name: 'bug' }, created_at: '2026-10-22T00:00:00Z' }],
+      comments: [
+        { body: `@author23 please rebase.\n\n${MARKER}`, created_at: '2026-10-01T00:00:00Z', user: { login: 'github-actions[bot]' } },
+      ],
+    }),
+  ]);
+
+  await run(github);
+
+  assert.deepEqual(writes(calls), []);
+});
+
+test('a marker comment on the second page of comments counts', async () => {
+  // 100 comments fill the first page at per_page: 100; the marker comment
+  // is the 101st.
+  const comments = Array.from({ length: 100 }, (_, i) => ({
+    body: `Comment ${i + 1}.`,
+    created_at: new Date(Date.UTC(2026, 9, 21, 0, 0, i)).toISOString(),
+    user: { login: 'author24' },
+  }));
+  comments.push({ body: `@author24 please rebase.\n\n${MARKER}`, created_at: '2026-10-22T00:00:00Z', user: { login: 'github-actions[bot]' } });
+  const { github, calls } = fakeGithub([
+    pr(24, {
+      mergeable: false,
+      labels: ['needs-rebase'],
+      events: [{ event: 'labeled', label: { name: 'needs-rebase' }, created_at: '2026-10-20T00:00:00Z' }],
+      comments,
+    }),
+  ]);
+
+  await run(github);
+
+  assert.deepEqual(writes(calls), []);
+  assert.deepEqual(
+    calls.filter(({ route }) => route === 'rest.issues.listComments').map(({ params }) => params.page),
+    [1, 2],
+  );
+});
+
 test('drafts are skipped', async () => {
   // The draft conflicts, so reading it would label it.
   const { github, calls } = fakeGithub([
