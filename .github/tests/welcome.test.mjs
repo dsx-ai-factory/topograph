@@ -43,12 +43,12 @@ function listedIssue(number, state = 'open') {
 }
 
 // A closed pull request that never merged keeps `merged_at: null`.
-function listedPullRequest(number, state = 'open') {
+function listedPullRequest(number, state = 'open', mergedAt = null) {
   return {
     number,
     state,
     user: { login: AUTHOR },
-    pull_request: { url: `https://api.github.com/repos/dsx-ai-factory/topograph/pulls/${number}`, merged_at: null },
+    pull_request: { url: `https://api.github.com/repos/dsx-ai-factory/topograph/pulls/${number}`, merged_at: mergedAt },
   };
 }
 
@@ -243,6 +243,16 @@ test("first-timer's PR after a first PR closed unmerged is not welcomed", async 
   const calls = await runPullRequestWelcome({
     association: 'FIRST_TIME_CONTRIBUTOR',
     pages: [[listedPullRequest(PR_NUMBER), listedPullRequest(30, 'closed')]],
+  });
+  assert.deepEqual(calls, [{ route: 'rest.issues.listForRepo', params: { ...LIST_QUERY, page: 1 } }]);
+});
+
+// The step does not rely on GitHub having changed the association after a
+// merge: a merged earlier pull request blocks the welcome like any other.
+test("first-timer's PR after a first PR merged is not welcomed", async () => {
+  const calls = await runPullRequestWelcome({
+    association: 'FIRST_TIME_CONTRIBUTOR',
+    pages: [[listedPullRequest(PR_NUMBER), listedPullRequest(30, 'closed', '2026-10-20T12:00:00Z')]],
   });
   assert.deepEqual(calls, [{ route: 'rest.issues.listForRepo', params: { ...LIST_QUERY, page: 1 } }]);
 });
