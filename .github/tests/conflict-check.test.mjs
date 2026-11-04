@@ -49,6 +49,7 @@ function pr(
 ) {
   return {
     number,
+    state: 'open',
     draft,
     mergeable,
     base: { ref: base },
@@ -365,6 +366,50 @@ test('a marker comment on the second page of comments counts', async () => {
   );
 });
 
+test('a notice from the previous version of this check counts', async () => {
+  // The version before the marker posted this text with no marker. #26 was
+  // labeled and told by it, so the first run of this version must not
+  // mention its author again.
+  const { github, calls } = fakeGithub([
+    pr(26, {
+      mergeable: false,
+      labels: ['needs-rebase'],
+      events: [{ event: 'labeled', label: { name: 'needs-rebase' }, created_at: '2026-10-29T17:46:45Z' }],
+      comments: [
+        {
+          body:
+            '@author26 this pull request no longer merges cleanly into `main`. Please rebase it onto the latest ' +
+            '`main`, or merge `main` into it, resolve the conflicts, and push. The `needs-rebase` label comes off ' +
+            'the next time this check finds that it merges cleanly; the check runs after every push to `main`.',
+          created_at: '2026-10-29T17:46:46Z',
+          user: { login: 'github-actions[bot]' },
+        },
+      ],
+    }),
+  ]);
+
+  await run(github);
+
+  assert.deepEqual(writes(calls), []);
+});
+
+test('a marker comment from a person does not count', async () => {
+  // The marker is hidden, but anyone can type it. Only the check's own
+  // comment tells the author about the conflict.
+  const { github, calls } = fakeGithub([
+    pr(27, {
+      mergeable: false,
+      labels: ['needs-rebase'],
+      events: [{ event: 'labeled', label: { name: 'needs-rebase' }, created_at: '2026-10-20T00:00:00Z' }],
+      comments: [{ body: `Looking into it.\n\n${MARKER}`, created_at: '2026-10-20T00:00:05Z', user: { login: 'author27' } }],
+    }),
+  ]);
+
+  await run(github);
+
+  assert.deepEqual(writes(calls).map(({ route, params }) => [route, params.issue_number]), [['rest.issues.createComment', 27]]);
+});
+
 test('drafts are skipped', async () => {
   // The draft conflicts, so reading it would label it.
   const { github, calls } = fakeGithub([
@@ -397,6 +442,36 @@ test('PRs that target another branch are not checked', async () => {
     ],
   );
 });
+
+// pulls.list ran before the retry waits; a PR can change while the script
+// waits for its mergeability. Labeling a PR that no longer targets main
+// would tell its author to update from main, and later runs, which list
+// only main PRs, would never take the label off.
+for (const [what, change] of [
+  ['retargeted to another branch', { base: { ref: 'release-1.1' } }],
+  ['turned into a draft', { draft: true }],
+  ['closed', { state: 'closed' }],
+]) {
+  test(`a PR ${what} during the retries is left alone`, async () => {
+    // The first read finds mergeability unknown; by the second the PR has
+    // changed and conflicts.
+    const listed = pr(28, { mergeable: null });
+    let reads = 0;
+    const { github, calls } = fakeGithub([listed], {
+      'rest.pulls.get': () => {
+        reads += 1;
+        const { comments, events, ...full } = listed;
+        const data = { ...full, labels: [...listed.labels] };
+        return { data: reads === 1 ? data : { ...data, ...change, mergeable: false } };
+      },
+    });
+
+    await run(github);
+
+    assert.deepEqual(fetched(calls), [28, 28]);
+    assert.deepEqual(writes(calls), []);
+  });
+}
 
 test('second page of open PRs is processed', async () => {
   const prs = Array.from({ length: 150 }, (_, i) => pr(i + 1, { mergeable: i + 1 !== 150 }));
