@@ -23,7 +23,9 @@
 #                    after three reads, log it and change nothing
 # Only PRs whose base is main are listed: one that targets another branch
 # would be checked against that branch but told to update from main. Open PRs
-# are read page by page, so the check covers more than the first 100.
+# are read page by page, so the check covers more than the first 100. A PR can
+# change during the waits below, so each read skips one that has since been
+# closed, made a draft or retargeted away from main.
 #
 # Why push to main: a PR starts conflicting when its base moves, and GitHub
 # recomputes `mergeable` against the new main after each push to it. The check
@@ -42,9 +44,13 @@
 # was told. If createComment fails after addLabels succeeded, the PR keeps the
 # label with no comment. So for a conflicting PR that already has the label,
 # the run lists its issue events and comments, and posts the comment unless
-# one carrying the hidden marker was created at or after needs-rebase last went
-# on; a comment from an earlier conflict does not count. The label still goes
-# on first, so a missing label fails the job before any comment is posted.
+# one by github-actions[bot] carrying the hidden marker was created at or after
+# needs-rebase last went on; a comment from an earlier conflict does not count.
+# Anyone can type the marker, so only the bot's comments count. The version
+# before the marker posted the same first sentence with no marker, so a bot
+# comment with that sentence counts too, and a PR labeled by that version is
+# not told twice. The label still goes on first, so a missing label fails the
+# job before any comment is posted.
 #
 # Why no cancel: runs share one concurrency group and a running one is never
 # cancelled, because a cancelled run would skip part of the check for the
@@ -95,11 +101,16 @@ jobs:
             // Hidden when GitHub renders the comment; a later run finds the
             // comment by it.
             const MARKER = '<!-- conflict-check: needs-rebase -->';
+            // The notice's first sentence. The version before the marker
+            // posted it without one, so it identifies those comments.
+            const NOTICE = 'this pull request no longer merges cleanly into `main`.';
             // The wait before each read of a PR whose mergeable is still null.
             const WAITS_MS = [0, 5000, 10000];
 
-            // Whether a marker comment was created at or after the label last
-            // went on, so it was posted for the current conflict.
+            // Whether this check's own comment, with the marker or the notice,
+            // was created at or after the label last went on, so it was posted
+            // for the current conflict. Anyone can type the marker, so a
+            // comment by another account does not count.
             async function notified(number) {
               const events = await github.paginate(github.rest.issues.listEvents, {
                 owner,
@@ -116,9 +127,14 @@ jobs:
                 issue_number: number,
                 per_page: 100,
               });
-              return comments.some(
-                (comment) => (comment.body ?? '').includes(MARKER) && Date.parse(comment.created_at) >= labeledAt,
-              );
+              return comments.some((comment) => {
+                const body = comment.body ?? '';
+                return (
+                  comment.user?.login === 'github-actions[bot]' &&
+                  (body.includes(MARKER) || body.includes(NOTICE)) &&
+                  Date.parse(comment.created_at) >= labeledAt
+                );
+              });
             }
 
             async function reconcile(pr) {
@@ -138,7 +154,7 @@ jobs:
                   repo,
                   issue_number: number,
                   body: [
-                    `@${pr.user.login} this pull request no longer merges cleanly into \`main\`.`,
+                    `@${pr.user.login} ${NOTICE}`,
                     'Please rebase it onto the latest `main`, or merge `main` into it, resolve the conflicts, and push.',
                     'The `needs-rebase` label comes off the next time this check finds that it merges cleanly;',
                     'the check runs after every push to `main`.',
@@ -177,6 +193,13 @@ jobs:
                 // pulls.list does not return mergeable; pulls.get does, and
                 // starts GitHub's background computation when it is unknown.
                 const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+                // The PR can change during the waits. One that no longer
+                // targets main would be told to update from main, and later
+                // runs, which list only main PRs, would never unlabel it.
+                if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main') {
+                  core.info(`#${number}: closed, a draft or retargeted since it was listed, skipped`);
+                  continue;
+                }
                 if (pr.mergeable === null) unknown.push(number);
                 else await reconcile(pr);
               }
