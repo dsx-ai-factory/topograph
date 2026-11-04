@@ -39,5 +39,5 @@ Related: <!-- #123 if this PR is partial work -->
 ## Checklist
 - [ ] I am familiar with the [Contributing Guidelines](./CONTRIBUTING.md).
 - [ ] New or changed behavior is covered by a test.
-- [ ] No credential, API key, or token appears in the diff.
+- [ ] No credential, API key, token, or environment variable value appears in the diff.
 - [ ] All commits are signed off per DCO (`git commit -s`).
