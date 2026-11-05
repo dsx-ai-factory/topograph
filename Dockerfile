@@ -25,9 +25,27 @@ ARG TARGETARCH
 
 RUN make build-${TARGETOS}-${TARGETARCH}
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
-RUN apk add --no-cache rdma-core
+# lldpctl's control-socket protocol depends on the host lldpd build. Use the
+# Ubuntu Noble 1.0.18 package family to match hosts running lldpd 1.0.18;
+# allow Ubuntu package revisions so distribution fixes are still installed.
+# Ubuntu installs lldpcli (target of the lldpctl symlink) as 4750 _lldpd:adm, so
+# the non-root, no-privilege-escalation broker (uid 65532) cannot execute it.
+# Make it 0755 (this also drops the unused setuid bit); access to the host lldpd
+# socket is still governed by the pod's supplementalGroups.
+# Ubuntu splits the InfiniBand utilities out of rdma-core.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        rdma-core \
+        ibverbs-utils \
+        infiniband-diags \
+        'lldpd=1.0.18-*' \
+    && chmod 0755 /usr/sbin/lldpcli \
+    && lldpctl -v \
+    && command -v ibnetdiscover \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /go/src/github.com/dsx-ai-factory/topograph/bin/* /usr/local/bin/
 
