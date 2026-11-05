@@ -326,6 +326,15 @@ Keep the glob quoted so that Node expands it, not the shell:
 node --test '.github/tests/**/*.test.mjs'
 ```
 
+`.github/workflows/pr-description.yaml` runs on the pull request itself
+rather than on the `pull-request/<n>` branch, since it reads only the
+description, and it has no local equivalent for a real PR. Its rules run
+against the fixture bodies in `.github/tests/fixtures/pr-description/` with:
+
+```bash
+node --test .github/tests/pr-description.test.mjs
+```
+
 `make qualify` and `make chart-test` (when charts changed) passing locally
 is a strong signal, not a guarantee of an identical CI run. In particular,
 `make test`'s `-race` detector runs checks CI's coverage-only invocation
