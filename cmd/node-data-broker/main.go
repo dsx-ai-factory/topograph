@@ -40,9 +40,9 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dra"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/gcp"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
-	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/lambdai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nebius"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/oci"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
@@ -184,8 +184,8 @@ func (b *nodeBroker) getAnnotations(ctx context.Context) (map[string]string, err
 		return nebius.GetNodeAnnotations(ctx)
 	case nscale.NAME:
 		return nscale.GetNodeAnnotations(ctx, b.config.Provider.Params)
-	case kubernetesprovider.NAME:
-		return kubernetesprovider.GetNodeAnnotations(ctx, b.nodeName)
+	case nodelabels.NAME:
+		return nodelabels.GetNodeAnnotations(ctx, b.nodeName)
 	case dra.NAME:
 		return dra.GetNodeAnnotations(ctx, b.nodeName)
 	case infiniband.NAME_K8S:

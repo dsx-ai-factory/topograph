@@ -30,11 +30,11 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/providers/firebird"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/gcp"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
-	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/lambdai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nautobot"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nebius"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/netq"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/oci"
 	provider_test "github.com/dsx-ai-factory/topograph/pkg/providers/test"
@@ -49,7 +49,7 @@ var Providers = providers.NewRegistry(
 	infiniband.NamedLoaderK8S,
 	infiniband.NamedLoaderSim,
 	dra.NamedLoader,
-	kubernetesprovider.NamedLoader,
+	nodelabels.NamedLoader,
 	firebird.NamedLoader,
 	firebird.NamedLoaderSim,
 	gcp.NamedLoader,

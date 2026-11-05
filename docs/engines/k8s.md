@@ -464,7 +464,7 @@ networkPolicy:
 
 ### Node Observer RBAC
 
-The node-observer `ClusterRole` grants `pods [list, watch]` unconditionally, `apps/daemonsets [list, watch]` when `nodeDataBroker.enabled=true`, and `nodes [list, watch]` when the rendered observer trigger has a nonempty `nodeSelector`, nonempty `nodeLabels`, or `nodeReadiness: true`. For the `kubernetes` provider, the chart derives these defaults from `provider.params.nodeSelector`, `topologyLabels`, and `requireReady`; an explicit `trigger.nodeLabels` overrides the default watched labels. When managing RBAC externally, include node list/watch access whenever any of these conditions applies. Set `nodeObserver.rbac.create: false` to suppress the `ClusterRole`/`ClusterRoleBinding` when managing RBAC externally.
+The node-observer `ClusterRole` grants `pods [list, watch]` unconditionally, `apps/daemonsets [list, watch]` when `nodeDataBroker.enabled=true`, and `nodes [list, watch]` when the rendered observer trigger has a nonempty `nodeSelector`, nonempty `nodeLabels`, or `nodeReadiness: true`. For the `k8s-node-labels` provider, the chart derives these defaults from `provider.params.nodeSelector`, `topologyLabels`, and `requireReady`; an explicit `trigger.nodeLabels` overrides the default watched labels. When managing RBAC externally, include node list/watch access whenever any of these conditions applies. Set `nodeObserver.rbac.create: false` to suppress the `ClusterRole`/`ClusterRoleBinding` when managing RBAC externally.
 
 When reusing an existing ServiceAccount for Topograph, node-observer, or
 node-data-broker, set the component's `serviceAccount.create` value to `false`

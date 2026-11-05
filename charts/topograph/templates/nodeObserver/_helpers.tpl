@@ -27,7 +27,7 @@ Kubernetes DNS-label limit.
 {{/* Resolve the trigger once for both configuration and node RBAC. */}}
 {{- define "nodeObserver.trigger" -}}
 {{- $trigger := deepCopy (default dict .Values.nodeObserver.topograph.trigger) -}}
-{{- if eq .Values.provider.name "kubernetes" -}}
+{{- if eq .Values.provider.name "k8s-node-labels" -}}
 {{- $params := default dict .Values.provider.params -}}
 {{- if or (not (hasKey $trigger "nodeLabels")) (kindIs "invalid" $trigger.nodeLabels) -}}
 {{- $_ := set $trigger "nodeLabels" (default list $params.topologyLabels) -}}

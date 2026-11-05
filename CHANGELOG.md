@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `kubernetes` provider discovers fabric topology from configurable Node labels, with stable label-compatible switch IDs, optional readiness filtering, and provider-independent observer label triggers for Slinky and other engines.
+- `k8s-node-labels` provider discovers fabric topology from configurable Node labels, with stable label-compatible switch IDs, optional readiness filtering, and provider-independent observer label triggers for Slinky and other engines.
 
 - The Node Observer serves `/healthz` on `nodeObserver.port` (default `8080`), and the chart gives its Deployment liveness and readiness probes on it, as the Node Data Broker already has. Set through `healthzPort` in the Node Observer config; without it, no endpoint is served.
 - License headers: `make license-headers` adds NVIDIA's standard SPDX and Apache 2.0 header to files that have none, and `make license-header-check`, run by `license-scan.yml`, fails on any file without a copyright or license header, or with an NVIDIA header in one of the two older forms. Every NVIDIA header now uses the standard form, keeping each file's original year; files that had no header now carry one.

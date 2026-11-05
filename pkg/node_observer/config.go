@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/topograph/internal/k8s"
-	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
@@ -55,7 +55,7 @@ type Trigger struct {
 }
 
 var providerNodeLabels = map[string]func(map[string]any) ([]string, error){
-	kubernetesprovider.NAME: kubernetesprovider.NodeTopologyLabels,
+	nodelabels.NAME: nodelabels.NodeTopologyLabels,
 }
 
 type APIServer struct {
@@ -118,13 +118,13 @@ func (cfg *Config) nodeTrigger() (*Trigger, error) {
 			return nil, err
 		}
 	}
-	if cfg.Provider.Name == kubernetesprovider.NAME {
-		params, err := kubernetesprovider.ParseParams(cfg.Provider.Params)
+	if cfg.Provider.Name == nodelabels.NAME {
+		params, err := nodelabels.ParseParams(cfg.Provider.Params)
 		if err != nil {
 			return nil, err
 		}
 		if len(trigger.NodeSelector) != 0 && !maps.Equal(trigger.NodeSelector, params.NodeSelector) {
-			return nil, fmt.Errorf("trigger.nodeSelector must match provider.params.nodeSelector for the kubernetes provider")
+			return nil, fmt.Errorf("trigger.nodeSelector must match provider.params.nodeSelector for the k8s-node-labels provider")
 		}
 		trigger.NodeSelector = params.NodeSelector
 		trigger.NodeReadiness = trigger.NodeReadiness || params.RequireReady

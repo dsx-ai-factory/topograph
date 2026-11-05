@@ -1,13 +1,13 @@
 # Kubernetes Node Labels
 
-The `kubernetes` provider discovers network-fabric tiers from existing Kubernetes
+The `k8s-node-labels` provider discovers network-fabric tiers from existing Kubernetes
 Node labels. It needs no cloud credentials or fabric-management service. The
 configured labels are authoritative; the provider does not infer missing topology.
 
 ## Prerequisites and credentials
 
 Run Topograph in the cluster with a ServiceAccount allowed to list Nodes. The Helm
-chart grants this permission when `provider.name` is `kubernetes`. Keep the Node
+chart grants this permission when `provider.name` is `k8s-node-labels`. Keep the Node
 Data Broker enabled so engines can resolve Node identity and region annotations.
 Kubernetes client rate limits use the shared `KUBE_QPS` and `KUBE_BURST`
 settings described in the deployment configuration.
@@ -23,7 +23,7 @@ to reject an incomplete topology rather than omit an affected Node.
 
 ```yaml
 provider:
-  name: kubernetes
+  name: k8s-node-labels
   params:
     topologyLabels:
       - example.com/rack
@@ -53,6 +53,23 @@ These are Helm values. The provider returns the canonical graph; Slinky resolves
 ready slurmd Pods and writes the ConfigMap using its existing translation path.
 DRA behavior is unchanged. This provider discovers fabric tiers only and does not
 interpret rack or zone labels as NVLink domains.
+
+## Kubernetes output
+
+Pair `provider.name: k8s-node-labels` with `engine.name: k8s` to translate
+operator-managed rack and zone labels into Topograph's managed fabric-tier labels
+for Kubernetes schedulers. The provider reads the source labels; the engine
+writes the output labels. Configure source keys that differ from the engine's
+managed output keys so discovery does not read back its own generated values.
+
+```yaml
+provider:
+  name: k8s-node-labels
+  params:
+    topologyLabels: [example.com/rack, topology.kubernetes.io/zone]
+engine:
+  name: k8s
+```
 
 ## Eligibility and validation
 

@@ -89,7 +89,7 @@ func TestKubernetesTrigger(t *testing.T) {
 			for key, value := range tt.params {
 				params[key] = value
 			}
-			cfg := &Config{Provider: topology.Provider{Name: "kubernetes", Params: params}, Trigger: tt.trigger}
+			cfg := &Config{Provider: topology.Provider{Name: "k8s-node-labels", Params: params}, Trigger: tt.trigger}
 			trigger, err := cfg.nodeTrigger()
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
@@ -120,7 +120,7 @@ func TestKubernetesTriggerFromFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			data := fmt.Sprintf(`generateTopologyUrl: "http://topograph.invalid/v1/generate"
 provider:
-  name: kubernetes
+  name: k8s-node-labels
   params:
     topologyLabels: [rack]
 %strigger:
@@ -146,7 +146,7 @@ apiServer:
 }
 
 func TestProviderIndependentNodeLabels(t *testing.T) {
-	for _, provider := range []string{"crusoe", "kubernetes"} {
+	for _, provider := range []string{"crusoe", "k8s-node-labels"} {
 		cfg := &Config{
 			Trigger:  Trigger{NodeLabels: []string{"custom/rack"}},
 			Provider: topology.Provider{Name: provider, Params: map[string]any{"topologyLabels": []string{"rack"}}},
@@ -172,7 +172,7 @@ func TestKubernetesInformerEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	client := fake.NewSimpleClientset()
-	cfg := &Config{Provider: topology.Provider{Name: "kubernetes", Params: map[string]any{"topologyLabels": []string{"rack"}, "requireReady": true}}}
+	cfg := &Config{Provider: topology.Provider{Name: "k8s-node-labels", Params: map[string]any{"topologyLabels": []string{"rack"}, "requireReady": true}}}
 	trigger, err := cfg.nodeTrigger()
 	require.NoError(t, err)
 	s, err := NewStatusInformer(ctx, client, trigger, nil, "", "", time.Second, nil)
@@ -222,7 +222,7 @@ func TestKubernetesSelectorMembershipEvents(t *testing.T) {
 		}
 		return true, events, nil
 	})
-	cfg := &Config{Provider: topology.Provider{Name: "kubernetes", Params: map[string]any{"topologyLabels": []string{"rack"}, "nodeSelector": map[string]string{"pool": "gpu"}}}}
+	cfg := &Config{Provider: topology.Provider{Name: "k8s-node-labels", Params: map[string]any{"topologyLabels": []string{"rack"}, "nodeSelector": map[string]string{"pool": "gpu"}}}}
 	trigger, err := cfg.nodeTrigger()
 	require.NoError(t, err)
 	s, err := NewStatusInformer(ctx, client, trigger, nil, "", "", time.Second, nil)

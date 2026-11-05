@@ -27,7 +27,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/config"
 	"github.com/dsx-ai-factory/topograph/pkg/engines"
 	"github.com/dsx-ai-factory/topograph/pkg/providers"
-	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
 	"github.com/dsx-ai-factory/topograph/pkg/registry"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 	corev1 "k8s.io/api/core/v1"
@@ -60,7 +60,7 @@ func TestKubernetesProviderFailurePreservesOutput(t *testing.T) {
 		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-a", Labels: map[string]string{"rack": "r1"}}},
 		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "topology", Namespace: "slurm"}},
 	)
-	prv, err := kubernetesprovider.New(client, map[string]any{"topologyLabels": []string{"rack"}})
+	prv, err := nodelabels.New(client, map[string]any{"topologyLabels": []string{"rack"}})
 	require.NoError(t, err)
 	outputCalls := 0
 	eng := &resolvingEngine{output: func() ([]byte, *httperr.Error) {
@@ -73,10 +73,10 @@ func TestKubernetesProviderFailurePreservesOutput(t *testing.T) {
 		return []byte(cm.Data["topology.conf"]), nil
 	}}
 	oldSrv := srv
-	oldProvider, oldEngine := registry.Providers["kubernetes"], registry.Engines["test-output"]
+	oldProvider, oldEngine := registry.Providers["k8s-node-labels"], registry.Engines["test-output"]
 	t.Cleanup(func() {
 		srv = oldSrv
-		registry.Providers["kubernetes"] = oldProvider
+		registry.Providers["k8s-node-labels"] = oldProvider
 		if oldEngine == nil {
 			delete(registry.Engines, "test-output")
 		} else {
@@ -84,10 +84,10 @@ func TestKubernetesProviderFailurePreservesOutput(t *testing.T) {
 		}
 	})
 	srv = &HttpServer{cfg: &config.Config{}}
-	registry.Providers["kubernetes"] = func(context.Context, providers.Config) (providers.Provider, *httperr.Error) { return prv, nil }
+	registry.Providers["k8s-node-labels"] = func(context.Context, providers.Config) (providers.Provider, *httperr.Error) { return prv, nil }
 	registry.Engines["test-output"] = func(context.Context, engines.Config) (engines.Engine, *httperr.Error) { return eng, nil }
 	request := &topology.Request{
-		Provider: topology.Provider{Name: "kubernetes"},
+		Provider: topology.Provider{Name: "k8s-node-labels"},
 		Engine:   topology.Engine{Name: "test-output"},
 		Nodes:    []topology.ComputeInstances{{Instances: map[string]string{"worker-a": "worker-a"}}},
 	}

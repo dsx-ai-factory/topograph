@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package kubernetes
+package nodelabels
 
 import (
 	"context"
@@ -39,7 +39,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
-const NAME = "kubernetes"
+const NAME = "k8s-node-labels"
 
 const nodeListTimeout = 30 * time.Second
 

@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/dsx-ai-factory/topograph/pkg/engines/slurm"
-	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -37,7 +37,7 @@ func TestKubernetesProviderConfigMap(t *testing.T) {
 		_, err = client.CoreV1().Pods("slurm").Create(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "slurm", Labels: map[string]string{"app": "slurmd"}}, Spec: corev1.PodSpec{NodeName: name, Hostname: name}, Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}}}, metav1.CreateOptions{})
 		require.NoError(t, err)
 	}
-	p, err := kubernetesprovider.New(client, map[string]any{"topologyLabels": []string{"rack", "zone"}, "requireReady": true})
+	p, err := nodelabels.New(client, map[string]any{"topologyLabels": []string{"rack", "zone"}, "requireReady": true})
 	require.NoError(t, err)
 	generate := func() string {
 		eng := &SlinkyEngine{client: client, params: &Params{BaseParams: slurm.BaseParams{Plugin: "topology/tree"}, Namespace: "slurm", ConfigMapName: "topology", ConfigPath: "topology.conf", podListOpt: &metav1.ListOptions{LabelSelector: "app=slurmd"}}}

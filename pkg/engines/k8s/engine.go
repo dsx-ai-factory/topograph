@@ -118,6 +118,12 @@ func getParameters(params engines.Config) (*Params, error) {
 	return p, nil
 }
 
+// GenerateOutput reconciles managed topology labels for the resolved selection.
+// A nil graph, or one with both Tiers and Domains nil, preserves existing labels.
+// Otherwise, cached, selector-matching Nodes omitted from its output have their
+// managed labels cleared; Nodes outside the selection and externally owned
+// labels are preserved. Discovery errors must be handled before calling this
+// method; the API server returns those errors before invoking output generation.
 func (eng *K8sEngine) GenerateOutput(ctx context.Context, graph *topology.Graph, _ map[string]any) ([]byte, *httperr.Error) {
 	if graph == nil || (graph.Tiers == nil && graph.Domains == nil) {
 		return []byte("OK\n"), nil

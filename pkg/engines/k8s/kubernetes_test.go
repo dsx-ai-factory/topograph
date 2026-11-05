@@ -28,7 +28,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	internalk8s "github.com/dsx-ai-factory/topograph/internal/k8s"
-	kubernetesprovider "github.com/dsx-ai-factory/topograph/pkg/providers/kubernetes"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
@@ -60,7 +60,7 @@ func TestGenerateOutputClearsProviderExcludedNodes(t *testing.T) {
 				healthy, excluded := newNode("healthy", "gpu"), newNode("excluded", "gpu")
 				outside, unrequested := newNode("outside-selector", "cpu"), newNode("unrequested", "gpu")
 				client := fake.NewSimpleClientset(healthy, excluded, outside, unrequested)
-				prv, err := kubernetesprovider.New(client, map[string]any{"topologyLabels": []string{"rack"}, "requireReady": true})
+				prv, err := nodelabels.New(client, map[string]any{"topologyLabels": []string{"rack"}, "requireReady": true})
 				require.NoError(t, err)
 				requested := []topology.ComputeInstances{{Instances: map[string]string{"healthy": "healthy", "excluded": "excluded", "outside-selector": "outside-selector", "missing": "missing"}}}
 				generate := func() NodeLabelMap {
@@ -124,7 +124,7 @@ func TestGenerateOutputPreservesNodesWithoutResolvedMetadata(t *testing.T) {
 	instances, herr := eng.ResolveComputeInstances(context.Background(), nil, nil)
 	require.Nil(t, herr)
 	require.Equal(t, []topology.ComputeInstances{{Region: "local", Instances: map[string]string{"id": "identified"}}}, instances)
-	prv, err := kubernetesprovider.New(client, map[string]any{"topologyLabels": []string{"rack"}})
+	prv, err := nodelabels.New(client, map[string]any{"topologyLabels": []string{"rack"}})
 	require.NoError(t, err)
 	graph, herr := prv.GenerateTopologyConfig(context.Background(), nil, instances)
 	require.Nil(t, herr)
