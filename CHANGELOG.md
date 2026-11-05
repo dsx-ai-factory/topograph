@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - The issue template chooser no longer offers blank issues, and its links now point to NVIDIA PSIRT for security reports, `docs/community.md` for questions, and the documentation site. The feature request form applies `enhancement` instead of `feature request`, both documentation forms apply `documentation` instead of `doc`, a new Question form applies `question`, and every form also applies `needs-triage`.
+- Dependabot waits 7 days after a release before opening a version-update PR for Go modules, GitHub Actions and Docker base images (`cooldown` in `.github/dependabot.yml`). Security updates are not delayed.
 
 - The Slurm engine's `instanceMapper` interface now has a single method, `GetNodeInstances`, which returns compute instances grouped by region. It replaces `Instances2NodeMap` and `GetInstancesRegions`, which the engine always called together with the same node list. Providers that implement only the old methods are rejected at runtime with HTTP 400 ("environment must implement instanceMapper"). The grouping logic moves from the engine to `providers.GroupByRegion`, and `providers.SelfNamedInstances` covers providers that use the node name as the instance ID. Slurm output is unchanged. See [#657](https://github.com/dsx-ai-factory/topograph/issues/657).
 
