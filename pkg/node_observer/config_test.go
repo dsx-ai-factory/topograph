@@ -17,6 +17,7 @@ package node_observer
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -259,4 +260,31 @@ trigger:
 			}
 		})
 	}
+}
+
+func TestNewConfigFromFileGPUNICRailPlugin(t *testing.T) {
+	const base = `
+generateTopologyUrl: "http://topograph.default.svc.cluster.local:49021/v1/generate"
+trigger:
+  nodeSelector:
+    node-role: worker
+nodeMetadata:
+  plugins:
+    gpuNicRailMapping:
+`
+	write := func(t *testing.T, plugin string) string {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(base+plugin), 0o600))
+		return path
+	}
+
+	t.Run("enabled with identity only", func(t *testing.T) {
+		cfg, err := NewConfigFromFile(write(t, "      enabled: true\n      releaseName: topograph\n      namespace: topograph\n"))
+		require.NoError(t, err)
+		require.True(t, cfg.NodeMetadata.Enabled())
+	})
+	t.Run("missing identity", func(t *testing.T) {
+		_, err := NewConfigFromFile(write(t, "      enabled: true\n"))
+		require.ErrorContains(t, err, "releaseName and namespace are required")
+	})
 }
