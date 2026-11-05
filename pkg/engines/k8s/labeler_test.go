@@ -245,6 +245,42 @@ func TestBuildNodeLabelsWithMixedDepthSharedRoot(t *testing.T) {
 	}, labels["node-2"])
 }
 
+func TestBuildNodeLabelsOmitsFabricLabelsForNoTopologyNodes(t *testing.T) {
+	cluster := topology.NewClusterTopology()
+	cluster.Append(&topology.InstanceTopology{
+		InstanceID:   "instance-1",
+		FabricTiers:  topology.ClosestFirstFabricTiers("leaf-1", "spine-1"),
+		XclrDomainID: "domain-1",
+	})
+	cluster.Append(&topology.InstanceTopology{
+		InstanceID:   "instance-2",
+		XclrDomainID: "domain-1",
+	})
+	graph := cluster.ToGraph("test", []topology.ComputeInstances{{
+		Instances: map[string]string{
+			"instance-1": "node-1",
+			"instance-2": "node-2",
+			"instance-3": "node-3",
+		},
+	}}, 0, false)
+
+	labels, err := NewTopologyLabeler(NewTopologyLabelKeys(nil, "")).BuildNodeLabels(graph)
+	require.NoError(t, err)
+	require.Equal(t, NodeLabelMap{
+		"node-1": {
+			topology.KeyTopologyXclrDomain: "domain-1",
+			topology.FabricTierKey(0):      "leaf-1",
+			topology.FabricTierKey(1):      "spine-1",
+		},
+		"node-2": {
+			topology.KeyTopologyXclrDomain: "domain-1",
+		},
+		// node-3 stays in the map with no labels, so ApplyNodeLabels still
+		// reconciles away any fabric tiers it carried before.
+		"node-3": {},
+	}, labels)
+}
+
 func TestApplyNodeLabelsSkipsUnnamedComputeNodes(t *testing.T) {
 	unnamed := &topology.Vertex{ID: "instance-unnamed"}
 	valid := &topology.Vertex{ID: "instance-valid", Name: "node-valid"}
