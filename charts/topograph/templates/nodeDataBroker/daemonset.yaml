@@ -16,6 +16,11 @@ limitations under the License.
 */ -}}
 {{- if .Values.nodeDataBroker.enabled }}
 {{- $configMapMounts := default list .Values.nodeDataBroker.configMapMounts }}
+{{- $nicRail := eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true" }}
+{{- $lldpSocket := "" }}
+{{- if $nicRail }}
+{{- $lldpSocket = .Values.nodeMetadata.plugins.gpuNicRailMapping.railSource.hostLLDP.socket }}
+{{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -107,6 +112,18 @@ spec:
               {{- end }}
               readOnly: true
             {{- end }}
+            {{- if $nicRail }}
+            # Host sysfs resolves interfaces to PCI functions; /sys/class/net
+            # alone is not enough because its entries are relative symlinks into
+            # /sys/devices.
+            - name: host-sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: host-lldpd-socket
+              # Mount the directory so a missing or replaced socket can be retried.
+              mountPath: /host/lldpd
+              readOnly: true
+            {{- end }}
             {{- with .Values.nodeDataBroker.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -119,6 +136,16 @@ spec:
         - name: {{ include "nodeDataBroker.configMapMountVolumeName" (dict "name" .name) }}
           configMap:
             name: {{ include "nodeDataBroker.configMapMountName" (dict "root" $ "name" .name) }}
+        {{- end }}
+        {{- if $nicRail }}
+        - name: host-sys
+          hostPath:
+            path: /sys
+            type: Directory
+        - name: host-lldpd-socket
+          hostPath:
+            path: {{ dir $lldpSocket | quote }}
+            type: DirectoryOrCreate
         {{- end }}
         {{- with .Values.nodeDataBroker.volumes }}
         {{- toYaml . | nindent 8 }}

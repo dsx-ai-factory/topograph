@@ -35,6 +35,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/internal/healthz"
 	"github.com/dsx-ai-factory/topograph/internal/version"
 	"github.com/dsx-ai-factory/topograph/pkg/accelerator"
+	"github.com/dsx-ai-factory/topograph/pkg/gpunicrail"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/aws"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/crusoe"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dra"
@@ -58,8 +59,9 @@ type nodeBroker struct {
 }
 
 type nodeDataBrokerConfig struct {
-	Provider    topology.Provider `yaml:"provider"`
-	HealthzPort int               `yaml:"healthzPort"`
+	Provider     topology.Provider             `yaml:"provider"`
+	HealthzPort  int                           `yaml:"healthzPort"`
+	NodeMetadata gpunicrail.NodeMetadataConfig `yaml:"nodeMetadata"`
 }
 
 func main() {
@@ -104,6 +106,11 @@ func newNodeDataBrokerConfig(path string) (nodeDataBrokerConfig, error) {
 	if config.HealthzPort <= 0 {
 		return nodeDataBrokerConfig{}, fmt.Errorf("must specify a positive healthzPort")
 	}
+	if plugin := config.NodeMetadata.Plugins.GPUNICRailMapping; plugin != nil && plugin.Enabled {
+		if err := plugin.Validate(); err != nil {
+			return nodeDataBrokerConfig{}, err
+		}
+	}
 	return config, nil
 }
 
@@ -125,6 +132,16 @@ func mainInternal(brokerConfig nodeDataBrokerConfig) error {
 
 	if err := broker.apply(ctx); err != nil {
 		return err
+	}
+
+	if brokerConfig.NodeMetadata.Enabled() {
+		loop, err := broker.newGPUNICRailLoop()
+		if err != nil {
+			return err
+		}
+		// Collection failures are logged and retried without stopping the broker,
+		// for example while the CRD is not yet installed.
+		go loop.Run(ctx)
 	}
 
 	// Keep the DaemonSet pod Running by serving a health endpoint until the pod
@@ -152,6 +169,9 @@ func (b *nodeBroker) apply(ctx context.Context) error {
 	annotations, err := b.getAnnotations(ctx)
 	if err != nil {
 		return err
+	}
+	if len(annotations) == 0 {
+		return nil
 	}
 	klog.Infof("adding annotations %v in node %s for provider %s", annotations, b.nodeName, b.config.Provider.Name)
 
@@ -196,7 +216,8 @@ func (b *nodeBroker) getAnnotations(ctx context.Context) (map[string]string, err
 	case "":
 		return nil, fmt.Errorf("must set provider")
 	default:
-		return nil, fmt.Errorf("unsupported provider %q", b.config.Provider.Name)
+		klog.InfoS("Skipping node annotations: no broker annotation handler", "provider", b.config.Provider.Name)
+		return nil, nil
 	}
 }
 

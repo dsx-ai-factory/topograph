@@ -429,6 +429,44 @@ nodeObserver:
   affinity: {}
 
 # Node Data Broker collects per-node topology attributes as annotations.
+# Node-metadata plugins publish extra node-scoped data next to the topology the
+# provider discovers. They are independent of provider.name and need
+# nodeDataBroker.enabled=true. The NodeGPUNICRailMapping CRD ships in crds/; Helm
+# installs it but never upgrades or deletes it.
+nodeMetadata:
+  plugins:
+    # Pairs each rail's NIC with the GPUs closest to it and publishes one
+    # NodeGPUNICRailMapping per Node for the SR-IOV DRA driver. See
+    # docs/reference/gpu-nic-rail-mapping.md.
+    gpuNicRailMapping:
+      enabled: false
+      # How often each broker re-collects and, if the mapping changed, republishes.
+      refreshInterval: 10m
+      railSource:
+        # The only supported source: LLDP neighbors on the host, with the rail
+        # taken from the interface name.
+        name: host-lldp
+        hostLLDP:
+          # Selects the interfaces that carry a rail; every interface with an LLDP
+          # neighbor must match. Required when enabled.
+          #   interfaceRegex: '^roce_vf_r([0-9]+)$'
+          #   railIDFormat: 'rail-$1'
+          interfaceRegex: ""
+          # Format expanded from interfaceRegex capture groups ($1 or ${name}).
+          # The example above maps roce_vf_r2 to rail-2. Required when enabled.
+          railIDFormat: ""
+          # Host lldpd control socket. Its parent directory is mounted read-only
+          # at /host/lldpd; a missing socket is logged and retried.
+          # The broker runs as a non-root user: grant it access to the socket's
+          # group through nodeDataBroker.podSecurityContext.supplementalGroups.
+          socket: /var/run/lldpd.socket
+      gpuSource:
+        # GPU Operator DaemonSet whose same-node pod runs nvidia-smi.
+        gpuOperatorNamespace: gpu-operator
+        daemonSet: nvidia-device-plugin-daemonset
+        # Container to exec into; empty selects the pod's default container.
+        container: ""
+
 nodeDataBroker:
   enabled: true
 

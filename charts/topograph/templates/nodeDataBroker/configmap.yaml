@@ -27,4 +27,8 @@ data:
     provider:
       {{- include "nodeDataBroker.providerConfig" . | nindent 6 }}
     healthzPort: {{ .Values.nodeDataBroker.port }}
+    {{- if eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true" }}
+    nodeMetadata:
+      {{- include "nodeMetadata.gpuNicRailMapping.config" (dict "root" . "full" true) | nindent 6 }}
+    {{- end }}
 {{- end }}

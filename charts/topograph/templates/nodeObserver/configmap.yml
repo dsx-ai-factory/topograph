@@ -25,6 +25,8 @@ data:
   node-observer-config.yaml: |-
     generateTopologyUrl: "{{ include "topograph.url" $ }}/v1/generate"
     healthzPort: {{ .Values.nodeObserver.port }}
+    nodeMetadata:
+      {{- include "nodeMetadata.gpuNicRailMapping.config" (dict "root" . "full" false) | nindent 6 }}
     provider:
       {{- toYaml .Values.provider | nindent 6 }}
     engine:

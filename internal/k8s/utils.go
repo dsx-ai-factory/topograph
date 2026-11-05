@@ -109,12 +109,19 @@ func GetDaemonSetPods(ctx context.Context, client kubernetes.Interface, name, na
 }
 
 func ExecInPod(ctx context.Context, client kubernetes.Interface, config *rest.Config, name, namespace string, cmd []string) (*bytes.Buffer, error) {
+	return ExecInPodContainer(ctx, client, config, name, namespace, "", cmd)
+}
+
+// ExecInPodContainer is ExecInPod for a named container; an empty container
+// selects the pod's default.
+func ExecInPodContainer(ctx context.Context, client kubernetes.Interface, config *rest.Config, name, namespace, container string, cmd []string) (*bytes.Buffer, error) {
 	execOpts := &corev1.PodExecOptions{
-		Command: cmd,
-		Stdin:   false,
-		Stdout:  true,
-		Stderr:  true,
-		TTY:     false,
+		Container: container,
+		Command:   cmd,
+		Stdin:     false,
+		Stdout:    true,
+		Stderr:    true,
+		TTY:       false,
 	}
 
 	req := client.CoreV1().RESTClient().Post().

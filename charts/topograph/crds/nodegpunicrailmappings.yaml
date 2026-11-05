@@ -1,0 +1,127 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nodegpunicrailmappings.topograph.run
+spec:
+  group: topograph.run
+  scope: Namespaced
+  names:
+    kind: NodeGPUNICRailMapping
+    listKind: NodeGPUNICRailMappingList
+    plural: nodegpunicrailmappings
+    singular: nodegpunicrailmapping
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Node
+          type: string
+          jsonPath: .spec.nodeRef.name
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: >-
+            Mapping of the NICs of one Node to their rails and to the GPUs with
+            the best PCIe locality to them. The resource is named node-<node-uid>.
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [nodeRef]
+              properties:
+                nodeRef:
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                    uid:
+                      type: string
+                      minLength: 1
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: spec.nodeRef is immutable
+              x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: spec is immutable
+            status:
+              type: object
+              description: Observed mapping, replaced as a whole by the Node Data Broker.
+              required: [sources, nics]
+              properties:
+                sources:
+                  type: object
+                  description: When each input was collected.
+                  required: [lldp]
+                  properties:
+                    lldp:
+                      type: string
+                      format: date-time
+                    nvidiaSmi:
+                      type: string
+                      format: date-time
+                nics:
+                  type: object
+                  description: Mapping records keyed by normalized host PCI address (dddd:bb:ss.f).
+                  x-kubernetes-validations:
+                    - rule: self.all(k, k.matches('^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]$'))
+                      message: keys must be lowercase PCI addresses in dddd:bb:ss.f form
+                  additionalProperties:
+                    type: object
+                    required: [interface, railID, mappingMode, bestGpus]
+                    properties:
+                      interface:
+                        type: string
+                        minLength: 1
+                      railID:
+                        type: string
+                        minLength: 1
+                      topologyTarget:
+                        type: string
+                        description: Matrix row used for selection (explainability only, never an identity).
+                      mappingMode:
+                        type: string
+                        enum: [data-direct, nic, none]
+                      bestPath:
+                        type: string
+                        enum: [PIX, PXB, PHB, NODE, SYS]
+                      bestGpus:
+                        type: array
+                        description: Every GPU tied at bestPath, sorted by UUID.
+                        items:
+                          type: object
+                          required: [uuid, pciAddress]
+                          properties:
+                            uuid:
+                              type: string
+                              minLength: 1
+                            pciAddress:
+                              type: string
+                              pattern: '^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$'
+                    x-kubernetes-validations:
+                      - rule: self.mappingMode != 'none' || (!has(self.topologyTarget) && !has(self.bestPath) && size(self.bestGpus) == 0)
+                        message: mappingMode none must not carry topologyTarget, bestPath or bestGpus
+                      - rule: self.mappingMode == 'none' || (has(self.topologyTarget) && has(self.bestPath) && size(self.bestGpus) > 0)
+                        message: mappingMode nic and data-direct require topologyTarget, bestPath and bestGpus

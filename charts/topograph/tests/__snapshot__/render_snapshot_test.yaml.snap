@@ -266,6 +266,12 @@ renders default values.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: test
         engine:
@@ -310,7 +316,7 @@ renders default values.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: e152b74c2332fa6348fa942c97cc4c7df8f6f83a08db935815e03564570f56c5
+            checksum/config: af90f7f60a29585d5a05865dea4c9688f011699be3f5e620607c755d75856fc0
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -375,6 +381,48 @@ renders default values.yaml:
               name: config-volume
   11: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  12: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -393,7 +441,7 @@ renders default values.yaml:
         verbs:
           - list
           - watch
-  12: |
+  14: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -407,7 +455,7 @@ renders default values.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  13: |
+  15: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -420,7 +468,7 @@ renders default values.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  14: |
+  16: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -434,7 +482,7 @@ renders default values.yaml:
           - get
           - list
           - patch
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -448,7 +496,7 @@ renders default values.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  16: |
+  18: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -470,7 +518,7 @@ renders default values.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  17: |
+  19: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -483,7 +531,7 @@ renders default values.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  18: |
+  20: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -534,7 +582,7 @@ renders default values.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -876,6 +924,12 @@ renders values.k8s.gateway-api-example.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: test
         engine:
@@ -920,7 +974,7 @@ renders values.k8s.gateway-api-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: e152b74c2332fa6348fa942c97cc4c7df8f6f83a08db935815e03564570f56c5
+            checksum/config: af90f7f60a29585d5a05865dea4c9688f011699be3f5e620607c755d75856fc0
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -985,6 +1039,48 @@ renders values.k8s.gateway-api-example.yaml:
               name: config-volume
   12: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  14: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -1003,7 +1099,7 @@ renders values.k8s.gateway-api-example.yaml:
         verbs:
           - list
           - watch
-  13: |
+  15: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -1017,7 +1113,7 @@ renders values.k8s.gateway-api-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  14: |
+  16: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -1030,7 +1126,7 @@ renders values.k8s.gateway-api-example.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -1044,7 +1140,7 @@ renders values.k8s.gateway-api-example.yaml:
           - get
           - list
           - patch
-  16: |
+  18: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -1058,7 +1154,7 @@ renders values.k8s.gateway-api-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  17: |
+  19: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -1080,7 +1176,7 @@ renders values.k8s.gateway-api-example.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  18: |
+  20: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -1093,7 +1189,7 @@ renders values.k8s.gateway-api-example.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -1144,7 +1240,7 @@ renders values.k8s.gateway-api-example.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  20: |
+  22: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -1488,6 +1584,12 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: gcp
           params:
@@ -1537,7 +1639,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: d11bceb712108debbcccc12c33a9953061487007ebe4219a0387fda68b3c6ab0
+            checksum/config: ba15a323930cbcb06345a08b9e2ad169c91049f0f56184694bacab5e0558bc53
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -1602,6 +1704,48 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
               name: config-volume
   11: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  12: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -1627,7 +1771,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         verbs:
           - list
           - watch
-  12: |
+  14: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -1641,7 +1785,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  13: |
+  15: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -1654,7 +1798,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  14: |
+  16: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -1668,7 +1812,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
           - get
           - list
           - patch
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -1682,7 +1826,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  16: |
+  18: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -1704,7 +1848,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  17: |
+  19: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -1717,7 +1861,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  18: |
+  20: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -1768,7 +1912,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -2100,6 +2244,12 @@ renders values.k8s.gcp-service-account-example.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: gcp
           params:
@@ -2147,7 +2297,7 @@ renders values.k8s.gcp-service-account-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 6e8bb23a8ac278333df787a778c1b885905454ebb0742213aebea30e097aa1fe
+            checksum/config: 7a7593f832e97663490f9d0c1428f80449dee3580cb758179021c3bb8ab0f1c1
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -2212,6 +2362,48 @@ renders values.k8s.gcp-service-account-example.yaml:
               name: config-volume
   11: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  12: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -2237,7 +2429,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         verbs:
           - list
           - watch
-  12: |
+  14: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -2251,7 +2443,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  13: |
+  15: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -2264,7 +2456,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  14: |
+  16: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -2278,7 +2470,7 @@ renders values.k8s.gcp-service-account-example.yaml:
           - get
           - list
           - patch
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -2292,7 +2484,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  16: |
+  18: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -2314,7 +2506,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  17: |
+  19: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -2327,7 +2519,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  18: |
+  20: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -2378,7 +2570,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -2715,6 +2907,12 @@ renders values.k8s.ib-example.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: infiniband-k8s
           params:
@@ -2765,7 +2963,7 @@ renders values.k8s.ib-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: aeaa87c42ebcc74664ae78538c71e6f1215a90f3405713f1861cbadf9cc295e2
+            checksum/config: acfa57a6becba092ea643a71799965bebb160a0335950955eb56d5537ff8e2b6
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -2830,6 +3028,48 @@ renders values.k8s.ib-example.yaml:
               name: config-volume
   11: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  12: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -2855,7 +3095,7 @@ renders values.k8s.ib-example.yaml:
         verbs:
           - list
           - watch
-  12: |
+  14: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -2869,7 +3109,7 @@ renders values.k8s.ib-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  13: |
+  15: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -2882,7 +3122,7 @@ renders values.k8s.ib-example.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  14: |
+  16: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -2914,7 +3154,7 @@ renders values.k8s.ib-example.yaml:
           - daemonsets
         verbs:
           - get
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -2928,7 +3168,7 @@ renders values.k8s.ib-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  16: |
+  18: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -2950,7 +3190,7 @@ renders values.k8s.ib-example.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  17: |
+  19: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -2963,7 +3203,7 @@ renders values.k8s.ib-example.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  18: |
+  20: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -3014,7 +3254,7 @@ renders values.k8s.ib-example.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -3341,6 +3581,12 @@ renders values.slinky.block-example.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: aws
           params:
@@ -3403,7 +3649,7 @@ renders values.slinky.block-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 3e4f9bcbe6ad90ec68ecc01083041bf6ac4f30846c368ea5f384bcd43d2d6f17
+            checksum/config: 70cf01bfaadba31c169e3e29dc57b1cd032dcc5e2009167031e7511fa5104d17
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -3470,6 +3716,48 @@ renders values.slinky.block-example.yaml:
               name: config-volume
   11: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  12: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -3488,7 +3776,7 @@ renders values.slinky.block-example.yaml:
         verbs:
           - list
           - watch
-  12: |
+  14: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -3502,7 +3790,7 @@ renders values.slinky.block-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  13: |
+  15: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -3515,7 +3803,7 @@ renders values.slinky.block-example.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  14: |
+  16: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -3541,7 +3829,7 @@ renders values.slinky.block-example.yaml:
           - create
           - get
           - update
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -3555,7 +3843,7 @@ renders values.slinky.block-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  16: |
+  18: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -3577,7 +3865,7 @@ renders values.slinky.block-example.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  17: |
+  19: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -3590,7 +3878,7 @@ renders values.slinky.block-example.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  18: |
+  20: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -3641,7 +3929,7 @@ renders values.slinky.block-example.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -3965,6 +4253,12 @@ renders values.slinky.partition-example.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: aws
         engine:
@@ -4044,7 +4338,7 @@ renders values.slinky.partition-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 7f569e5c97079411366edafa3ea22ebdd74bb0def270732cc77af61439e7037b
+            checksum/config: f7761da74902baeb8a76f7b2e50b30aacc1b809b72d7c19d9bff29dc151616f8
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -4111,6 +4405,48 @@ renders values.slinky.partition-example.yaml:
               name: config-volume
   11: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  12: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -4129,7 +4465,7 @@ renders values.slinky.partition-example.yaml:
         verbs:
           - list
           - watch
-  12: |
+  14: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -4143,7 +4479,7 @@ renders values.slinky.partition-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  13: |
+  15: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -4156,7 +4492,7 @@ renders values.slinky.partition-example.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  14: |
+  16: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -4183,7 +4519,7 @@ renders values.slinky.partition-example.yaml:
           - create
           - get
           - update
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -4197,7 +4533,7 @@ renders values.slinky.partition-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  16: |
+  18: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -4219,7 +4555,7 @@ renders values.slinky.partition-example.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  17: |
+  19: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -4232,7 +4568,7 @@ renders values.slinky.partition-example.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  18: |
+  20: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -4283,7 +4619,7 @@ renders values.slinky.partition-example.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -4607,6 +4943,12 @@ renders values.slinky.tree-example.yaml:
       node-observer-config.yaml: |-
         generateTopologyUrl: "http://chart-ci-topograph.topograph.svc.cluster.local:49021/v1/generate"
         healthzPort: 8080
+        nodeMetadata:
+          plugins:
+            gpuNicRailMapping:
+              enabled: false
+              namespace: topograph
+              releaseName: chart-ci
         provider:
           name: aws
         engine:
@@ -4661,7 +5003,7 @@ renders values.slinky.tree-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 39873cd9b3c7e05569ebd56414b31dec86c22e929b096b276f89c4ef851ee2b3
+            checksum/config: 3aafd546c9003aac3976dfdc88bdc70cd53868d97429837d95f90b71ae226827
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -4728,6 +5070,48 @@ renders values.slinky.tree-example.yaml:
               name: config-volume
   11: |
     apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    rules:
+      - apiGroups:
+          - topograph.run
+        resources:
+          - nodegpunicrailmappings
+        verbs:
+          - get
+          - list
+          - watch
+          - delete
+  12: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      labels:
+        app.kubernetes.io/instance: chart-ci
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: node-observer
+        app.kubernetes.io/version: v0.0.0
+        helm.sh/chart: node-observer-0.0.0
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      namespace: topograph
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: chart-ci-topograph-node-observer-gpu-nic-rail
+    subjects:
+      - kind: ServiceAccount
+        name: chart-ci-topograph-node-observer
+        namespace: topograph
+  13: |
+    apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
       name: chart-ci-topograph-node-observer
@@ -4746,7 +5130,7 @@ renders values.slinky.tree-example.yaml:
         verbs:
           - list
           - watch
-  12: |
+  14: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -4760,7 +5144,7 @@ renders values.slinky.tree-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph-node-observer
         namespace: topograph
-  13: |
+  15: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -4773,7 +5157,7 @@ renders values.slinky.tree-example.yaml:
         helm.sh/chart: node-observer-0.0.0
       name: chart-ci-topograph-node-observer
       namespace: topograph
-  14: |
+  16: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
@@ -4799,7 +5183,7 @@ renders values.slinky.tree-example.yaml:
           - create
           - get
           - update
-  15: |
+  17: |
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
@@ -4813,7 +5197,7 @@ renders values.slinky.tree-example.yaml:
         kind: ServiceAccount
         name: chart-ci-topograph
         namespace: topograph
-  16: |
+  18: |
     apiVersion: v1
     kind: Service
     metadata:
@@ -4835,7 +5219,7 @@ renders values.slinky.tree-example.yaml:
         app.kubernetes.io/instance: chart-ci
         app.kubernetes.io/name: topograph
       type: ClusterIP
-  17: |
+  19: |
     apiVersion: v1
     automountServiceAccountToken: true
     kind: ServiceAccount
@@ -4848,7 +5232,7 @@ renders values.slinky.tree-example.yaml:
         helm.sh/chart: topograph-0.0.0
       name: chart-ci-topograph
       namespace: topograph
-  18: |
+  20: |
     apiVersion: v1
     kind: Pod
     metadata:
@@ -4899,7 +5283,7 @@ renders values.slinky.tree-example.yaml:
         runAsUser: 65532
         seccompProfile:
           type: RuntimeDefault
-  19: |
+  21: |
     apiVersion: v1
     kind: Pod
     metadata:

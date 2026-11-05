@@ -261,6 +261,46 @@
         "affinity": { "type": "object" }
       }
     },
+    "nodeMetadata": {
+      "type": "object",
+      "description": "Node-metadata plugins that publish node-scoped data alongside the provider's topology.",
+      "properties": {
+        "plugins": {
+          "type": "object",
+          "properties": {
+            "gpuNicRailMapping": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "refreshInterval": { "type": "string" },
+                "railSource": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string", "enum": ["host-lldp"] },
+                    "hostLLDP": {
+                      "type": "object",
+                      "properties": {
+                        "interfaceRegex": { "type": "string" },
+                        "railIDFormat": { "type": "string" },
+                        "socket": { "type": "string", "minLength": 1 }
+                      }
+                    }
+                  }
+                },
+                "gpuSource": {
+                  "type": "object",
+                  "properties": {
+                    "gpuOperatorNamespace": { "type": "string", "minLength": 1 },
+                    "daemonSet": { "type": "string", "minLength": 1 },
+                    "container": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "nodeDataBroker": {
       "type": "object",
       "description": "Node Data Broker settings. The component is rendered directly by the main chart.",

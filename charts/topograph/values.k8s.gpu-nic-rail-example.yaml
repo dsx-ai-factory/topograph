@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Publishes a NodeGPUNICRailMapping per Node: the GPUs closest to each rail's NIC,
+# for the SR-IOV DRA driver. The plugin is independent of the provider and
+# engine below, which only decide how fabric topology is discovered and
+# expressed. See docs/reference/gpu-nic-rail-mapping.md.
+#
+# Prerequisites on every GPU Node:
+#   - lldpd runs on the host and sees the rail NICs' switch neighbors.
+#   - The rail interfaces are named so that interfaceRegex selects exactly the
+#     interfaces that have an LLDP neighbor (here roce_vf_r0, roce_vf_r1, ...).
+#   - The GPU Operator runs its device plugin DaemonSet, whose pod has nvidia-smi.
+
+provider:
+  name: k8s-node-labels
+  params:
+    topologyLabels: [example.com/leaf, example.com/spine]
+engine:
+  name: k8s
+
+nodeMetadata:
+  plugins:
+    gpuNicRailMapping:
+      enabled: true
+      refreshInterval: 10m
+      railSource:
+        name: host-lldp
+        hostLLDP:
+          interfaceRegex: '^roce_vf_r([0-9]+)$'
+          railIDFormat: 'rail-$1'
+          socket: /var/run/lldpd.socket
+      gpuSource:
+        gpuOperatorNamespace: gpu-operator
+        daemonSet: nvidia-device-plugin-daemonset
+
+nodeDataBroker:
+  enabled: true
+  # Publish only on GPU Nodes.
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  # The broker reads the host lldpd socket as a non-root user. Add the group
+  # that owns /var/run/lldpd.socket on the host (check with `ls -ln`); 0 is
+  # only a placeholder for a root-group socket.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    supplementalGroups: [0]
+    seccompProfile:
+      type: RuntimeDefault

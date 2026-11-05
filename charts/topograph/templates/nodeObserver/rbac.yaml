@@ -28,6 +28,12 @@ rules:
   resources: [daemonsets]
   verbs: [list,watch]
 {{- end }}
+{{- if eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true" }}
+# Stale-resource reconciliation compares mapping resources with live Nodes.
+- apiGroups: [""]
+  resources: [nodes]
+  verbs: [list]
+{{- end }}
 {{- $trigger := include "nodeObserver.trigger" . | fromYaml }}
 {{- if or $trigger.nodeSelector $trigger.nodeLabels $trigger.nodeReadiness }}
 - apiGroups: [""]
