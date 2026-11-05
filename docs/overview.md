@@ -47,6 +47,7 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 | [Lambda](./providers/lambdai.md) | `lambdai` | `lambdai-sim` |
 | [NVIDIA NetQ](./providers/netq.md) | `netq` | — |
 | [Nautobot](./providers/nautobot.md) | `nautobot` | — |
+| [Kubernetes fabric topology from existing Node labels](./providers/k8s-node-labels.md) | `k8s-node-labels` | — |
 | [NVIDIA NVLink partitions from Kubernetes Node labels](./providers/dra.md) | `dra` | — |
 | [InfiniBand](./providers/infiniband.md) | `infiniband-bm` (bare metal), `infiniband-k8s` (Kubernetes) | [`infiniband-sim`](./providers/infiniband.md#infiniband-sim-offline-simulation) |
 | [DSX topology model](./modeling.md#provider-simulations) | — | `dsx-sim` |

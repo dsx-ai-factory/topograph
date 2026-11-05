@@ -132,3 +132,92 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: watches nodes for the k8s-node-labels provider without a trigger selector
+    templates:
+      - templates/nodeObserver/rbac.yaml
+    set:
+      provider.name: k8s-node-labels
+      provider.params.topologyLabels: [rack]
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list, watch]
+
+  - it: watches configured node labels for other providers without a selector
+    templates:
+      - templates/nodeObserver/rbac.yaml
+    set:
+      provider.name: test
+      nodeObserver.topograph.trigger.nodeLabels: [rack]
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list, watch]
+
+  - it: restores provider label defaults and node RBAC for a null override
+    templates:
+      - templates/nodeObserver/rbac.yaml
+      - templates/nodeObserver/configmap.yml
+    set:
+      provider.name: k8s-node-labels
+      provider.params.topologyLabels: [rack]
+      nodeObserver.topograph.trigger.nodeLabels: null
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list, watch]
+        template: templates/nodeObserver/rbac.yaml
+        documentIndex: 0
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: 'nodeLabels:\n\s+- rack'
+        template: templates/nodeObserver/configmap.yml
+
+  - it: preserves an explicit empty label override without node RBAC
+    templates:
+      - templates/nodeObserver/rbac.yaml
+      - templates/nodeObserver/configmap.yml
+    set:
+      provider.name: k8s-node-labels
+      provider.params.topologyLabels: [rack]
+      nodeObserver.topograph.trigger.nodeLabels: []
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list, watch]
+        template: templates/nodeObserver/rbac.yaml
+        documentIndex: 0
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: 'nodeLabels: \[\]'
+        template: templates/nodeObserver/configmap.yml
+
+  - it: watches nodes when only readiness changes are requested
+    templates:
+      - templates/nodeObserver/rbac.yaml
+    set:
+      provider.name: test
+      nodeObserver.topograph.trigger.nodeReadiness: true
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list, watch]

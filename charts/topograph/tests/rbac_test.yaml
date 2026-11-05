@@ -592,3 +592,16 @@ tests:
             resources: [pods/exec]
             verbs: [create]
         documentIndex: 0
+
+  - it: grants node listing for the k8s-node-labels provider with graph output
+    set:
+      provider.name: k8s-node-labels
+      engine.name: graph
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: [nodes]
+              verbs: [list]

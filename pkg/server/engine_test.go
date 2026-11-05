@@ -25,12 +25,20 @@ import (
 
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/pkg/config"
+	"github.com/dsx-ai-factory/topograph/pkg/engines"
+	"github.com/dsx-ai-factory/topograph/pkg/providers"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
+	"github.com/dsx-ai-factory/topograph/pkg/registry"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 type resolvingEngine struct {
 	received []topology.ComputeInstances
 	calls    int
+	output   func() ([]byte, *httperr.Error)
 }
 
 func (e *resolvingEngine) ResolveComputeInstances(_ context.Context, instances []topology.ComputeInstances, _ any) ([]topology.ComputeInstances, *httperr.Error) {
@@ -39,8 +47,70 @@ func (e *resolvingEngine) ResolveComputeInstances(_ context.Context, instances [
 	return instances, nil
 }
 
-func (*resolvingEngine) GenerateOutput(_ context.Context, _ *topology.Graph, _ map[string]any) ([]byte, *httperr.Error) {
+func (e *resolvingEngine) GenerateOutput(_ context.Context, _ *topology.Graph, _ map[string]any) ([]byte, *httperr.Error) {
+	if e.output != nil {
+		return e.output()
+	}
 	return nil, nil
+}
+
+func TestKubernetesProviderFailurePreservesOutput(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset(
+		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-a", Labels: map[string]string{"rack": "r1"}}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "topology", Namespace: "slurm"}},
+	)
+	prv, err := nodelabels.New(client, map[string]any{"topologyLabels": []string{"rack"}})
+	require.NoError(t, err)
+	outputCalls := 0
+	eng := &resolvingEngine{output: func() ([]byte, *httperr.Error) {
+		outputCalls++
+		cm, err := client.CoreV1().ConfigMaps("slurm").Get(ctx, "topology", metav1.GetOptions{})
+		require.NoError(t, err)
+		cm.Data = map[string]string{"topology.conf": "last successful topology"}
+		_, err = client.CoreV1().ConfigMaps("slurm").Update(ctx, cm, metav1.UpdateOptions{})
+		require.NoError(t, err)
+		return []byte(cm.Data["topology.conf"]), nil
+	}}
+	oldSrv := srv
+	oldProvider, oldEngine := registry.Providers["k8s-node-labels"], registry.Engines["test-output"]
+	t.Cleanup(func() {
+		srv = oldSrv
+		registry.Providers["k8s-node-labels"] = oldProvider
+		if oldEngine == nil {
+			delete(registry.Engines, "test-output")
+		} else {
+			registry.Engines["test-output"] = oldEngine
+		}
+	})
+	srv = &HttpServer{cfg: &config.Config{}}
+	registry.Providers["k8s-node-labels"] = func(context.Context, providers.Config) (providers.Provider, *httperr.Error) { return prv, nil }
+	registry.Engines["test-output"] = func(context.Context, engines.Config) (engines.Engine, *httperr.Error) { return eng, nil }
+	request := &topology.Request{
+		Provider: topology.Provider{Name: "k8s-node-labels"},
+		Engine:   topology.Engine{Name: "test-output"},
+		Nodes:    []topology.ComputeInstances{{Instances: map[string]string{"worker-a": "worker-a"}}},
+	}
+	_, herr := processTopologyRequest(request)
+	require.Nil(t, herr)
+	require.Equal(t, 1, outputCalls)
+	before, err := client.CoreV1().ConfigMaps("slurm").Get(ctx, "topology", metav1.GetOptions{})
+	require.NoError(t, err)
+	client.ClearActions()
+	require.NoError(t, client.CoreV1().Nodes().Delete(ctx, "worker-a", metav1.DeleteOptions{}))
+	data, herr := processTopologyRequest(request)
+	require.Nil(t, data)
+	require.NotNil(t, herr)
+	require.Equal(t, http.StatusServiceUnavailable, herr.Code())
+	require.Equal(t, 1, outputCalls, "failed generation must not call the output engine")
+	after, err := client.CoreV1().ConfigMaps("slurm").Get(ctx, "topology", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, before.Data, after.Data)
+	for _, action := range client.Actions() {
+		if action.GetResource().Resource == "configmaps" {
+			require.Equal(t, "get", action.GetVerb(), "failed generation must not write the ConfigMap")
+		}
+	}
 }
 
 type resolvingProvider struct {

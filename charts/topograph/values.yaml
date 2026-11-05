@@ -393,6 +393,8 @@ nodeObserver:
       containerName: topograph
     trigger:
       # nodeSelector: {}
+      # nodeLabels: []  # Defaults to the provider's topologyLabels when omitted.
+      # nodeReadiness: false  # Opt in to readiness-based regeneration.
       # podSelector: {}
 
   podAnnotations: {}

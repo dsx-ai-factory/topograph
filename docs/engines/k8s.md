@@ -185,6 +185,13 @@ desired labels. It skips Nodes that are already current and patches only changed
 labels, including removing stale Topograph-managed tier labels. This avoids a
 separate Node GET followed by a full Node update for every reconciliation.
 
+After successful topology generation, Nodes in the resolved engine selection
+that are absent from the graph have their managed output labels removed. Other
+labels, including a configured accelerator-domain source label, are preserved.
+Nodes outside the request or engine selector, and Nodes without resolved identity
+metadata, are not cleanup targets. A failed provider request does not generate
+output, so it preserves existing labels.
+
 Client-go uses default limits of 5 QPS and burst 10. For Helm deployments,
 configure the chart-wide `kubeClient.qps` and `kubeClient.burst` values. The
 chart exposes them to Topograph as `KUBE_QPS` and `KUBE_BURST`, and the DRA
@@ -457,7 +464,7 @@ networkPolicy:
 
 ### Node Observer RBAC
 
-The node-observer `ClusterRole` grants `pods [list, watch]` unconditionally, `apps/daemonsets [list, watch]` when `nodeDataBroker.enabled=true`, and `nodes [list, watch]` only when `nodeObserver.topograph.trigger.nodeSelector` is set. Set `nodeObserver.rbac.create: false` to suppress the `ClusterRole`/`ClusterRoleBinding` when managing RBAC externally.
+The node-observer `ClusterRole` grants `pods [list, watch]` unconditionally, `apps/daemonsets [list, watch]` when `nodeDataBroker.enabled=true`, and `nodes [list, watch]` when the rendered observer trigger has a nonempty `nodeSelector`, nonempty `nodeLabels`, or `nodeReadiness: true`. For the `k8s-node-labels` provider, the chart derives these defaults from `provider.params.nodeSelector`, `topologyLabels`, and `requireReady`; an explicit `trigger.nodeLabels` overrides the default watched labels. When managing RBAC externally, include node list/watch access whenever any of these conditions applies. Set `nodeObserver.rbac.create: false` to suppress the `ClusterRole`/`ClusterRoleBinding` when managing RBAC externally.
 
 When reusing an existing ServiceAccount for Topograph, node-observer, or
 node-data-broker, set the component's `serviceAccount.create` value to `false`

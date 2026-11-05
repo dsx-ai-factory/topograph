@@ -118,9 +118,38 @@ func getParameters(params engines.Config) (*Params, error) {
 	return p, nil
 }
 
+// GenerateOutput reconciles managed topology labels for the resolved selection.
+// A nil graph, or one with both Tiers and Domains nil, preserves existing labels.
+// Otherwise, cached, selector-matching Nodes omitted from its output have their
+// managed labels cleared; Nodes outside the selection and externally owned
+// labels are preserved. Discovery errors must be handled before calling this
+// method; the API server returns those errors before invoking output generation.
 func (eng *K8sEngine) GenerateOutput(ctx context.Context, graph *topology.Graph, _ map[string]any) ([]byte, *httperr.Error) {
-	if err := NewTopologyLabeler(eng.params.labelKeys).ApplyNodeLabels(ctx, graph, eng); err != nil {
+	if graph == nil || (graph.Tiers == nil && graph.Domains == nil) {
+		return []byte("OK\n"), nil
+	}
+	nodeLabels, err := NewTopologyLabeler(eng.params.labelKeys).BuildNodeLabels(graph)
+	if err != nil {
 		return nil, httperr.NewError(http.StatusBadGateway, err.Error())
+	}
+	if err := eng.loadNodes(ctx); err != nil {
+		return nil, httperr.NewError(http.StatusBadGateway, err.Error())
+	}
+	// A successful graph is authoritative for the resolved selection. Reconcile
+	// excluded Nodes with no desired output labels, without adding fabric
+	// vertices. Nil cache entries were not returned by the selector-filtered
+	// list (or no longer exist), so they are not cleanup targets.
+	for nodeName, node := range eng.cachedNodeMap {
+		if node != nil {
+			if _, present := nodeLabels[nodeName]; !present {
+				nodeLabels[nodeName] = nil
+			}
+		}
+	}
+	for nodeName, labels := range nodeLabels {
+		if err := eng.AddNodeLabels(ctx, nodeName, labels); err != nil {
+			return nil, httperr.NewError(http.StatusBadGateway, err.Error())
+		}
 	}
 
 	return []byte("OK\n"), nil
