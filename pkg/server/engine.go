@@ -100,6 +100,9 @@ func processTopologyRequest(tr *topology.Request) ([]byte, *httperr.Error) {
 	prv, err := prvLoader(ctx, providers.Config{
 		Creds:  checkCredentials(tr.Provider.Creds, srv.cfg.Credentials),
 		Params: tr.Provider.Params,
+
+		ServerCreds:  len(tr.Provider.Creds) == 0 && len(srv.cfg.Credentials) != 0,
+		ServerParams: srv.cfg.ProviderParams,
 	})
 	if err != nil {
 		return nil, err
