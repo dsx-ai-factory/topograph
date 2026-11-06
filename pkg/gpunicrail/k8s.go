@@ -53,10 +53,13 @@ func (r *PodRunner) Run(ctx context.Context, cmd []string) (string, error) {
 	}
 	klog.V(4).InfoS("Running GPU discovery command", "node", r.NodeName, "pod", klog.KObj(pod), "container", r.Source.Container, "command", cmd)
 	out, err := internalk8s.ExecInPodContainer(ctx, r.Client, r.Config, pod.Name, r.Source.Namespace, r.Source.Container, cmd)
-	if err != nil {
+	// NVIDIA CLI option errors can be printed to stdout. Preserve that output
+	// on failure so the collector can distinguish unsupported flags from GPU,
+	// transport, RBAC, or other errors without guessing from an exit code.
+	if out == nil {
 		return "", err
 	}
-	return out.String(), nil
+	return out.String(), err
 }
 
 // pod selects the single eligible pod: selected by the DaemonSet's full label

@@ -113,7 +113,8 @@ func ExecInPod(ctx context.Context, client kubernetes.Interface, config *rest.Co
 }
 
 // ExecInPodContainer is ExecInPod for a named container; an empty container
-// selects the pod's default.
+// selects the pod's default. On a streaming error, the returned buffer retains
+// any stdout already received, since CLI diagnostics may be written there.
 func ExecInPodContainer(ctx context.Context, client kubernetes.Interface, config *rest.Config, name, namespace, container string, cmd []string) (*bytes.Buffer, error) {
 	execOpts := &corev1.PodExecOptions{
 		Container: container,
@@ -144,7 +145,7 @@ func ExecInPodContainer(ctx context.Context, client kubernetes.Interface, config
 
 	if err != nil {
 		strerr := strings.ReplaceAll(stderr.String(), "\n", " ")
-		return nil, fmt.Errorf("failed to execute command %v in pod %s/%s: %s: %v", cmd, namespace, name, strerr, err)
+		return &stdout, fmt.Errorf("failed to execute command %v in pod %s/%s: %s: %w", cmd, namespace, name, strerr, err)
 	}
 
 	return &stdout, nil

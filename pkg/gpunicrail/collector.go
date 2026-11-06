@@ -30,7 +30,8 @@ var (
 	TopologyCommand  = []string{"nvidia-smi", "topo", "-all", "-m"}
 )
 
-// Runner runs a command and returns its standard output.
+// Runner runs a command and returns its standard output, including partial
+// stdout on failure when available.
 type Runner interface {
 	Run(ctx context.Context, cmd []string) (string, error)
 }
@@ -88,7 +89,7 @@ func (c *Collector) Collect(ctx context.Context) (*Status, error) {
 		return nil, err
 	}
 	klog.InfoS("Collecting GPU topology", "gpus", len(inv))
-	topoOut, err := c.GPU.Run(ctx, TopologyCommand)
+	topoOut, err := c.topology(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("GPU topology: %w", err)
 	}
@@ -97,8 +98,8 @@ func (c *Collector) Collect(ctx context.Context) (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	klog.V(2).InfoS("Collected GPU topology; selecting GPU paths", "rows", len(matrix.Cells), "columns", len(matrix.Cols))
-	if status.NICs, err = Select(bindings, c.Sysfs.RDMADevices, inv, matrix); err != nil {
+	klog.V(2).InfoS("Collected GPU topology; selecting GPU paths", "rows", len(matrix.Cells), "columns", len(matrix.Cols), "nicEntries", len(matrix.NICs), "dataDirectEntries", len(matrix.DDs))
+	if status.NICs, err = Select(bindings, c.Sysfs, inv, matrix); err != nil {
 		return nil, err
 	}
 	if err := status.Validate(); err != nil {
@@ -106,6 +107,25 @@ func (c *Collector) Collect(ctx context.Context) (*Status, error) {
 	}
 	klog.InfoS("Completed GPU/NIC rail collection", "nics", len(status.NICs), "gpus", len(inv))
 	return status, nil
+}
+
+// topology prefers the complete matrix, which includes Data Direct on newer
+// NVIDIA versions. Retry the older command only for the explicit unsupported
+// -all diagnostic; unrelated failures must not silently downgrade discovery.
+func (c *Collector) topology(ctx context.Context) (string, error) {
+	out, err := c.GPU.Run(ctx, TopologyCommand)
+	if err == nil {
+		return out, nil
+	}
+	diagnostic := strings.ToLower(out + "\n" + err.Error())
+	if !strings.Contains(diagnostic, `option "-all" is not recognized`) {
+		return "", err
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	klog.InfoS("nvidia-smi does not support -all; retrying topology with -m")
+	return c.GPU.Run(ctx, []string{"nvidia-smi", "topo", "-m"})
 }
 
 // execRunner is a Runner that runs commands in the local container.

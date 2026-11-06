@@ -30,6 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- GPU/NIC rail mapping ignores ANSI formatting in NVIDIA topology output, preventing an underlined header from causing a false "topology matrix has no row for GPU0" error.
+
+- GPU/NIC rail collection retries `nvidia-smi topo -m` when the installed CLI explicitly rejects `-all`, while preserving the complete matrix on supported versions. Pod execution retains partial stdout on failure so NVIDIA option diagnostics can be recognized.
+
+- GPU/NIC rail mapping falls back from interface/RDMA names to exact PCI identities and explicit PF/VF relationships when joining NVIDIA topology entries. The collected NIC PCI address stays the resource key; Data Direct remains authoritative, and ambiguous matches fail collection instead of selecting an arbitrary VF. Per-NIC logs report selected GPUs or why no mapping exists; verbosity 4 adds the match method and PF/VF addresses.
+
 - The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.
 
 - `GET /v1/topology` responses now carry `Content-Type: text/plain; charset=utf-8` and `X-Content-Type-Options: nosniff` for completed and pending requests, as error responses already did, instead of leaving the content type to sniffing. A result of an unexpected type returns HTTP 500 instead of panicking the handler.

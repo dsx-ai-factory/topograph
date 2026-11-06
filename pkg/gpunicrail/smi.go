@@ -67,6 +67,8 @@ type Matrix struct {
 }
 
 var (
+	// NVIDIA CLI versions may emit ANSI formatting even without a terminal.
+	ansiRE   = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 	aliasRE  = regexp.MustCompile(`^(GPU|NIC|DD|NVME|NVMe)\d+$`)
 	legendRE = regexp.MustCompile(`^\s*(NIC|DD)(\d+):\s+(\S+)`)
 	gpuRE    = regexp.MustCompile(`^GPU(\d+)$`)
@@ -75,6 +77,7 @@ var (
 // ParseMatrix parses the topology matrix and its legend. NVMe rows and
 // columns are ignored.
 func ParseMatrix(out string) (*Matrix, error) {
+	out = ansiRE.ReplaceAllString(out, "")
 	m := &Matrix{Cells: map[string]map[string]string{}, NICs: map[string]string{}, DDs: map[string]string{}}
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimRight(line, "\r")
