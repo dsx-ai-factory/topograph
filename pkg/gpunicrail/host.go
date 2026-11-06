@@ -23,9 +23,9 @@ import (
 )
 
 // Sysfs resolves host interfaces through a (possibly relocated) sysfs mount.
-// Only the symlink at <root>/class/net/<if>/device is read, never followed
-// out of the mount, so the result is the PCI function the interface is bound
-// to; bonds, bridges and representors have no such link and are rejected.
+// PCI identities come from device and physfn symlink basenames; they are
+// never inferred from interface naming or PCI function numbering. All lookups
+// use Root, including when host sysfs is mounted at /host/sys.
 type Sysfs struct{ Root string }
 
 // PCIAddress returns the normalized PCI address of the function behind iface.
@@ -50,4 +50,58 @@ func (s Sysfs) RDMADevices(iface string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// DevicePCI resolves either an RDMA name or a netdev from an NVIDIA legend.
+// A device absent from host sysfs cannot supply a fallback match. Permission
+// errors and malformed links are different: they must fail collection.
+func (s Sysfs) DevicePCI(name string) (string, error) {
+	if name == "." || name == ".." || filepath.Base(name) != name {
+		return "", fmt.Errorf("invalid topology device name %q", name)
+	}
+	var pci string
+	for _, class := range []string{"infiniband", "net"} {
+		path := filepath.Join(s.Root, "class", class, name, "device")
+		device, err := readPCILink(path)
+		if err != nil {
+			return "", err
+		}
+		if device == "" {
+			continue
+		}
+		if pci != "" && pci != device {
+			return "", fmt.Errorf("topology device %q identifies both %s and %s", name, pci, device)
+		}
+		pci = device
+	}
+	return pci, nil
+}
+
+// PhysicalFunction returns a VF's parent PF, or an empty address when physfn
+// does not exist (normal for a non-VF). Read the actual symlink: resolving a
+// nonexistent path with readlink -f can otherwise look like a valid parent.
+func (s Sysfs) PhysicalFunction(pci string) (string, error) {
+	normalized, err := NormalizePCI(pci)
+	if err != nil {
+		return "", err
+	}
+	return readPCILink(filepath.Join(s.Root, "bus", "pci", "devices", normalized, "physfn"))
+}
+
+// readPCILink reads only the final identity component. Sysfs device links are
+// relative and their intermediate directories may not exist in a test mount;
+// following an absolute link could also escape a relocated host sysfs mount.
+func readPCILink(path string) (string, error) {
+	link, err := os.Readlink(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading PCI identity at %s: %w", path, err)
+	}
+	pci, err := NormalizePCI(filepath.Base(link))
+	if err != nil {
+		return "", fmt.Errorf("reading PCI identity at %s: %w", path, err)
+	}
+	return pci, nil
 }

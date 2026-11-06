@@ -27,13 +27,11 @@ RUN make build-${TARGETOS}-${TARGETARCH}
 
 FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
-# lldpctl's control-socket protocol depends on the host lldpd build. Use the
-# Ubuntu Noble 1.0.18 package family to match hosts running lldpd 1.0.18;
-# allow Ubuntu package revisions so distribution fixes are still installed.
-# Ubuntu installs lldpcli (target of the lldpctl symlink) as 4750 _lldpd:adm, so
-# the non-root, no-privilege-escalation broker (uid 65532) cannot execute it.
-# Make it 0755 (this also drops the unused setuid bit); access to the host lldpd
-# socket is still governed by the pod's supplementalGroups.
+# Match the host lldpd version; the default allows Ubuntu package fixes.
+ARG LLDP_VERSION=1.0.18-*
+
+# lldpctl points to lldpcli; change its mode from 4750 to 0755 for the non-root
+# broker. Socket access still requires the appropriate supplementalGroups.
 # Ubuntu splits the InfiniBand utilities out of rdma-core.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -41,7 +39,7 @@ RUN apt-get update \
         rdma-core \
         ibverbs-utils \
         infiniband-diags \
-        'lldpd=1.0.18-*' \
+        "lldpd=${LLDP_VERSION}" \
     && chmod 0755 /usr/sbin/lldpcli \
     && lldpctl -v \
     && command -v ibnetdiscover \

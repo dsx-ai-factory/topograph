@@ -14,7 +14,15 @@ On every Node, the Node Data Broker:
 4. For each NIC, picks the matrix row and keeps every GPU tied at the closest path category (`PIX` < `PXB` < `PHB` < `NODE` < `SYS`; `NV#` links are GPU-to-GPU and never rank a NIC).
 5. Publishes the result with the status subresource.
 
-The legend of `nvidia-smi topo` names a NIC by RDMA device name (`mlx5_8`) or by interface name. The broker joins on either: the interface name, or the RDMA devices under `/sys/class/net/<interface>/device/infiniband/`. More than one match is an error.
+The legend of `nvidia-smi topo` names a NIC by RDMA device name (`mlx5_8`) or by interface name. For each legend type (Data Direct first, then NIC), the broker matches in this order:
+
+1. The interface name or RDMA devices under `/host/sys/class/net/<interface>/device/infiniband/`.
+2. An exact PCI address, resolving the legend device through `/host/sys/class/infiniband/<name>/device` or `/host/sys/class/net/<name>/device`.
+3. An explicit PF/VF relationship from `/host/sys/bus/pci/devices/<VF>/physfn`. This supports a collected PF with a VF in the matrix, or a collected VF with its PF in the matrix. Sibling VFs do not match each other merely because they share a PF.
+
+More than one candidate at the first matching level is an error, including multiple VFs of a collected PF; the broker does not pick an arbitrary VF even if their current best GPUs agree. Missing devices or an absent `physfn` provide no fallback match; malformed identities and other lookup errors fail the refresh and retain the previous record. The output key always remains the collected interface's PCI address. For example, if `eth_r0_p0` is PF `0001:03:00.0` and the matrix lists `mlx5_0` at VF `0001:03:00.4` whose `physfn` points to that PF, the broker uses the VF's matrix row but publishes under `0001:03:00.0`.
+
+This fallback needs no configuration and works with ordinary NICs as well as SR-IOV devices. The configured GPU source pod must still expose NIC/DD entries in its NVIDIA topology output; host sysfs alone cannot supply missing matrix paths. A related function's row describes PCIe locality, not GPUDirect readiness or network connectivity.
 
 ### Data Direct
 
@@ -73,7 +81,7 @@ status:
 
 - `nics` is keyed by the normalized host PCI address (`dddd:bb:ss.f`, lowercase). Each `railID` occurs once.
 - Identity is always a NIC PCI address and a GPU UUID or PCI address. `topologyTarget` (`NIC2`, `DD0`) is explainability metadata, never an identity.
-- `mappingMode` is `data-direct` when a DD row was used, `nic` when the physical NIC row was used, and `none` when there is no usable GPU path. Topograph never invents a pairing to avoid `none`. `topologyTarget` and `bestPath` are omitted for `none`.
+- `mappingMode` is `data-direct` when a DD row was used, `nic` when a NIC row was used, and `none` when there is no usable GPU path. Topograph never invents a pairing to avoid `none`. `topologyTarget` and `bestPath` are omitted for `none`.
 - `bestGpus` holds every GPU tied at `bestPath`, sorted by UUID. MIG devices inherit the parent GPU's mapping and are not published separately.
 - Use `nodeDataBroker.nodeSelector` or affinity to schedule brokers on the intended GPU nodes. The plugin does not inspect GPU labels or resource capacity; when rail interfaces are present, GPU inventory and topology discovery must succeed.
 - The mapping describes PCIe locality, not GPUDirect RDMA readiness or network health.
@@ -164,3 +172,13 @@ kubectl -n topograph get nodegpunicrailmappings node-<node-uid> -o jsonpath='{.s
 ```
 
 Compare `bestPath` and `bestGpus` with `nvidia-smi topo -all -m` on the Node, on systems with and without DD functions.
+
+The broker logs each successful NIC selection at the default verbosity, including the interface, PCI address, rail ID, topology target, mapping mode, best path, and selected GPU identities. A NIC without a mapping is logged with the reason: no topology matrix, no matching topology device, or no usable GPU paths. These are collection decisions; a later failure can still prevent the refresh from being published.
+
+Set the Helm `verbosity` value to `4` to also log whether each topology match used a name, an exact PCI address, or a PF/VF relationship. PF/VF logs include both PCI addresses and the direction from the collected function to the matrix function. At verbosity `2` and above, the topology summary includes NIC and Data Direct legend counts, which helps identify a GPU source container that exposes no NIC entries.
+
+### NVIDIA CLI compatibility
+
+The broker first runs `nvidia-smi topo -all -m` to preserve Data Direct information on versions that support it. If NVIDIA explicitly reports `Option "-all" is not recognized.`, it logs the compatibility retry and runs `nvidia-smi topo -m`. Other command failures do not trigger a fallback. No configuration change is required. Data Direct entries present in either output remain authoritative, but the broker cannot use entries that the older CLI does not expose.
+
+Some NVIDIA CLI versions emit ANSI formatting, such as an underlined matrix header, even without a terminal. The broker strips these control sequences before parsing the matrix and legend.
