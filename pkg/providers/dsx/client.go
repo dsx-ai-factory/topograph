@@ -18,19 +18,19 @@ package dsx
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
-
-	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/internal/httpreq"
+	"github.com/dsx-ai-factory/topograph/internal/oauth"
 )
 
 const (
-	pathNodes = "/v1/topology/nodes"
+	// pathVPCNodesFmt is the VPC-scoped topology endpoint.
+	pathVPCNodesFmt = "/v1/topology/vpcs/%s/nodes"
 
 	// requestTimeout bounds each individual page fetch — connection, response
 	// headers, and full body — including up to httpreq.maxRetries (5) retries
@@ -43,21 +43,45 @@ const (
 	// API defaults to 100; values below this minimum create excessive pages,
 	// which can exhaust maxPaginationPages before a finite response completes.
 	minPageSize = 100
+
+	// maxPageSize is the API's documented ceiling for page_size.
+	maxPageSize = 1000
 )
 
 type httpClient struct {
 	baseURL string
-	token   string
+	// tokenFn supplies the Bearer token for each request; nil means no
+	// Authorization header, and the Envoy sidecar authenticates the caller.
+	tokenFn oauth.TokenFunc
 }
 
-// NewHTTPClient returns a Client that calls the DSX Topology API.
-// If token is empty the Authorization header is omitted and the Envoy sidecar
-// is expected to supply SVID-based authentication transparently.
+// NewHTTPClient returns a Client that sends a static Bearer token. An empty
+// token omits the Authorization header.
 func NewHTTPClient(baseURL, token string) *httpClient {
-	return &httpClient{baseURL: baseURL, token: token}
+	c := &httpClient{baseURL: baseURL}
+	if token != "" {
+		c.tokenFn = func(context.Context) (string, error) { return token, nil }
+	}
+	return c
 }
 
-func (c *httpClient) GetTopology(ctx context.Context, vpcID string, nodeIDs []string, pageSize int, pageToken string) (*TopologyResponse, error) {
+// NewHTTPClientWithTokenSource returns a Client that gets its Bearer token from
+// tokenFn on every request, for example an OAuth2 source that caches and
+// refreshes the token.
+func NewHTTPClientWithTokenSource(baseURL string, tokenFn oauth.TokenFunc) *httpClient {
+	return &httpClient{baseURL: baseURL, tokenFn: tokenFn}
+}
+
+// clampPageSize limits a positive page size to the API range; zero means "use
+// the API default" and is left alone.
+func clampPageSize(n int) int {
+	if n <= 0 {
+		return n
+	}
+	return min(max(n, minPageSize), maxPageSize)
+}
+
+func (c *httpClient) GetTopology(ctx context.Context, vpcID string, pageSize int, pageToken string) (*TopologyResponse, error) {
 	// Derive callCtx from context.Background() so requestTimeout is the true
 	// per-page deadline, independent of any total-generation deadline already
 	// set on ctx. context.AfterFunc propagates ctx cancellation so that a
@@ -67,25 +91,18 @@ func (c *httpClient) GetTopology(ctx context.Context, vpcID string, nodeIDs []st
 	stopPropagation := context.AfterFunc(ctx, cancel)
 	defer stopPropagation()
 
-	path := pathNodes
-	if vpcID != "" {
-		path = "/v1/topology/vpcs/" + vpcID + "/nodes"
-	}
-
 	headers := map[string]string{}
-	if c.token != "" {
-		headers["Authorization"] = "Bearer " + c.token
+	if c.tokenFn != nil {
+		token, err := c.tokenFn(callCtx)
+		if err != nil {
+			return nil, httperr.NewError(http.StatusBadGateway, "failed to obtain access token: "+err.Error())
+		}
+		headers["Authorization"] = "Bearer " + token
 	}
 
-	if pageSize > 0 && pageSize < minPageSize {
-		klog.Warningf("DSX page size %d is below minimum %d; clamping to avoid excessive pagination", pageSize, minPageSize)
-		pageSize = minPageSize
-	}
+	pageSize = clampPageSize(pageSize)
 
 	query := map[string]string{}
-	if len(nodeIDs) > 0 {
-		query["node_ids"] = strings.Join(nodeIDs, ",")
-	}
 	if pageSize > 0 {
 		query["page_size"] = strconv.Itoa(pageSize)
 	}
@@ -93,7 +110,7 @@ func (c *httpClient) GetTopology(ctx context.Context, vpcID string, nodeIDs []st
 		query["page_token"] = pageToken
 	}
 
-	f := httpreq.GetRequestFunc(callCtx, http.MethodGet, headers, query, nil, c.baseURL, path)
+	f := httpreq.GetRequestFunc(callCtx, http.MethodGet, headers, query, nil, c.baseURL, fmt.Sprintf(pathVPCNodesFmt, vpcID))
 	body, httpErr := httpreq.DoRequestWithRetries(f, false)
 	if httpErr != nil {
 		return nil, httpErr

@@ -17,6 +17,7 @@ package dsx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -51,31 +52,30 @@ func (p *baseProvider) generateInstanceTopology(ctx context.Context, pageSize *i
 		return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("failed to get client: %v", err))
 	}
 
-	// Build want set and nodeIDs once. Deduplicate IDs that appear in more than
-	// one ComputeInstances group, and sort for deterministic API requests.
+	// Build the want set once; it also deduplicates IDs that appear in more than
+	// one ComputeInstances group. The API is not given a node filter: the VPC
+	// endpoint is already scoped, and a node_ids list would not fit in a URL for
+	// large clusters, so the response is filtered here instead.
 	want := make(map[string]struct{})
-	var nodeIDs []string
 	for _, ci := range cis {
 		for instanceID := range ci.Instances {
 			if instanceID == "" {
 				klog.Warningf("skipping empty instance ID in ComputeInstances")
 				continue
 			}
-			if _, exists := want[instanceID]; !exists {
-				want[instanceID] = struct{}{}
-				nodeIDs = append(nodeIDs, instanceID)
-			}
+			want[instanceID] = struct{}{}
 		}
 	}
-	sort.Strings(nodeIDs)
-
-	if len(nodeIDs) == 0 {
+	if len(want) == 0 {
 		return topology.NewClusterTopology(), nil
 	}
 
 	pageSizeVal := 0
 	if pageSize != nil {
 		pageSizeVal = *pageSize
+		if clamped := clampPageSize(pageSizeVal); clamped != pageSizeVal {
+			klog.Warningf("DSX page size %d is outside [%d, %d]; using %d", pageSizeVal, minPageSize, maxPageSize, clamped)
+		}
 	}
 
 	// Phase 1: accumulate all switch entries across pages before resolving topology.
@@ -100,7 +100,7 @@ func (p *baseProvider) generateInstanceTopology(ctx context.Context, pageSize *i
 			return nil, httperr.NewError(http.StatusUnprocessableEntity,
 				fmt.Sprintf("DSX API exceeded maximum page limit (%d)", maxPaginationPages))
 		}
-		response, apiErr := client.GetTopology(genCtx, "", nodeIDs, pageSizeVal, pageToken)
+		response, apiErr := client.GetTopology(genCtx, p.vpcID, pageSizeVal, pageToken)
 		if apiErr != nil {
 			if ctx.Err() != nil {
 				// The caller's context was cancelled — report that, not our deadline.
@@ -108,10 +108,17 @@ func (p *baseProvider) generateInstanceTopology(ctx context.Context, pageSize *i
 					fmt.Sprintf("context cancelled: %v", apiErr))
 			}
 			if genCtx.Err() != nil {
-				// Our own total-generation deadline fired. A retry would restart
-				// with a fresh deadline, repeating the full wait — not retryable.
-				return nil, httperr.NewError(http.StatusUnprocessableEntity,
+				// Our own total-generation deadline fired: the upstream was too slow.
+				return nil, httperr.NewError(http.StatusGatewayTimeout,
 					fmt.Sprintf("DSX topology generation deadline exceeded: %v", apiErr))
+			}
+			// Keep a 4xx status from the upstream (unknown VPC, forbidden, ...) so
+			// callers can tell a request problem from an upstream outage. A 401
+			// means DSX rejected Topograph's own credentials, which is a
+			// provider-side failure and not the caller's authentication problem.
+			var he *httperr.Error
+			if errors.As(apiErr, &he) && he.Code() >= 400 && he.Code() < 500 && he.Code() != http.StatusUnauthorized {
+				return nil, httperr.NewError(he.Code(), fmt.Sprintf("API error: %v", apiErr))
 			}
 			return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("API error: %v", apiErr))
 		}
@@ -131,7 +138,39 @@ func (p *baseProvider) generateInstanceTopology(ctx context.Context, pageSize *i
 	}
 
 	// Phase 2: resolve topology from the complete cross-page switch set.
-	return buildClusterTopology(allSwitches, want), nil
+	topo := buildClusterTopology(allSwitches, want)
+	warnMissingNodes(allSwitches, want)
+	return topo, nil
+}
+
+// warnMissingNodes logs requested nodes that the API response does not contain,
+// so a wrong VPC or a lagging inventory is visible instead of silently yielding
+// nodes without topology.
+func warnMissingNodes(switches []map[string]SwitchAdjacency, want map[string]struct{}) {
+	found := make(map[string]struct{})
+	for _, entry := range switches {
+		for _, adj := range entry {
+			for _, n := range adj.Nodes {
+				found[n.NodeID] = struct{}{}
+			}
+		}
+	}
+	var missing []string
+	for id := range want {
+		if _, ok := found[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	sort.Strings(missing)
+	const maxListed = 10
+	listed := missing
+	if len(listed) > maxListed {
+		listed = listed[:maxListed]
+	}
+	klog.Warningf("DSX API returned no topology for %d of %d requested nodes (first %d: %v)", len(missing), len(want), len(listed), listed)
 }
 
 // buildClusterTopology translates the complete ordered switch list into per-instance
@@ -157,6 +196,9 @@ func buildClusterTopology(switches []map[string]SwitchAdjacency, want map[string
 		}
 		for _, swName := range sortedEntryKeys(entry) {
 			for _, child := range entry[swName].Switches {
+				if prev, ok := parentOf[child]; ok && prev != swName {
+					klog.Warningf("DSX switch %q is listed under multiple parents (%q, %q); using %q", child, prev, swName, swName)
+				}
 				parentOf[child] = swName
 			}
 		}

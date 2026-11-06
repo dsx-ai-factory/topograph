@@ -43,25 +43,32 @@ func TestLoader(t *testing.T) {
 			wantErrMsg:  "missing 'base_url'",
 		},
 		{
-			name:        "non-string token returns 400",
+			name:        "missing vpc_id returns 400",
 			params:      map[string]any{"base_url": "https://topology.example.com"},
+			creds:       map[string]any{},
+			wantErrCode: http.StatusBadRequest,
+			wantErrMsg:  "missing 'vpc_id'",
+		},
+		{
+			name:        "non-string token returns 400",
+			params:      map[string]any{"base_url": "https://topology.example.com", "vpc_id": "vpc-1"},
 			creds:       map[string]any{"token": 12345},
 			wantErrCode: http.StatusBadRequest,
 			wantErrMsg:  "credentials error: 'token' must be a string",
 		},
 		{
 			name:   "valid config without token succeeds",
-			params: map[string]any{"base_url": "https://topology.example.com"},
+			params: map[string]any{"base_url": "https://topology.example.com", "vpc_id": "vpc-1"},
 			creds:  map[string]any{},
 		},
 		{
 			name:   "valid config with string token succeeds",
-			params: map[string]any{"base_url": "https://topology.example.com"},
+			params: map[string]any{"base_url": "https://topology.example.com", "vpc_id": "vpc-1"},
 			creds:  map[string]any{"token": "my-bearer-token"},
 		},
 		{
 			name:   "trimTiers param is accepted",
-			params: map[string]any{"base_url": "https://topology.example.com", "trimTiers": 1},
+			params: map[string]any{"base_url": "https://topology.example.com", "vpc_id": "vpc-1", "trimTiers": 1},
 			creds:  map[string]any{},
 		},
 	}
