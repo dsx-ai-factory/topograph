@@ -21,6 +21,7 @@ import (
 	"flag"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -429,10 +430,52 @@ func TestDoRequestLogCannotForgeLines(t *testing.T) {
 	_, _, _ = DoRequest(f, false)
 	klog.Flush()
 
-	require.Contains(t, buf.String(), "FORGED", "the URL is still logged")
+	// The query, which may carry secrets or forged text, is not logged at all.
+	require.Contains(t, buf.String(), "http://127.0.0.1:1/topology", "the URL is still logged")
+	require.NotContains(t, buf.String(), "FORGED")
 	for _, line := range strings.Split(buf.String(), "\n") {
 		require.False(t, strings.HasPrefix(line, "E1027"), "the URL started a log line: %q", line)
 	}
+}
+
+// TestDoRequestLogEscapesOpaqueURL checks that a line break in URL.Opaque, which
+// logURL keeps, is escaped by the %q formatting and cannot start a log line.
+func TestDoRequestLogEscapesOpaqueURL(t *testing.T) {
+	var buf bytes.Buffer
+	flags := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(flags)
+	require.NoError(t, flags.Set("v", "4"))
+	klog.LogToStderr(false)
+	klog.SetOutput(&buf)
+	t.Cleanup(func() {
+		require.NoError(t, flags.Set("v", "0"))
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	})
+
+	f := func() (*http.Request, *httperr.Error) {
+		req, e := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:1/topology", nil)
+		if e != nil {
+			return nil, httperr.NewError(http.StatusInternalServerError, e.Error())
+		}
+		req.URL.Opaque = "//127.0.0.1:1/x\nE1027 00:00:00.000000 1 forged.go:1] FORGED"
+		return req, nil
+	}
+	_, _, _ = DoRequest(f, false)
+	klog.Flush()
+
+	require.Contains(t, buf.String(), `\n`, "the line break is logged escaped")
+	for _, line := range strings.Split(buf.String(), "\n") {
+		require.False(t, strings.HasPrefix(line, "E1027"), "the URL started a log line: %q", line)
+	}
+}
+
+func TestLogURLOmitsSecrets(t *testing.T) {
+	u, err := url.Parse("https://user:pw@host.example/p?token=abc#frag")
+	require.NoError(t, err)
+	require.Equal(t, "https://host.example/p", logURL(u))
+	require.Equal(t, "https://user:pw@host.example/p?token=abc#frag", u.String(), "original is unchanged")
+	require.Equal(t, "https://host.example/p", logURLString("https://user:pw@host.example/p?token=abc"))
 }
 
 func TestRefuseDowngrade(t *testing.T) {

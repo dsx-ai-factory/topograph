@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -271,10 +272,16 @@ func TestGetTopologyDecodesWireFormat(t *testing.T) {
 // source again, so a token that expired while a 429 back-off was waited out is
 // not resent.
 func TestGetTopologyRefreshesTokenOnRetry(t *testing.T) {
-	var auths []string
+	var (
+		mu    sync.Mutex
+		auths []string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		auths = append(auths, r.Header.Get("Authorization"))
-		if len(auths) == 1 {
+		first := len(auths) == 1
+		mu.Unlock()
+		if first {
 			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
@@ -290,6 +297,8 @@ func TestGetTopologyRefreshesTokenOnRetry(t *testing.T) {
 
 	_, err := NewHTTPClientWithTokenSource(srv.URL, tokenFn).GetTopology(context.Background(), testVPCID, 0, "")
 	require.NoError(t, err)
+	mu.Lock()
+	defer mu.Unlock()
 	require.Equal(t, []string{"Bearer token-1", "Bearer token-2"}, auths)
 }
 

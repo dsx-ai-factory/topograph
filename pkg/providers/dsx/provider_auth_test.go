@@ -16,12 +16,16 @@
 package dsx
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/pkg/providers"
 )
@@ -147,17 +151,38 @@ func TestLoaderRejectsUnusedAuthSettings(t *testing.T) {
 }
 
 func TestMissingNodesWarningAndMultiParent(t *testing.T) {
-	// Smoke test: neither helper may panic and the multi-parent child keeps the last parent.
+	// A switch listed under two parents keeps the last one.
 	sw := []map[string]SwitchAdjacency{
 		{"s1": {Switches: []string{"leaf"}}},
 		{"s2": {Switches: []string{"leaf"}}},
 		{"leaf": {Nodes: []NodeInfo{{NodeID: "n1"}}}},
 	}
 	want := map[string]struct{}{"n1": {}, "missing": {}}
+
+	var buf bytes.Buffer
+	klog.LogToStderr(false)
+	klog.SetOutput(&buf)
+	defer klog.LogToStderr(true)
 	warnMissingNodes(sw, want)
+	klog.Flush()
+	if out := buf.String(); !strings.Contains(out, "no topology for 1 of 2 requested nodes") || !strings.Contains(out, "missing") {
+		t.Errorf("missing-node warning not logged: %q", out)
+	}
+
 	topo := buildClusterTopology(sw, want)
 	if topo.Len() != 1 {
 		t.Fatalf("Len = %d, want 1", topo.Len())
+	}
+	inst := topo.Instances[0]
+	if inst.InstanceID != "n1" {
+		t.Errorf("InstanceID = %q, want n1", inst.InstanceID)
+	}
+	var tiers []string
+	for _, ft := range inst.FabricTiers {
+		tiers = append(tiers, ft.ID)
+	}
+	if !reflect.DeepEqual(tiers, []string{"leaf", "s2"}) {
+		t.Errorf("FabricTiers = %v, want [leaf s2]", tiers)
 	}
 }
 

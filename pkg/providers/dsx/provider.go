@@ -101,8 +101,14 @@ func Loader(ctx context.Context, config providers.Config) (providers.Provider, *
 		return nil, httperr.NewError(http.StatusBadRequest, fmt.Sprintf("parameters error: missing '%s'", paramBaseURL))
 	}
 
-	if u, err := url.Parse(params.BaseURL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+	u, err := url.Parse(params.BaseURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return nil, httperr.NewError(http.StatusBadRequest, fmt.Sprintf("parameters error: invalid '%s'", paramBaseURL))
+	}
+	// Userinfo in a plain-http URL would travel in cleartext.
+	if u.Scheme == "http" && u.User != nil {
+		return nil, httperr.NewError(http.StatusBadRequest,
+			fmt.Sprintf("parameters error: '%s' must not contain credentials when it uses http", paramBaseURL))
 	}
 
 	// The server's credentials are sent to base_url, so a request that brings no
@@ -177,7 +183,7 @@ func Loader(ctx context.Context, config providers.Config) (providers.Provider, *
 		}
 	}
 
-	klog.InfoS("Loaded DSX provider", "base_url", params.BaseURL, "vpc_id", params.VPCID, "auth", auth)
+	klog.InfoS("Loaded DSX provider", "vpc_id", params.VPCID, "auth", auth)
 
 	p := New(factory, trimTiers)
 	p.vpcID = params.VPCID

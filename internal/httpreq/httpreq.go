@@ -121,7 +121,7 @@ func doRequest(f RequestFunc, insecureSkipVerify bool, checkRedirect func(*http.
 	}
 	// URL.String() keeps RawQuery as is; %q escapes any line break in it so
 	// the URL cannot forge log lines.
-	klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
+	klog.V(4).Infof("Sending HTTP request %q", logURL(req.URL))
 	client := &http.Client{CheckRedirect: checkRedirect}
 	if insecureSkipVerify {
 		client.Transport = &http.Transport{
@@ -182,7 +182,8 @@ func doRequestWithRetries(f RequestFunc, insecureSkipVerify bool, checkRedirect 
 			return body, err
 		}
 		wait := GetNextBackoff(resp, backOff, attempt-1)
-		klog.Infof("Attempt %d failed with error: %v. Retrying in %s", attempt, err, wait.String())
+		// Only the status code is logged: the error text may quote the request URL.
+		klog.Infof("Attempt %d failed with status %d. Retrying in %s", attempt, err.Code(), wait.String())
 		if !waitForRetry(requestCtx, wait) {
 			return body, err
 		}
@@ -226,13 +227,33 @@ func GetURL(baseURL string, query map[string]string, paths ...string) (string, *
 	return u.String(), nil
 }
 
+// logURL returns u without userinfo, query and fragment, which may carry
+// secrets. The request itself keeps the original URL.
+func logURL(u *url.URL) string {
+	c := *u
+	c.User, c.RawQuery, c.Fragment, c.RawFragment = nil, "", "", ""
+	return c.String()
+}
+
+// logURLString is logURL for a URL held as a string; it never logs an
+// unparsable URL, which could still carry secrets.
+func logURLString(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<unparsable URL>"
+	}
+	return logURL(u)
+}
+
+// GetRequestFunc returns a RequestFunc that builds a request for method with
+// the given headers, query, payload and URL (baseUrl joined with paths).
 func GetRequestFunc(ctx context.Context, method string, headers, query map[string]string, payload []byte, baseUrl string, paths ...string) RequestFunc {
 	return func() (*http.Request, *httperr.Error) {
 		u, httpErr := GetURL(baseUrl, query, paths...)
 		if httpErr != nil {
 			return nil, httpErr
 		}
-		klog.V(4).Infof("Fetching %s", u)
+		klog.V(4).Infof("Fetching %q", logURLString(u))
 		req, err := http.NewRequestWithContext(ctx, method, u, bytes.NewBuffer(payload))
 		if err != nil {
 			return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to create HTTP request: %v", err))

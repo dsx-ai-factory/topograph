@@ -58,6 +58,29 @@ func TestLoader(t *testing.T) {
 			wantErrMsg:  "credentials error: 'token' must be a string",
 		},
 		{
+			name:        "invalid trimTiers returns 400",
+			params:      map[string]any{"base_url": "https://topology.example.com", "vpc_id": "vpc-1", "trimTiers": 3},
+			creds:       map[string]any{},
+			wantErrCode: http.StatusBadRequest,
+			wantErrMsg:  "must be an integer between 0 and 2",
+		},
+		{
+			name:   "token with client credentials returns 400",
+			params: map[string]any{"base_url": "https://topology.example.com", "vpc_id": "vpc-1"},
+			creds: map[string]any{
+				"token": "t", "client_id": "id", "client_secret": "s", "issuer_url": "https://issuer.example.com",
+			},
+			wantErrCode: http.StatusBadRequest,
+			wantErrMsg:  "provide either 'token' or the OAuth2 client credentials, not both",
+		},
+		{
+			name:        "http base_url with userinfo returns 400",
+			params:      map[string]any{"base_url": "http://user:pw@topology.svc:8080", "vpc_id": "vpc-1"},
+			creds:       map[string]any{},
+			wantErrCode: http.StatusBadRequest,
+			wantErrMsg:  "must not contain credentials when it uses http",
+		},
+		{
 			name:   "valid config without token succeeds",
 			params: map[string]any{"base_url": "https://topology.example.com", "vpc_id": "vpc-1"},
 			creds:  map[string]any{},
