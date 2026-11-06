@@ -191,3 +191,48 @@ func TestLoaderBaseURLValidation(t *testing.T) {
 		}
 	}
 }
+
+// TestLoaderBindsServerCredentialsToConfiguredBaseURL checks that a request
+// without credentials cannot send the server's credentials to another endpoint,
+// while its other parameters stay free to change.
+func TestLoaderBindsServerCredentialsToConfiguredBaseURL(t *testing.T) {
+	creds := map[string]any{"token": "server-token"}
+	serverParams := map[string]any{"base_url": "https://dsx.example/topology", "vpc_id": "vpc-server"}
+
+	for _, tc := range []struct {
+		name        string
+		serverCreds bool
+		params      map[string]any
+		wantCode    int
+	}{
+		{"same base_url", true, map[string]any{"base_url": "https://dsx.example/topology", "vpc_id": "vpc-1"}, 0},
+		{"same base_url with trailing slash", true, map[string]any{"base_url": "https://dsx.example/topology/", "vpc_id": "vpc-1"}, 0},
+		{"other vpc_id and trimTiers are accepted", true, map[string]any{"base_url": "https://dsx.example/topology", "vpc_id": "vpc-2", "trimTiers": 1}, 0},
+		{"different base_url", true, map[string]any{"base_url": "https://attacker.example", "vpc_id": "vpc-1"}, http.StatusForbidden},
+		{"different path prefix", true, map[string]any{"base_url": "https://dsx.example", "vpc_id": "vpc-1"}, http.StatusForbidden},
+		{"request credentials may choose their own base_url", false, map[string]any{"base_url": "https://other.example", "vpc_id": "vpc-1"}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, herr := Loader(context.Background(), providers.Config{
+				Params: tc.params, Creds: creds, ServerCreds: tc.serverCreds, ServerParams: serverParams,
+			})
+			if tc.wantCode == 0 {
+				if herr != nil {
+					t.Fatalf("unexpected error: %v", herr)
+				}
+				return
+			}
+			if herr == nil || herr.Code() != tc.wantCode {
+				t.Fatalf("error = %v, want code %d", herr, tc.wantCode)
+			}
+		})
+	}
+
+	// With no base_url in the server configuration there is nothing to bind to.
+	_, herr := Loader(context.Background(), providers.Config{
+		Params: map[string]any{"base_url": "https://dsx.example", "vpc_id": "vpc-1"}, Creds: creds, ServerCreds: true,
+	})
+	if herr == nil || herr.Code() != http.StatusForbidden {
+		t.Fatalf("error = %v, want 403", herr)
+	}
+}

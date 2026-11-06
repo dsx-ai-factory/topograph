@@ -6,6 +6,8 @@ The provider calls `GET /v1/topology/vpcs/{vpc_id}/nodes`, which returns an orde
 
 The caller's org must own the VPC; otherwise the API returns `403`. The `Region` field on each node group in the request is not used.
 
+With the Slurm engine, the provider takes the Slurm node names as the DSX node IDs, so a request without a `nodes` map works when the Slurm hostnames equal the DSX `node_id` values. Otherwise supply the `nodes` map (DSX node ID to node name) in the request, as in the example request payload below.
+
 Authentication and rate limiting are enforced by the Envoy proxy sidecar before requests reach this service. Topograph authenticates with a Bearer token, either a static `token` or one it requests with OAuth2 client credentials. When no credentials are configured, no `Authorization` header is sent and the Envoy sidecar is expected to supply SVID-based authentication transparently for in-cluster callers.
 
 ## When to Use This Provider
@@ -29,7 +31,7 @@ Use this provider for **DSX clusters** where the DSX Topology API is the topolog
 | `token_url` | No | Token endpoint (must be `https`). When set, OIDC discovery is skipped and `issuer_url` is not needed |
 | `scopes` | No | OAuth2 scopes to request, as a list or a space-separated string, for example `[nvll_operator_user_ro]` |
 
-With `client_id` and `client_secret`, Topograph requests an access token from the token endpoint, caches it until it expires, and sends it as the Bearer token. If `token_url` is not set, the token endpoint is discovered from `issuer_url`. `token` and the client credentials cannot be combined. Supply `client_secret` through the credentials file or the request payload, never in committed files.
+With `client_id` and `client_secret`, Topograph requests an access token from the token endpoint, caches it until it expires, and sends it as the Bearer token. If `token_url` is not set, the token endpoint is discovered from `issuer_url`. `token` and the client credentials cannot be combined. Supply `client_secret` through the credentials file or the request payload, never in committed files. Redirects from `https` to `http` are refused, so credentials are never sent in cleartext.
 
 Store credentials in a YAML file when needed, for a static token:
 
@@ -44,6 +46,8 @@ credentialsPath: /etc/topograph/dsx-credentials.yaml
 ```
 
 Credentials can also be supplied directly in the topology request payload under `provider.creds`.
+
+When a request supplies no `provider.creds`, Topograph uses the credentials from `credentialsPath`. To keep those credentials from being sent to an endpoint the operator did not choose, such a request must use the same `base_url` as the server's `providerParams`, or the provider returns `403`. A request that supplies its own credentials may use any `base_url`, and other parameters such as `vpc_id` may differ either way.
 
 ## Parameters
 
@@ -88,7 +92,7 @@ issuer_url: https://<ssa-issuer-host>
 scopes: [nvll_operator_user_ro]
 ```
 
-The provider parameters are the same as above.
+The provider parameters are the same as above. With the Slurm engine, the node names are used as the DSX node IDs unless the request supplies a `nodes` map.
 
 Example request payload:
 

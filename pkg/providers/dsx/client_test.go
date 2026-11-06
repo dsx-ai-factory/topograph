@@ -18,6 +18,7 @@ package dsx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,6 +27,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
 )
 
 // capture holds the server-side view of one request.
@@ -234,4 +237,82 @@ func TestHTTPClientGetTopology(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGetTopologyDecodesWireFormat pins the DSX API wire contract with a literal
+// JSON body, so renaming a struct tag cannot go unnoticed the way it could when
+// a test marshals the same Go types that GetTopology decodes.
+func TestGetTopologyDecodesWireFormat(t *testing.T) {
+	const body = `{
+	  "switches": [
+	    {"core1": {"switches": ["spine1"]}},
+	    {"spine1": {"switches": ["leaf1"]}},
+	    {"leaf1": {"nodes": [{"node_id": "n1", "accelerated_network_id": "nvl-a"}, {"node_id": "n2"}]}}
+	  ],
+	  "next_page_token": "cursor-2"
+	}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	resp, err := NewHTTPClient(srv.URL, "").GetTopology(context.Background(), testVPCID, 0, "")
+	require.NoError(t, err)
+	require.Equal(t, "cursor-2", resp.NextPageToken)
+	require.Len(t, resp.Switches, 3)
+	require.Equal(t, []string{"spine1"}, resp.Switches[0]["core1"].Switches)
+	require.Equal(t, []string{"leaf1"}, resp.Switches[1]["spine1"].Switches)
+	nodes := resp.Switches[2]["leaf1"].Nodes
+	require.Equal(t, []NodeInfo{{NodeID: "n1", AcceleratedNetworkID: "nvl-a"}, {NodeID: "n2"}}, nodes)
+}
+
+// TestGetTopologyRefreshesTokenOnRetry checks that each retry asks the token
+// source again, so a token that expired while a 429 back-off was waited out is
+// not resent.
+func TestGetTopologyRefreshesTokenOnRetry(t *testing.T) {
+	var auths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auths = append(auths, r.Header.Get("Authorization"))
+		if len(auths) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"switches":[],"next_page_token":""}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	calls := 0
+	tokenFn := func(context.Context) (string, error) {
+		calls++
+		return "token-" + strconv.Itoa(calls), nil
+	}
+
+	_, err := NewHTTPClientWithTokenSource(srv.URL, tokenFn).GetTopology(context.Background(), testVPCID, 0, "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"Bearer token-1", "Bearer token-2"}, auths)
+}
+
+// TestGetTopologyTokenFailureIsNotRetried checks that a failing token source
+// ends the call with a 502 after one attempt and sends no request.
+func TestGetTopologyTokenFailureIsNotRetried(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	t.Cleanup(srv.Close)
+
+	calls := 0
+	tokenFn := func(context.Context) (string, error) {
+		calls++
+		return "", errors.New("token endpoint down")
+	}
+
+	start := time.Now()
+	_, err := NewHTTPClientWithTokenSource(srv.URL, tokenFn).GetTopology(context.Background(), testVPCID, 0, "")
+	var herr *httperr.Error
+	require.ErrorAs(t, err, &herr)
+	require.Equal(t, http.StatusBadGateway, herr.Code())
+	require.Contains(t, err.Error(), "failed to obtain access token: token endpoint down")
+	require.Equal(t, 1, calls)
+	require.Zero(t, hits)
+	require.Less(t, time.Since(start), 400*time.Millisecond)
 }

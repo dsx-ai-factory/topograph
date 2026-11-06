@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -431,5 +432,70 @@ func TestDoRequestLogCannotForgeLines(t *testing.T) {
 	require.Contains(t, buf.String(), "FORGED", "the URL is still logged")
 	for _, line := range strings.Split(buf.String(), "\n") {
 		require.False(t, strings.HasPrefix(line, "E1027"), "the URL started a log line: %q", line)
+	}
+}
+
+func TestRefuseDowngrade(t *testing.T) {
+	mk := func(u string) *http.Request {
+		r, _ := http.NewRequest(http.MethodGet, u, nil)
+		return r
+	}
+	via := []*http.Request{mk("https://api.example.com/a")}
+	if err := refuseDowngrade(mk("https://api.example.com/b"), via); err != nil {
+		t.Errorf("https to https refused: %v", err)
+	}
+	if err := refuseDowngrade(mk("http://api.example.com/b"), via); err == nil {
+		t.Error("https to http must be refused")
+	}
+	if err := refuseDowngrade(mk("http://api.example.com/b"), []*http.Request{mk("http://api.example.com/a")}); err != nil {
+		t.Errorf("http to http refused: %v", err)
+	}
+	if err := refuseDowngrade(mk("https://api.example.com/b"), make([]*http.Request, 10)); err == nil {
+		t.Error("redirect limit not enforced")
+	}
+}
+
+// TestDowngradeRedirect checks the guarded variant end to end and pins that the
+// existing DoRequestWithRetries still follows an https to http redirect.
+func TestDowngradeRedirect(t *testing.T) {
+	var plainHits atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHits.Add(1)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer plain.Close()
+
+	tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL, http.StatusTemporaryRedirect)
+	}))
+	defer tlsSrv.Close()
+
+	// Trust the test server's certificate for requests that use the default transport.
+	old := http.DefaultTransport
+	http.DefaultTransport = tlsSrv.Client().Transport
+	defer func() { http.DefaultTransport = old }()
+
+	newReq := func() (*http.Request, *httperr.Error) {
+		req, err := http.NewRequest(http.MethodGet, tlsSrv.URL, nil)
+		if err != nil {
+			return nil, httperr.NewError(http.StatusInternalServerError, err.Error())
+		}
+		req.Header.Set("Authorization", "Bearer secret")
+		return req, nil
+	}
+
+	if _, err := DoRequestWithRetriesNoDowngrade(newReq); err == nil {
+		t.Error("guarded request must fail on an https to http redirect")
+	}
+	if plainHits.Load() != 0 {
+		t.Errorf("redirect target was contacted %d times; the Authorization header would have leaked", plainHits.Load())
+	}
+
+	body, err := DoRequestWithRetries(newReq, false)
+	if err != nil || string(body) != "ok" {
+		t.Errorf("existing behavior changed: body=%q err=%v", body, err)
+	}
+	if plainHits.Load() != 1 {
+		t.Errorf("existing function should follow the redirect once, hits=%d", plainHits.Load())
 	}
 }

@@ -618,6 +618,7 @@ func TestGenerateInstanceTopologyPreservesUpstream4xx(t *testing.T) {
 	for code, want := range map[int]int{
 		http.StatusForbidden:           http.StatusForbidden,
 		http.StatusNotFound:            http.StatusNotFound,
+		http.StatusUnauthorized:        http.StatusBadGateway,
 		http.StatusInternalServerError: http.StatusBadGateway,
 	} {
 		mc := &mockClient{errors: []error{httperr.NewError(code, "boom")}}
