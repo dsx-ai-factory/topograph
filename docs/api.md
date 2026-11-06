@@ -95,6 +95,18 @@ metadata or node-local discovery required by your provider. The node observer
 then skips broker readiness checks. Restart the Topograph deployment after
 changing its configuration.
 
+### Node Data Broker GPU/NIC discovery
+
+The broker's optional `nodeMetadata.plugins.gpuNicMapping` section publishes
+GPU/NIC locality and optional LLDP switch names. In Helm, configure the top-level
+`nodeMetadata.plugins` values, separately from API node identity settings under
+`config.nodeMetadata`. Set `switchSource.name: host-lldp`; the optional
+`switchSource.hostLLDP.socket` defaults to `/var/run/lldpd.socket`. No interface
+regex or rail-ID template is required. The broker publishes PCI-backed NICs with LLDP neighbors, retaining their GPU
+mappings when a neighbor supplies no switch name. See the [plugin configuration and mapping
+contract](reference/gpu-nic-mapping.md#configuration) for GPU source settings,
+refresh behavior, validation, and development migration instructions.
+
 ## API
 
 Topograph exposes five endpoints for interacting with the service. Below are the details of each endpoint:

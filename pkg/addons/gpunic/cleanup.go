@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gpunicrail
+package gpunic
 
 import (
 	"context"
@@ -126,7 +126,7 @@ const CleanupInterval = 10 * time.Minute
 func RunCleanup(ctx context.Context, c *Cleaner, enabled bool, interval time.Duration) {
 	for {
 		if err := c.Reconcile(ctx, enabled); err != nil && ctx.Err() == nil {
-			klog.ErrorS(err, "GPU/NIC rail mapping cleanup failed")
+			klog.ErrorS(err, "GPU/NIC mapping cleanup failed")
 		}
 		select {
 		case <-ctx.Done():

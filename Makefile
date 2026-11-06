@@ -46,6 +46,9 @@ GIT_REF ?=$(shell git describe --tags --exact-match --dirty --match 'v[0-9]*' 2>
   echo unknown)
 GIT_REF := $(GIT_REF)
 IMAGE_TAG ?=$(GIT_REF)
+# Optional override; leave empty to use the Dockerfile's LLDP_VERSION default.
+LLDP_VERSION ?=
+LLDP_BUILD_ARG = $(if $(strip $(LLDP_VERSION)),--build-arg "LLDP_VERSION=$(LLDP_VERSION)")
 
 # Recipe guard for image-push and docker-buildx: on a release tag checkout
 # IMAGE_TAG defaults to vX.Y.Z (or vX.Y.Z-dirty), and pushing that to
@@ -171,7 +174,7 @@ coverage: test
 
 .PHONY: image-build
 image-build:
-	$(DOCKER_BIN) build --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile .
+	$(DOCKER_BIN) build --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH) $(LLDP_BUILD_ARG) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile .
 
 # The guard runs before the build, so image-build is invoked as a sub-make
 # (with the resolved repository and tag) rather than listed as a prerequisite.
@@ -186,7 +189,7 @@ docker-buildx:
 	$(guard-release-image-tag)
 	- $(DOCKER_BIN) buildx create --name=topograph-builder
 	$(DOCKER_BIN) buildx use topograph-builder
-	$(DOCKER_BIN) buildx build --platform $(PLATFORMS) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile --push .
+	$(DOCKER_BIN) buildx build --platform $(PLATFORMS) $(LLDP_BUILD_ARG) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile --push .
 	- $(DOCKER_BIN) buildx rm topograph-builder
 
 .PHONY: ssl

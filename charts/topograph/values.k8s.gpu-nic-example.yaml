@@ -13,15 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Publishes a NodeGPUNICRailMapping per Node: the GPUs closest to each rail's NIC,
+# Publishes a NodeGPUNICMapping per Node: the GPUs closest to each NIC,
 # for the SR-IOV DRA driver. The plugin is independent of the provider and
 # engine below, which only decide how fabric topology is discovered and
-# expressed. See docs/reference/gpu-nic-rail-mapping.md.
+# expressed. See docs/reference/gpu-nic-mapping.md.
 #
 # Prerequisites on every GPU Node:
-#   - lldpd runs on the host and sees the rail NICs' switch neighbors.
-#   - The rail interfaces are named so that interfaceRegex selects exactly the
-#     interfaces that have an LLDP neighbor (here roce_vf_r0, roce_vf_r1, ...).
+#   - lldpd runs on the host; only NICs with neighbors are published,
+#     with switch names included when advertised.
+#   - NICs need no interface naming convention or regex configuration.
 #   - The GPU Operator runs its device plugin DaemonSet, whose pod has nvidia-smi.
 
 provider:
@@ -33,14 +33,12 @@ engine:
 
 nodeMetadata:
   plugins:
-    gpuNicRailMapping:
+    gpuNicMapping:
       enabled: true
       refreshInterval: 10m
-      railSource:
+      switchSource:
         name: host-lldp
         hostLLDP:
-          interfaceRegex: '^roce_vf_r([0-9]+)$'
-          railIDFormat: 'rail-$1'
           socket: /var/run/lldpd.socket
       gpuSource:
         gpuOperatorNamespace: gpu-operator

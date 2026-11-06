@@ -131,12 +131,12 @@ Create the volume name for a generated ConfigMap mount.
 {{- end }}
 
 {{/*
-Whether the gpu-nic-rail-mapping node-metadata plugin is enabled. Renders
+Whether the gpu-nic-mapping node-metadata plugin is enabled. Renders
 "true" or nothing.
 */}}
-{{- define "nodeMetadata.gpuNicRailMapping.enabled" -}}
+{{- define "nodeMetadata.gpuNicMapping.enabled" -}}
 {{- $plugins := default dict (default dict .Values.nodeMetadata).plugins -}}
-{{- if (default dict (get $plugins "gpuNicRailMapping")).enabled -}}true{{- end -}}
+{{- if (default dict (get $plugins "gpuNicMapping")).enabled -}}true{{- end -}}
 {{- end }}
 
 {{/*
@@ -144,14 +144,14 @@ Plugin configuration shared by the broker and the observer. The observer gets
 only the enabled state and the release identity (full=false), which is all it
 needs to clean up.
 */}}
-{{- define "nodeMetadata.gpuNicRailMapping.config" -}}
-{{- $plugin := deepCopy (default dict (get (default dict (default dict .root.Values.nodeMetadata).plugins) "gpuNicRailMapping")) -}}
-{{- $cfg := dict "enabled" (ternary true false (eq (include "nodeMetadata.gpuNicRailMapping.enabled" .root) "true")) "releaseName" .root.Release.Name "namespace" .root.Release.Namespace -}}
+{{- define "nodeMetadata.gpuNicMapping.config" -}}
+{{- $plugin := deepCopy (default dict (get (default dict (default dict .root.Values.nodeMetadata).plugins) "gpuNicMapping")) -}}
+{{- $cfg := dict "enabled" (ternary true false (eq (include "nodeMetadata.gpuNicMapping.enabled" .root) "true")) "releaseName" .root.Release.Name "namespace" .root.Release.Namespace -}}
 {{- if and .full $cfg.enabled -}}
 {{- $_ := set $cfg "refreshInterval" (default "10m" $plugin.refreshInterval) -}}
-{{- $_ := set $plugin.railSource.hostLLDP "socket" (printf "/host/lldpd/%s" (base $plugin.railSource.hostLLDP.socket)) -}}
-{{- $_ := set $cfg "railSource" $plugin.railSource -}}
+{{- $_ := set $plugin.switchSource.hostLLDP "socket" (printf "/host/lldpd/%s" (base $plugin.switchSource.hostLLDP.socket)) -}}
+{{- $_ := set $cfg "switchSource" $plugin.switchSource -}}
 {{- $_ := set $cfg "gpuSource" $plugin.gpuSource -}}
 {{- end -}}
-{{- toYaml (dict "plugins" (dict "gpuNicRailMapping" $cfg)) -}}
+{{- toYaml (dict "plugins" (dict "gpuNicMapping" $cfg)) -}}
 {{- end }}

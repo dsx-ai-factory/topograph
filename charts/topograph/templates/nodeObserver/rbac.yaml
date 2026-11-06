@@ -28,7 +28,7 @@ rules:
   resources: [daemonsets]
   verbs: [list,watch]
 {{- end }}
-{{- if eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true" }}
+{{- if eq (include "nodeMetadata.gpuNicMapping.enabled" .) "true" }}
 # Stale-resource reconciliation compares mapping resources with live Nodes.
 - apiGroups: [""]
   resources: [nodes]

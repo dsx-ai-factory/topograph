@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gpunicrail
+package gpunic
 
 import (
 	"testing"
@@ -25,16 +25,13 @@ import (
 
 const pluginYAML = `
 plugins:
-  gpuNicRailMapping:
+  gpuNicMapping:
     enabled: true
     releaseName: rel
     namespace: topograph
     refreshInterval: 5m
-    railSource:
+    switchSource:
       name: host-lldp
-      hostLLDP:
-        interfaceRegex: '^roce_vf_r([0-9]+)$'
-        railIDFormat: 'rail-$1'
     gpuSource:
       gpuOperatorNamespace: gpu-operator
       daemonSet: nvidia-device-plugin-daemonset
@@ -44,23 +41,20 @@ func TestPluginConfig(t *testing.T) {
 	var c NodeMetadataConfig
 	require.NoError(t, yaml.Unmarshal([]byte(pluginYAML), &c))
 	require.True(t, c.Enabled())
-	p := c.Plugins.GPUNICRailMapping
+	p := c.Plugins.GPUNICMapping
 	require.NoError(t, p.Validate())
 	require.Equal(t, 5*time.Minute, p.RefreshInterval.Duration)
-	require.Equal(t, DefaultLLDPSocket, p.RailSource.HostLLDP.Socket)
-	require.Equal(t, "rail-$1", p.RailSource.HostLLDP.RailIDFormat)
+	require.Equal(t, DefaultLLDPSocket, p.SwitchSource.HostLLDP.Socket)
 
 	for name, mutate := range map[string]func(*PluginConfig){
 		"no release":    func(p *PluginConfig) { p.ReleaseName = "" },
-		"bad source":    func(p *PluginConfig) { p.RailSource.Name = "other" },
-		"no hostLLDP":   func(p *PluginConfig) { p.RailSource.HostLLDP = nil },
-		"bad regex":     func(p *PluginConfig) { p.RailSource.HostLLDP.InterfaceRegex = "(" },
+		"bad source":    func(p *PluginConfig) { p.SwitchSource.Name = "other" },
 		"no gpu source": func(p *PluginConfig) { p.GPUSource.DaemonSet = "" },
 		"bad interval":  func(p *PluginConfig) { p.RefreshInterval.Duration = -time.Second },
 	} {
 		var c NodeMetadataConfig
 		require.NoError(t, yaml.Unmarshal([]byte(pluginYAML), &c))
-		p := c.Plugins.GPUNICRailMapping
+		p := c.Plugins.GPUNICMapping
 		mutate(p)
 		require.Error(t, p.Validate(), name)
 	}
@@ -68,6 +62,6 @@ func TestPluginConfig(t *testing.T) {
 	// A disabled plugin needs only its release identity.
 	off := &PluginConfig{ReleaseName: "rel", Namespace: "ns"}
 	require.NoError(t, off.Validate())
-	require.False(t, (&NodeMetadataConfig{Plugins: PluginsConfig{GPUNICRailMapping: off}}).Enabled())
+	require.False(t, (&NodeMetadataConfig{Plugins: PluginsConfig{GPUNICMapping: off}}).Enabled())
 	require.False(t, (&NodeMetadataConfig{}).Enabled())
 }

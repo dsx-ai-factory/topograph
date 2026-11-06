@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gpunicrail
+package gpunic
 
 import (
 	"fmt"
@@ -26,7 +26,7 @@ import (
 const (
 	DefaultRefreshInterval = 10 * time.Minute
 	DefaultLLDPSocket      = "/var/run/lldpd.socket"
-	RailSourceHostLLDP     = "host-lldp"
+	SwitchSourceHostLLDP   = "host-lldp"
 )
 
 // NodeMetadataConfig is the `nodeMetadata` section of the broker and observer
@@ -37,10 +37,10 @@ type NodeMetadataConfig struct {
 
 // PluginsConfig lists the node-metadata plugins.
 type PluginsConfig struct {
-	GPUNICRailMapping *PluginConfig `json:"gpuNicRailMapping,omitempty"`
+	GPUNICMapping *PluginConfig `json:"gpuNicMapping,omitempty"`
 }
 
-// PluginConfig configures the gpu-nic-rail-mapping plugin.
+// PluginConfig configures the gpu-nic-mapping plugin.
 type PluginConfig struct {
 	Enabled bool `json:"enabled"`
 	// ReleaseName and Namespace identify the Topograph release and the
@@ -48,26 +48,25 @@ type PluginConfig struct {
 	ReleaseName     string          `json:"releaseName,omitempty"`
 	Namespace       string          `json:"namespace,omitempty"`
 	RefreshInterval metav1.Duration `json:"refreshInterval,omitempty"`
-	RailSource      RailSource      `json:"railSource,omitempty"`
+	SwitchSource    SwitchSource    `json:"switchSource,omitempty"`
 	GPUSource       GPUSource       `json:"gpuSource,omitempty"`
 }
 
-// RailSource selects how rails are discovered. Exactly one source is allowed.
-type RailSource struct {
-	Name     string         `json:"name"`
-	HostLLDP *HostLLDPSouce `json:"hostLLDP,omitempty"`
+// SwitchSource selects how NIC switch names are discovered.
+type SwitchSource struct {
+	Name     string          `json:"name"`
+	HostLLDP *HostLLDPSource `json:"hostLLDP,omitempty"`
 }
 
-// HostLLDPSouce configures rail discovery from the host lldpd.
-type HostLLDPSouce struct {
-	RailConfig `json:",inline"`
+// HostLLDPSource configures switch-name discovery from the host lldpd.
+type HostLLDPSource struct {
 	// Socket is the lldpd control socket. Default /var/run/lldpd.socket.
 	Socket string `json:"socket,omitempty"`
 }
 
 // Enabled reports whether c is present and enabled.
 func (c *NodeMetadataConfig) Enabled() bool {
-	p := c.Plugins.GPUNICRailMapping
+	p := c.Plugins.GPUNICMapping
 	return p != nil && p.Enabled
 }
 
@@ -76,7 +75,7 @@ func (c *NodeMetadataConfig) Enabled() bool {
 // resources, and the chart gives it just the enabled flag and the identity.
 func (c *PluginConfig) ValidateIdentity() error {
 	if c.ReleaseName == "" || c.Namespace == "" {
-		return fmt.Errorf("gpuNicRailMapping: releaseName and namespace are required")
+		return fmt.Errorf("gpuNicMapping: releaseName and namespace are required")
 	}
 	return nil
 }
@@ -94,19 +93,19 @@ func (c *PluginConfig) Validate() error {
 		c.RefreshInterval.Duration = DefaultRefreshInterval
 	}
 	if c.RefreshInterval.Duration < 0 {
-		return fmt.Errorf("gpuNicRailMapping: refreshInterval must be positive")
+		return fmt.Errorf("gpuNicMapping: refreshInterval must be positive")
 	}
-	if c.RailSource.Name != RailSourceHostLLDP || c.RailSource.HostLLDP == nil {
-		return fmt.Errorf("gpuNicRailMapping: railSource must select %q with a hostLLDP section", RailSourceHostLLDP)
+	if c.SwitchSource.Name != SwitchSourceHostLLDP {
+		return fmt.Errorf("gpuNicMapping: switchSource must select %q as the switch source", SwitchSourceHostLLDP)
 	}
-	if c.RailSource.HostLLDP.Socket == "" {
-		c.RailSource.HostLLDP.Socket = DefaultLLDPSocket
+	if c.SwitchSource.HostLLDP == nil {
+		c.SwitchSource.HostLLDP = &HostLLDPSource{}
 	}
-	if _, err := NewMatcher(c.RailSource.HostLLDP.RailConfig); err != nil {
-		return fmt.Errorf("gpuNicRailMapping: railSource.hostLLDP: %w", err)
+	if c.SwitchSource.HostLLDP.Socket == "" {
+		c.SwitchSource.HostLLDP.Socket = DefaultLLDPSocket
 	}
 	if c.GPUSource.Namespace == "" || c.GPUSource.DaemonSet == "" {
-		return fmt.Errorf("gpuNicRailMapping: gpuSource.gpuOperatorNamespace and gpuSource.daemonSet are required")
+		return fmt.Errorf("gpuNicMapping: gpuSource.gpuOperatorNamespace and gpuSource.daemonSet are required")
 	}
 	return nil
 }

@@ -284,7 +284,7 @@ func TestGetAnnotationsNscaleDispatchCanceledContext(t *testing.T) {
 	}
 }
 
-func TestNewNodeDataBrokerConfigNICRailPlugin(t *testing.T) {
+func TestNewNodeDataBrokerConfigNICMappingPlugin(t *testing.T) {
 	write := func(plugin string) string {
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		body := "provider:\n  name: test\nhealthzPort: 8080\n" + plugin
@@ -294,15 +294,12 @@ func TestNewNodeDataBrokerConfigNICRailPlugin(t *testing.T) {
 
 	valid := `nodeMetadata:
   plugins:
-    gpuNicRailMapping:
+    gpuNicMapping:
       enabled: true
       releaseName: rel
       namespace: topograph
-      railSource:
+      switchSource:
         name: host-lldp
-        hostLLDP:
-          interfaceRegex: '^roce_vf_r([0-9]+)$'
-          railIDFormat: 'rail-$1'
       gpuSource:
         gpuOperatorNamespace: gpu-operator
         daemonSet: nvidia-device-plugin-daemonset
@@ -310,11 +307,11 @@ func TestNewNodeDataBrokerConfigNICRailPlugin(t *testing.T) {
 	cfg, err := newNodeDataBrokerConfig(write(valid))
 	require.NoError(t, err)
 	require.True(t, cfg.NodeMetadata.Enabled())
-	require.Equal(t, 10*time.Minute, cfg.NodeMetadata.Plugins.GPUNICRailMapping.RefreshInterval.Duration)
+	require.Equal(t, 10*time.Minute, cfg.NodeMetadata.Plugins.GPUNICMapping.RefreshInterval.Duration)
 
-	// An enabled plugin with an invalid rail template fails at startup.
-	_, err = newNodeDataBrokerConfig(write(strings.Replace(valid, "rail-$1", "rail-$2", 1)))
-	require.ErrorContains(t, err, "railSource.hostLLDP")
+	// An enabled plugin with an unsupported switch source fails at startup.
+	_, err = newNodeDataBrokerConfig(write(strings.Replace(valid, "host-lldp", "other", 1)))
+	require.ErrorContains(t, err, "switchSource")
 
 	// Without the section the plugin is off.
 	cfg, err = newNodeDataBrokerConfig(write(""))

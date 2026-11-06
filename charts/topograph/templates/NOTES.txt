@@ -113,3 +113,13 @@ limitations under the License.
    RBAC rendering is disabled; make sure the ServiceAccount already has the required permissions.
 {{- end }}
 {{- end }}
+
+{{- if eq (include "nodeMetadata.gpuNicMapping.enabled" .) "true" }}
+
+  NOTE: GPU/NIC locality discovery is enabled. Each PCI-backed NIC with an LLDP
+        neighbor includes an optional switchName; no interface regex or rail ID is required.
+        Configure host LLDP through nodeMetadata.plugins.gpuNicMapping.switchSource.
+        For an existing development installation, install the renamed
+        nodegpunicmappings CRD and migrate consumers/RBAC before upgrading.
+        Retire previous mapping objects explicitly; Helm does not remove old CRDs.
+{{- end }}

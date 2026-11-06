@@ -15,32 +15,32 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */ -}}
 {{- /*
-Namespaced RBAC of the gpu-nic-rail-mapping plugin. Pod and pods/exec access is
+Namespaced RBAC of the gpu-nic-mapping plugin. Pod and pods/exec access is
 granted only in the GPU Operator namespace and never through a
 ClusterRoleBinding. Reading the broker's own Node is covered by the broker
 ClusterRole.
 */ -}}
-{{- if and .Values.nodeDataBroker.enabled .Values.nodeDataBroker.rbac.create (eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true") }}
-{{- $gpu := .Values.nodeMetadata.plugins.gpuNicRailMapping.gpuSource }}
+{{- if and .Values.nodeDataBroker.enabled .Values.nodeDataBroker.rbac.create (eq (include "nodeMetadata.gpuNicMapping.enabled" .) "true") }}
+{{- $gpu := .Values.nodeMetadata.plugins.gpuNicMapping.gpuSource }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "nodeDataBroker.labels" . | nindent 4 }}
 rules:
 - apiGroups: [topograph.run]
-  resources: [nodegpunicrailmappings]
+  resources: [nodegpunicmappings]
   verbs: [get, create, delete]
 - apiGroups: [topograph.run]
-  resources: [nodegpunicrailmappings/status]
+  resources: [nodegpunicmappings/status]
   verbs: [get, update, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "nodeDataBroker.labels" . | nindent 4 }}
@@ -50,13 +50,13 @@ subjects:
   namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail-gpu
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-gpu
   namespace: {{ $gpu.gpuOperatorNamespace }}
   labels:
     {{- include "nodeDataBroker.labels" . | nindent 4 }}
@@ -75,7 +75,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail-gpu
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-gpu
   namespace: {{ $gpu.gpuOperatorNamespace }}
   labels:
     {{- include "nodeDataBroker.labels" . | nindent 4 }}
@@ -85,6 +85,6 @@ subjects:
   namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail-gpu
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-gpu
   apiGroup: rbac.authorization.k8s.io
 {{- end }}

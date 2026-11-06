@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gpunicrail
+package gpunic
 
 import (
 	"context"
@@ -37,7 +37,7 @@ const ns, release = "topograph", "rel"
 
 func newDynamic(objs ...runtime.Object) *dynamicfake.FakeDynamicClient {
 	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
-		map[schema.GroupVersionResource]string{GVR: "NodeGPUNICRailMappingList"}, objs...)
+		map[schema.GroupVersionResource]string{GVR: "NodeGPUNICMappingList"}, objs...)
 }
 
 func firstGPU(obj *unstructured.Unstructured) string {
@@ -56,7 +56,7 @@ func status(gpu string) *Status {
 	return &Status{
 		Sources: Sources{LLDP: "2026-01-02T03:04:05Z"},
 		NICs: map[string]NICMapping{"0000:3b:00.0": {
-			Interface: "roce_vf_r0", RailID: "rail-0", TopologyTarget: "DD0", MappingMode: ModeDataDirect, BestPath: "PXB",
+			Interface: "roce_vf_r0", SwitchName: "rail-0", TopologyTarget: "DD0", MappingMode: ModeDataDirect, BestPath: "PXB",
 			BestGPUs: []GPU{{UUID: gpu, PCIAddress: "0000:17:00.0"}},
 		}},
 	}
@@ -95,6 +95,31 @@ func TestPublishCreatesAndUpdates(t *testing.T) {
 		updated = updated || a.GetVerb() == "update"
 	}
 	require.True(t, updated)
+}
+
+func TestPublishSwitchNameRefresh(t *testing.T) {
+	ctx := context.Background()
+	dyn := newDynamic()
+	p := &Publisher{Client: dyn, Namespace: ns, Release: release, Node: node("n1", "uid-1")}
+	// Switch changes and disappearance must update the record even when GPU
+	// locality is unchanged and the stored timestamps are still fresh.
+	for _, switchName := range []string{"leaf-01", "leaf-02", "", "leaf-01"} {
+		st := status("GPU-a")
+		n := st.NICs["0000:3b:00.0"]
+		n.SwitchName = switchName
+		st.NICs["0000:3b:00.0"] = n
+		require.NoError(t, p.Publish(ctx, st))
+		obj, err := dyn.Resource(GVR).Namespace(ns).Get(ctx, "node-uid-1", metav1.GetOptions{})
+		require.NoError(t, err)
+		got, found, err := unstructured.NestedString(obj.Object, "status", "nics", "0000:3b:00.0", "switchName")
+		require.NoError(t, err)
+		require.Equal(t, switchName, got)
+		require.Equal(t, switchName != "", found)
+		_, found, err = unstructured.NestedString(obj.Object, "status", "nics", "0000:3b:00.0", "railID")
+		require.NoError(t, err)
+		require.False(t, found)
+		require.Equal(t, "GPU-a", firstGPU(obj))
+	}
 }
 
 func TestPublishRefusesForeignObject(t *testing.T) {

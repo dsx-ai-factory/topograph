@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gpunicrail
+package gpunic
 
 import (
 	"context"
@@ -40,7 +40,7 @@ const (
 	sourcesMaxAge = time.Hour
 )
 
-// Publisher writes the NodeGPUNICRailMapping of one Node.
+// Publisher writes the NodeGPUNICMapping of one Node.
 type Publisher struct {
 	Client    dynamic.Interface
 	Namespace string
@@ -75,7 +75,7 @@ func (p *Publisher) Publish(ctx context.Context, status *Status) error {
 			return fmt.Errorf("refusing to adopt %s/%s: %w", p.Namespace, p.name(), err)
 		}
 		if p.upToDate(obj, status) {
-			klog.V(4).InfoS("GPU/NIC rail mapping is unchanged; skipping status update", "node", p.Node.Name, "resource", klog.KObj(obj))
+			klog.V(4).InfoS("GPU/NIC mapping is unchanged; skipping status update", "node", p.Node.Name, "resource", klog.KObj(obj))
 			return nil
 		}
 		next := obj.DeepCopy()
@@ -88,13 +88,13 @@ func (p *Publisher) Publish(ctx context.Context, status *Status) error {
 		}
 		_, err = res.UpdateStatus(ctx, next, metav1.UpdateOptions{})
 		if err == nil {
-			klog.InfoS("Updated GPU/NIC rail mapping status", "node", p.Node.Name, "resource", klog.KObj(next), "nics", len(status.NICs))
+			klog.InfoS("Updated GPU/NIC mapping status", "node", p.Node.Name, "resource", klog.KObj(next), "nics", len(status.NICs))
 			return nil
 		}
 		if !apierrors.IsConflict(err) || attempt >= maxConflictRetries {
 			return fmt.Errorf("updating status of %s/%s: %w", p.Namespace, p.name(), err)
 		}
-		klog.V(4).InfoS("GPU/NIC rail mapping status update conflicted; retrying", "node", p.Node.Name, "resource", klog.KObj(obj), "retry", attempt+1)
+		klog.V(4).InfoS("GPU/NIC mapping status update conflicted; retrying", "node", p.Node.Name, "resource", klog.KObj(obj), "retry", attempt+1)
 		// Fetch, revalidate and retry.
 		if obj, err = res.Get(ctx, p.name(), metav1.GetOptions{}); err != nil {
 			return fmt.Errorf("getting %s/%s: %w", p.Namespace, p.name(), err)
@@ -164,7 +164,7 @@ func (p *Publisher) Delete(ctx context.Context) error {
 	if err := deleteExact(ctx, res, obj); err != nil {
 		return err
 	}
-	klog.V(2).InfoS("Deleted GPU/NIC rail mapping", "node", p.Node.Name, "resource", klog.KObj(obj))
+	klog.V(2).InfoS("Deleted GPU/NIC mapping", "node", p.Node.Name, "resource", klog.KObj(obj))
 	return nil
 }
 

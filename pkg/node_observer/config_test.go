@@ -262,7 +262,7 @@ trigger:
 	}
 }
 
-func TestNewConfigFromFileGPUNICRailPlugin(t *testing.T) {
+func TestNewConfigFromFileGPUNICPlugin(t *testing.T) {
 	const base = `
 generateTopologyUrl: "http://topograph.default.svc.cluster.local:49021/v1/generate"
 trigger:
@@ -270,7 +270,7 @@ trigger:
     node-role: worker
 nodeMetadata:
   plugins:
-    gpuNicRailMapping:
+    gpuNicMapping:
 `
 	write := func(t *testing.T, plugin string) string {
 		path := filepath.Join(t.TempDir(), "config.yaml")

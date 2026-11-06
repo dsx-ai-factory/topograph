@@ -60,7 +60,8 @@ pkg/
   translate/          # topology.conf and block/tree generation shared by engines
   server/             # HTTP server and request aggregator
   node_observer/      # Kubernetes Node watcher
-  gpunicrail/         # gpu-nic-rail-mapping node-metadata plugin: broker collector/publisher, observer cleanup; independent of topology.Graph
+  addons/             # Optional node-metadata addons, independent of topology.Graph
+    gpunic/           # GPU/NIC locality and optional LLDP switch names; broker collector/publisher, observer cleanup
   ib/                 # InfiniBand fabric discovery helpers
   config/             # Config file parser
   metrics/            # Prometheus metrics
@@ -91,7 +92,7 @@ carries the doc updates named in the Documentation Impact Evaluation table below
 |---|---|
 | Add a provider, or fix or extend an existing one | `pkg/providers/<name>/`, the one-line registry entry in `pkg/registry/registry.go`, and the docs the provider checklist requires: `docs/providers/<name>.md`, the supported providers table in `docs/overview.md`, and a `docs/index.yml` entry when the page is new |
 | Fix a bug or add tests inside an existing engine, without changing its output format | `pkg/engines/<engine>/`, `pkg/translate/` |
-| Server plumbing, config parsing, metrics, shared helpers | `pkg/server/`, `pkg/config/`, `pkg/metrics/`, `pkg/ib/`, `pkg/node_observer/`, `pkg/gpunicrail/`, `internal/` |
+| Server plumbing, config parsing, metrics, shared helpers | `pkg/server/`, `pkg/config/`, `pkg/metrics/`, `pkg/ib/`, `pkg/node_observer/`, `pkg/addons/`, `internal/` |
 | Command-line entry points and flags | `cmd/` |
 | Helm chart templates, values, and the helm-unittest suites and snapshots | `charts/topograph/` |
 | Documentation, release notes, simulation fixtures, demos, build scripts | `docs/`, `CHANGELOG.md`, `tests/models/`, `demos/`, `scripts/` |

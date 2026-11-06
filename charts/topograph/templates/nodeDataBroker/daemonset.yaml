@@ -16,10 +16,10 @@ limitations under the License.
 */ -}}
 {{- if .Values.nodeDataBroker.enabled }}
 {{- $configMapMounts := default list .Values.nodeDataBroker.configMapMounts }}
-{{- $nicRail := eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true" }}
+{{- $nicMapping := eq (include "nodeMetadata.gpuNicMapping.enabled" .) "true" }}
 {{- $lldpSocket := "" }}
-{{- if $nicRail }}
-{{- $lldpSocket = .Values.nodeMetadata.plugins.gpuNicRailMapping.railSource.hostLLDP.socket }}
+{{- if $nicMapping }}
+{{- $lldpSocket = .Values.nodeMetadata.plugins.gpuNicMapping.switchSource.hostLLDP.socket }}
 {{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
@@ -112,7 +112,7 @@ spec:
               {{- end }}
               readOnly: true
             {{- end }}
-            {{- if $nicRail }}
+            {{- if $nicMapping }}
             # Host sysfs resolves interfaces to PCI functions; /sys/class/net
             # alone is not enough because its entries are relative symlinks into
             # /sys/devices.
@@ -137,7 +137,7 @@ spec:
           configMap:
             name: {{ include "nodeDataBroker.configMapMountName" (dict "root" $ "name" .name) }}
         {{- end }}
-        {{- if $nicRail }}
+        {{- if $nicMapping }}
         - name: host-sys
           hostPath:
             path: /sys

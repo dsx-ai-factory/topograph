@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/dsx-ai-factory/topograph/internal/k8s"
-	"github.com/dsx-ai-factory/topograph/pkg/gpunicrail"
+	"github.com/dsx-ai-factory/topograph/pkg/addons/gpunic"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nodelabels"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
@@ -48,7 +48,7 @@ type Config struct {
 	RetryDelay  metav1.Duration   `yaml:"retryDelay"`
 	// NodeMetadata carries the enabled state and release identity of the
 	// node-metadata plugins so the observer can clean up after them.
-	NodeMetadata gpunicrail.NodeMetadataConfig `yaml:"nodeMetadata"`
+	NodeMetadata gpunic.NodeMetadataConfig `yaml:"nodeMetadata"`
 }
 
 type Trigger struct {
@@ -96,7 +96,7 @@ func NewConfigFromFile(fname string) (*Config, error) {
 		return nil, fmt.Errorf("must specify nodeSelector, nodeLabels, nodeReadiness and/or podSelector in trigger, or apiServer.podSelector")
 	}
 
-	if plugin := cfg.NodeMetadata.Plugins.GPUNICRailMapping; plugin != nil {
+	if plugin := cfg.NodeMetadata.Plugins.GPUNICMapping; plugin != nil {
 		// The observer only cleans up; discovery settings belong to the broker.
 		if err := plugin.ValidateIdentity(); err != nil {
 			return nil, err

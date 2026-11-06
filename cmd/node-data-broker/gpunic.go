@@ -23,21 +23,17 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"github.com/dsx-ai-factory/topograph/internal/exec"
-	"github.com/dsx-ai-factory/topograph/pkg/gpunicrail"
+	"github.com/dsx-ai-factory/topograph/pkg/addons/gpunic"
 )
 
 // hostSysfsRoot matches the read-only host sysfs mount in the broker DaemonSet.
 const hostSysfsRoot = "/host/sys"
 
-// newGPUNICRailLoop builds the refresh loop of the gpu-nic-rail-mapping plugin.
-func (b *nodeBroker) newGPUNICRailLoop() (*gpunicrail.Loop, error) {
-	cfg := b.config.NodeMetadata.Plugins.GPUNICRailMapping
+// newGPUNICLoop builds the refresh loop of the gpu-nic-mapping plugin.
+func (b *nodeBroker) newGPUNICLoop() (*gpunic.Loop, error) {
+	cfg := b.config.NodeMetadata.Plugins.GPUNICMapping
 	if b.nodeName == "" {
-		return nil, fmt.Errorf("NODE_NAME must be set for the gpu-nic-rail-mapping plugin")
-	}
-	matcher, err := gpunicrail.NewMatcher(cfg.RailSource.HostLLDP.RailConfig)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("NODE_NAME must be set for the gpu-nic-mapping plugin")
 	}
 	dyn, err := dynamic.NewForConfig(b.restConfig)
 	if err != nil {
@@ -50,22 +46,21 @@ func (b *nodeBroker) newGPUNICRailLoop() (*gpunicrail.Loop, error) {
 		return nil, fmt.Errorf("failed to get node %q: %w", b.nodeName, err)
 	}
 
-	lldp := gpunicrail.NewLLDPRunner(func(ctx context.Context, exe string, args []string) (string, error) {
+	lldp := gpunic.NewLLDPRunner(func(ctx context.Context, exe string, args []string) (string, error) {
 		out, err := exec.Exec(ctx, exe, args, nil)
 		if err != nil {
 			return "", err
 		}
 		return out.String(), nil
-	}, cfg.RailSource.HostLLDP.Socket)
+	}, cfg.SwitchSource.HostLLDP.Socket)
 
-	return &gpunicrail.Loop{
+	return &gpunic.Loop{
 		Interval: cfg.RefreshInterval.Duration,
-		Collector: &gpunicrail.Collector{
-			LLDP:    lldp,
-			GPU:     &gpunicrail.PodRunner{Client: b.clientset, Config: b.restConfig, Source: cfg.GPUSource, NodeName: b.nodeName},
-			Matcher: matcher,
-			Sysfs:   gpunicrail.Sysfs{Root: hostSysfsRoot},
+		Collector: &gpunic.Collector{
+			LLDP:  lldp,
+			GPU:   &gpunic.PodRunner{Client: b.clientset, Config: b.restConfig, Source: cfg.GPUSource, NodeName: b.nodeName},
+			Sysfs: gpunic.Sysfs{Root: hostSysfsRoot},
 		},
-		Publisher: &gpunicrail.Publisher{Client: dyn, Namespace: cfg.Namespace, Release: cfg.ReleaseName, Node: node},
+		Publisher: &gpunic.Publisher{Client: dyn, Namespace: cfg.Namespace, Release: cfg.ReleaseName, Node: node},
 	}, nil
 }

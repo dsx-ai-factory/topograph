@@ -102,23 +102,23 @@ limitations under the License.
 
 {{- end }}
 
-{{- if eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true" }}
-{{- $plugin := .Values.nodeMetadata.plugins.gpuNicRailMapping }}
+{{- if eq (include "nodeMetadata.gpuNicMapping.enabled" .) "true" }}
+{{- $plugin := .Values.nodeMetadata.plugins.gpuNicMapping }}
 {{- if not .Values.nodeDataBroker.enabled }}
-  {{- fail "nodeMetadata.plugins.gpuNicRailMapping requires nodeDataBroker.enabled=true: the broker collects and publishes the mapping" }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping requires nodeDataBroker.enabled=true: the broker collects and publishes the mapping" }}
 {{- end }}
 {{- if not (regexMatch "^([0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h))+$" (toString (default "10m" $plugin.refreshInterval))) }}
-  {{- fail "nodeMetadata.plugins.gpuNicRailMapping.refreshInterval must be a duration such as 10m" }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping.refreshInterval must be a duration such as 10m" }}
 {{- end }}
-{{- if ne (toString $plugin.railSource.name) "host-lldp" }}
-  {{- fail "nodeMetadata.plugins.gpuNicRailMapping.railSource.name must be host-lldp, the only supported rail source" }}
+{{- if ne (toString $plugin.switchSource.name) "host-lldp" }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping.switchSource.name must be host-lldp, the only supported switch source" }}
 {{- end }}
-{{- $lldp := default dict $plugin.railSource.hostLLDP }}
-{{- if or (empty $lldp.interfaceRegex) (empty $lldp.railIDFormat) (empty $lldp.socket) }}
-  {{- fail "nodeMetadata.plugins.gpuNicRailMapping.railSource.hostLLDP requires interfaceRegex, railIDFormat and socket" }}
+{{- $lldp := default dict $plugin.switchSource.hostLLDP }}
+{{- if empty $lldp.socket }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping.switchSource.hostLLDP requires socket" }}
 {{- end }}
 {{- if or (empty $plugin.gpuSource.gpuOperatorNamespace) (empty $plugin.gpuSource.daemonSet) }}
-  {{- fail "nodeMetadata.plugins.gpuNicRailMapping.gpuSource requires gpuOperatorNamespace and daemonSet" }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping.gpuSource requires gpuOperatorNamespace and daemonSet" }}
 {{- end }}
 {{- end }}
 

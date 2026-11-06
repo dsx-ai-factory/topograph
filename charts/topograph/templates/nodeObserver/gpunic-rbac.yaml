@@ -15,7 +15,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */ -}}
 {{- /*
-The observer removes this release's NodeGPUNICRailMapping resources when the
+The observer removes this release's NodeGPUNICMapping resources when the
 plugin is disabled and reconciles stale ones, so it keeps this access even
 while the plugin is disabled.
 */ -}}
@@ -23,19 +23,19 @@ while the plugin is disabled.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "nodeObserver.rbacName" . }}-gpu-nic-rail
+  name: {{ include "nodeObserver.rbacName" . }}-gpu-nic
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "nodeObserver.labels" . | nindent 4 }}
 rules:
 - apiGroups: [topograph.run]
-  resources: [nodegpunicrailmappings]
+  resources: [nodegpunicmappings]
   verbs: [get, list, watch, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "nodeObserver.rbacName" . }}-gpu-nic-rail
+  name: {{ include "nodeObserver.rbacName" . }}-gpu-nic
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "nodeObserver.labels" . | nindent 4 }}
@@ -45,6 +45,6 @@ subjects:
   namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: {{ include "nodeObserver.rbacName" . }}-gpu-nic-rail
+  name: {{ include "nodeObserver.rbacName" . }}-gpu-nic
   apiGroup: rbac.authorization.k8s.io
 {{- end }}

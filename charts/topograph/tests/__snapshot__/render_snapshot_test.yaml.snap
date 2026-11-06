@@ -268,7 +268,7 @@ renders default values.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -316,7 +316,7 @@ renders default values.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: af90f7f60a29585d5a05865dea4c9688f011699be3f5e620607c755d75856fc0
+            checksum/config: 1ff5825c49ba09b30522dbc9565de1742bf732575a08335286e2b0222dd7db80
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -389,13 +389,13 @@ renders default values.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -411,12 +411,12 @@ renders default values.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer
@@ -926,7 +926,7 @@ renders values.k8s.gateway-api-example.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -974,7 +974,7 @@ renders values.k8s.gateway-api-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: af90f7f60a29585d5a05865dea4c9688f011699be3f5e620607c755d75856fc0
+            checksum/config: 1ff5825c49ba09b30522dbc9565de1742bf732575a08335286e2b0222dd7db80
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -1047,13 +1047,13 @@ renders values.k8s.gateway-api-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -1069,12 +1069,12 @@ renders values.k8s.gateway-api-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer
@@ -1586,7 +1586,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -1639,7 +1639,7 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: ba15a323930cbcb06345a08b9e2ad169c91049f0f56184694bacab5e0558bc53
+            checksum/config: 5b1cfa77c1305dba35186f3a4e144216853b701833c7c741ddc724e93d7f01cc
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -1712,13 +1712,13 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -1734,12 +1734,12 @@ renders values.k8s.gcp-federated-workload-identity-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer
@@ -2246,7 +2246,7 @@ renders values.k8s.gcp-service-account-example.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -2297,7 +2297,7 @@ renders values.k8s.gcp-service-account-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 7a7593f832e97663490f9d0c1428f80449dee3580cb758179021c3bb8ab0f1c1
+            checksum/config: 6a3421e5c7d2649b714dfb97ecc794bb74961c46b5e15e287a5559bd9ccd174e
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -2370,13 +2370,13 @@ renders values.k8s.gcp-service-account-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -2392,12 +2392,12 @@ renders values.k8s.gcp-service-account-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer
@@ -2909,7 +2909,7 @@ renders values.k8s.ib-example.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -2963,7 +2963,7 @@ renders values.k8s.ib-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: acfa57a6becba092ea643a71799965bebb160a0335950955eb56d5537ff8e2b6
+            checksum/config: 220afac063f7d2754e437b7adc696d9becb17afd28693b50856cfe8105808226
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -3036,13 +3036,13 @@ renders values.k8s.ib-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -3058,12 +3058,12 @@ renders values.k8s.ib-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer
@@ -3583,7 +3583,7 @@ renders values.slinky.block-example.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -3649,7 +3649,7 @@ renders values.slinky.block-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 70cf01bfaadba31c169e3e29dc57b1cd032dcc5e2009167031e7511fa5104d17
+            checksum/config: 4cdc0cdb92eccc120109552d48721ed1981e900e66581c5d5554c9d6e0d3557f
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -3724,13 +3724,13 @@ renders values.slinky.block-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -3746,12 +3746,12 @@ renders values.slinky.block-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer
@@ -4255,7 +4255,7 @@ renders values.slinky.partition-example.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -4338,7 +4338,7 @@ renders values.slinky.partition-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: f7761da74902baeb8a76f7b2e50b30aacc1b809b72d7c19d9bff29dc151616f8
+            checksum/config: e2d200d5884f7af247ef0749bc00b18acf92238cec1375f7a89c8f0cb6c6e86c
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -4413,13 +4413,13 @@ renders values.slinky.partition-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -4435,12 +4435,12 @@ renders values.slinky.partition-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer
@@ -4945,7 +4945,7 @@ renders values.slinky.tree-example.yaml:
         healthzPort: 8080
         nodeMetadata:
           plugins:
-            gpuNicRailMapping:
+            gpuNicMapping:
               enabled: false
               namespace: topograph
               releaseName: chart-ci
@@ -5003,7 +5003,7 @@ renders values.slinky.tree-example.yaml:
       template:
         metadata:
           annotations:
-            checksum/config: 3aafd546c9003aac3976dfdc88bdc70cd53868d97429837d95f90b71ae226827
+            checksum/config: 28c1b882b984a8399c5a033a74c398a56017d7d2ea06a2aaca12ab688143a6b1
           labels:
             app.kubernetes.io/instance: chart-ci
             app.kubernetes.io/managed-by: Helm
@@ -5078,13 +5078,13 @@ renders values.slinky.tree-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     rules:
       - apiGroups:
           - topograph.run
         resources:
-          - nodegpunicrailmappings
+          - nodegpunicmappings
         verbs:
           - get
           - list
@@ -5100,12 +5100,12 @@ renders values.slinky.tree-example.yaml:
         app.kubernetes.io/name: node-observer
         app.kubernetes.io/version: v0.0.0
         helm.sh/chart: node-observer-0.0.0
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
       namespace: topograph
     roleRef:
       apiGroup: rbac.authorization.k8s.io
       kind: Role
-      name: chart-ci-topograph-node-observer-gpu-nic-rail
+      name: chart-ci-topograph-node-observer-gpu-nic
     subjects:
       - kind: ServiceAccount
         name: chart-ci-topograph-node-observer

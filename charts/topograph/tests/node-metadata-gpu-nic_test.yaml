@@ -13,16 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-suite: gpu-nic-rail-mapping node-metadata plugin
+suite: gpu-nic-mapping node-metadata plugin
 release:
   name: chart-ci
   namespace: topograph
 templates:
   - templates/nodeDataBroker/configmap.yaml
   - templates/nodeDataBroker/daemonset.yaml
-  - templates/nodeDataBroker/gpunicrail-rbac.yaml
+  - templates/nodeDataBroker/gpunic-rbac.yaml
   - templates/nodeObserver/configmap.yml
-  - templates/nodeObserver/gpunicrail-rbac.yaml
+  - templates/nodeObserver/gpunic-rbac.yaml
   - templates/nodeObserver/rbac.yaml
   - templates/deployment.yaml
   - templates/configmap.yml
@@ -43,7 +43,7 @@ tests:
           value: /healthz
 
   - it: renders no broker RBAC while disabled
-    template: templates/nodeDataBroker/gpunicrail-rbac.yaml
+    template: templates/nodeDataBroker/gpunic-rbac.yaml
     asserts:
       - hasDocuments:
           count: 0
@@ -54,10 +54,10 @@ tests:
     asserts:
       - matchRegex:
           path: data["node-observer-config.yaml"]
-          pattern: "gpuNicRailMapping:\n +enabled: false\n +namespace: topograph\n +releaseName: chart-ci"
+          pattern: "gpuNicMapping:\n +enabled: false\n +namespace: topograph\n +releaseName: chart-ci"
 
   - it: grants the observer namespaced cleanup access only on mapping resources
-    template: templates/nodeObserver/gpunicrail-rbac.yaml
+    template: templates/nodeObserver/gpunic-rbac.yaml
     documentIndex: 0
     asserts:
       - equal:
@@ -67,18 +67,16 @@ tests:
           path: rules
           content:
             apiGroups: [topograph.run]
-            resources: [nodegpunicrailmappings]
+            resources: [nodegpunicmappings]
             verbs: [get, list, watch, delete]
 
   - it: configures the broker, mounts and observer when enabled
     set: &enabled
-      nodeMetadata.plugins.gpuNicRailMapping:
+      nodeMetadata.plugins.gpuNicMapping:
         enabled: true
-        railSource:
+        switchSource:
           name: host-lldp
           hostLLDP:
-            interfaceRegex: '^roce_vf_r([0-9]+)$'
-            railIDFormat: 'rail-$1'
             socket: /var/run/lldpd.socket
         gpuSource:
           gpuOperatorNamespace: gpu-operator
@@ -86,15 +84,15 @@ tests:
     asserts:
       - matchRegex:
           path: data["node-data-broker-config.yaml"]
-          pattern: "interfaceRegex: \\^roce_vf_r\\(\\[0-9\\]\\+\\)\\$"
+          pattern: "switchSource:"
         template: templates/nodeDataBroker/configmap.yaml
       - matchRegex:
           path: data["node-observer-config.yaml"]
-          pattern: "gpuNicRailMapping:\n +enabled: true"
+          pattern: "gpuNicMapping:\n +enabled: true"
         template: templates/nodeObserver/configmap.yml
       - notMatchRegex:
           path: data["node-observer-config.yaml"]
-          pattern: "interfaceRegex"
+          pattern: "switchSource"
         template: templates/nodeObserver/configmap.yml
       - contains:
           path: spec.template.spec.volumes
@@ -152,9 +150,9 @@ tests:
 
   - it: resolves a custom host socket through its directory mount
     values:
-      - ../values.k8s.gpu-nic-rail-example.yaml
+      - ../values.k8s.gpu-nic-example.yaml
     set:
-      nodeMetadata.plugins.gpuNicRailMapping.railSource.hostLLDP.socket: /run/custom-lldpd/control.sock
+      nodeMetadata.plugins.gpuNicMapping.switchSource.hostLLDP.socket: /run/custom-lldpd/control.sock
     asserts:
       - contains:
           path: spec.template.spec.volumes
@@ -171,7 +169,7 @@ tests:
 
   - it: grants pod exec only through a Role in the GPU Operator namespace
     set: *enabled
-    template: templates/nodeDataBroker/gpunicrail-rbac.yaml
+    template: templates/nodeDataBroker/gpunic-rbac.yaml
     asserts:
       - hasDocuments:
           count: 4
@@ -214,14 +212,14 @@ tests:
           path: rules
           content:
             apiGroups: [topograph.run]
-            resources: [nodegpunicrailmappings]
+            resources: [nodegpunicmappings]
             verbs: [get, create, delete]
         documentIndex: 0
       - contains:
           path: rules
           content:
             apiGroups: [topograph.run]
-            resources: [nodegpunicrailmappings/status]
+            resources: [nodegpunicmappings/status]
             verbs: [get, update, patch]
         documentIndex: 0
 
@@ -240,27 +238,31 @@ tests:
   - it: rejects the plugin without a broker
     set:
       nodeDataBroker.enabled: false
-      nodeMetadata.plugins.gpuNicRailMapping:
+      nodeMetadata.plugins.gpuNicMapping:
         enabled: true
     template: templates/deployment.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "nodeMetadata.plugins.gpuNicRailMapping requires nodeDataBroker.enabled=true: the broker collects and publishes the mapping"
+          errorMessage: "nodeMetadata.plugins.gpuNicMapping requires nodeDataBroker.enabled=true: the broker collects and publishes the mapping"
 
-  - it: rejects a missing interface regex
+  - it: enables discovery with defaults and no interface naming configuration
     set:
-      nodeMetadata.plugins.gpuNicRailMapping.enabled: true
-    template: templates/deployment.yaml
+      nodeMetadata.plugins.gpuNicMapping.enabled: true
+    template: templates/nodeDataBroker/configmap.yaml
     asserts:
-      - failedTemplate:
-          errorMessage: "nodeMetadata.plugins.gpuNicRailMapping.railSource.hostLLDP requires interfaceRegex, railIDFormat and socket"
+      - matchRegex:
+          path: data["node-data-broker-config.yaml"]
+          pattern: "switchSource:"
+      - notMatchRegex:
+          path: data["node-data-broker-config.yaml"]
+          pattern: "interfaceRegex|railIDFormat|railSource"
 
   - it: rejects an invalid refresh interval
     set:
-      nodeMetadata.plugins.gpuNicRailMapping:
+      nodeMetadata.plugins.gpuNicMapping:
         enabled: true
         refreshInterval: soon
     template: templates/deployment.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "nodeMetadata.plugins.gpuNicRailMapping.refreshInterval must be a duration such as 10m"
+          errorMessage: "nodeMetadata.plugins.gpuNicMapping.refreshInterval must be a duration such as 10m"

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gpunicrail
+package gpunic
 
 import (
 	"context"
@@ -37,20 +37,20 @@ type Loop struct {
 // Run reconciles once, then every Interval. A failed refresh keeps the last
 // published record and is logged and retried with backoff.
 func (l *Loop) Run(ctx context.Context) {
-	klog.InfoS("Starting GPU/NIC rail mapping refresh loop", "node", l.Publisher.Node.Name, "interval", l.Interval)
+	klog.InfoS("Starting GPU/NIC mapping refresh loop", "node", l.Publisher.Node.Name, "interval", l.Interval)
 	backoff := initialBackoff
 	for {
 		wait := l.Interval
 		if err := l.Once(ctx); err != nil {
 			wait = min(backoff, l.Interval)
-			klog.ErrorS(err, "GPU/NIC rail mapping refresh failed; keeping the previous record", "node", l.Publisher.Node.Name, "retryAfter", wait)
+			klog.ErrorS(err, "GPU/NIC mapping refresh failed; keeping the previous record", "node", l.Publisher.Node.Name, "retryAfter", wait)
 			backoff = min(backoff*2, maxBackoff)
 		} else {
 			backoff = initialBackoff
 		}
 		select {
 		case <-ctx.Done():
-			klog.InfoS("Stopped GPU/NIC rail mapping refresh loop", "node", l.Publisher.Node.Name)
+			klog.InfoS("Stopped GPU/NIC mapping refresh loop", "node", l.Publisher.Node.Name)
 			return
 		case <-time.After(wait):
 		}
@@ -61,18 +61,18 @@ func (l *Loop) Run(ctx context.Context) {
 // is selected.
 func (l *Loop) Once(ctx context.Context) error {
 	started := time.Now()
-	klog.InfoS("Refreshing GPU/NIC rail mapping", "node", l.Publisher.Node.Name)
+	klog.InfoS("Refreshing GPU/NIC mapping", "node", l.Publisher.Node.Name)
 	status, err := l.Collector.Collect(ctx)
 	if err != nil {
 		return err
 	}
 	if status == nil {
-		klog.InfoS("No rail interfaces selected; removing GPU/NIC rail mapping", "node", l.Publisher.Node.Name)
+		klog.InfoS("No PCI-backed NICs with LLDP neighbors; removing GPU/NIC mapping", "node", l.Publisher.Node.Name)
 		return l.Publisher.Delete(ctx)
 	}
 	if err := l.Publisher.Publish(ctx, status); err != nil {
 		return err
 	}
-	klog.InfoS("Completed GPU/NIC rail mapping refresh", "node", l.Publisher.Node.Name, "nics", len(status.NICs), "elapsed", time.Since(started))
+	klog.InfoS("Completed GPU/NIC mapping refresh", "node", l.Publisher.Node.Name, "nics", len(status.NICs), "elapsed", time.Since(started))
 	return nil
 }

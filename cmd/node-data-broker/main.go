@@ -35,7 +35,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/internal/healthz"
 	"github.com/dsx-ai-factory/topograph/internal/version"
 	"github.com/dsx-ai-factory/topograph/pkg/accelerator"
-	"github.com/dsx-ai-factory/topograph/pkg/gpunicrail"
+	"github.com/dsx-ai-factory/topograph/pkg/addons/gpunic"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/aws"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/crusoe"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dra"
@@ -59,9 +59,9 @@ type nodeBroker struct {
 }
 
 type nodeDataBrokerConfig struct {
-	Provider     topology.Provider             `yaml:"provider"`
-	HealthzPort  int                           `yaml:"healthzPort"`
-	NodeMetadata gpunicrail.NodeMetadataConfig `yaml:"nodeMetadata"`
+	Provider     topology.Provider         `yaml:"provider"`
+	HealthzPort  int                       `yaml:"healthzPort"`
+	NodeMetadata gpunic.NodeMetadataConfig `yaml:"nodeMetadata"`
 }
 
 func main() {
@@ -106,7 +106,7 @@ func newNodeDataBrokerConfig(path string) (nodeDataBrokerConfig, error) {
 	if config.HealthzPort <= 0 {
 		return nodeDataBrokerConfig{}, fmt.Errorf("must specify a positive healthzPort")
 	}
-	if plugin := config.NodeMetadata.Plugins.GPUNICRailMapping; plugin != nil && plugin.Enabled {
+	if plugin := config.NodeMetadata.Plugins.GPUNICMapping; plugin != nil && plugin.Enabled {
 		if err := plugin.Validate(); err != nil {
 			return nodeDataBrokerConfig{}, err
 		}
@@ -135,7 +135,7 @@ func mainInternal(brokerConfig nodeDataBrokerConfig) error {
 	}
 
 	if brokerConfig.NodeMetadata.Enabled() {
-		loop, err := broker.newGPUNICRailLoop()
+		loop, err := broker.newGPUNICLoop()
 		if err != nil {
 			return err
 		}

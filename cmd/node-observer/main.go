@@ -31,7 +31,7 @@ import (
 
 	"github.com/dsx-ai-factory/topograph/internal/healthz"
 	"github.com/dsx-ai-factory/topograph/internal/version"
-	"github.com/dsx-ai-factory/topograph/pkg/gpunicrail"
+	"github.com/dsx-ai-factory/topograph/pkg/addons/gpunic"
 	"github.com/dsx-ai-factory/topograph/pkg/node_observer"
 )
 
@@ -87,16 +87,16 @@ func mainInternal(c string) error {
 	// Controller
 	g.Add(controller.Start, controller.Stop)
 
-	// Cleanup of gpu-nic-rail-mapping resources
-	if plugin := cfg.NodeMetadata.Plugins.GPUNICRailMapping; plugin != nil {
+	// Cleanup of gpu-nic-mapping resources
+	if plugin := cfg.NodeMetadata.Plugins.GPUNICMapping; plugin != nil {
 		dyn, err := dynamic.NewForConfig(konfig)
 		if err != nil {
 			return err
 		}
-		cleaner := &gpunicrail.Cleaner{Dynamic: dyn, Kube: kubeClient, Namespace: plugin.Namespace, Release: plugin.ReleaseName}
+		cleaner := &gpunic.Cleaner{Dynamic: dyn, Kube: kubeClient, Namespace: plugin.Namespace, Release: plugin.ReleaseName}
 		cleanCtx, cleanCancel := context.WithCancel(ctx)
 		g.Add(func() error {
-			gpunicrail.RunCleanup(cleanCtx, cleaner, plugin.Enabled, gpunicrail.CleanupInterval)
+			gpunic.RunCleanup(cleanCtx, cleaner, plugin.Enabled, gpunic.CleanupInterval)
 			return nil
 		}, func(error) { cleanCancel() })
 	}

@@ -194,6 +194,23 @@ require maintainer coordination first — see
 
 ## Building Container Images
 
+The Dockerfile accepts `LLDP_VERSION` to select the `lldpd` package version
+(default `1.0.18-*`, allowing Ubuntu package revisions). The selected version
+must be available in the Ubuntu 24.04 repositories and compatible with the
+host daemon's control protocol. For example:
+
+```bash
+docker build --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 \
+  --build-arg 'LLDP_VERSION=1.0.18-*' -t topograph:dev .
+```
+
+The Makefile also forwards an optional `LLDP_VERSION` override for `image-build`,
+`image-push`, and `docker-buildx`. Omit it to use the Dockerfile's default:
+
+```bash
+make image-build 'LLDP_VERSION=1.0.18-*'
+```
+
 ```bash
 make image-build     # builds ghcr.io/dsx-ai-factory/topograph:<version> for host OS/arch
 make image-push       # image-build, then docker push

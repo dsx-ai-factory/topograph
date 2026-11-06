@@ -13,13 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package gpunicrail implements the gpu-nic-rail-mapping node-metadata plugin.
+// Package gpunic implements the gpu-nic-mapping node-metadata plugin.
 //
-// The plugin joins two node-local sources, LLDP neighbors (which NIC sits on
-// which rail) and the nvidia-smi topology matrix (which GPU is closest to each
-// NIC), and publishes the result as one NodeGPUNICRailMapping custom resource per
-// Node. It is independent of the topology provider and of topology.Graph.
-package gpunicrail
+// The plugin joins two node-local sources, LLDP neighbors (optional switch
+// names) and the nvidia-smi topology matrix (which GPU is closest to each NIC),
+// and publishes one NodeGPUNICMapping custom resource per Node. It is
+// independent of the topology provider and of topology.Graph.
+package gpunic
 
 import (
 	"fmt"
@@ -30,12 +30,12 @@ import (
 
 const (
 	// PluginName is the value of the PluginLabel on every resource the plugin manages.
-	PluginName = "gpu-nic-rail-mapping"
+	PluginName = "gpu-nic-mapping"
 
 	Group    = "topograph.run"
 	Version  = "v1alpha1"
-	Kind     = "NodeGPUNICRailMapping"
-	Resource = "nodegpunicrailmappings"
+	Kind     = "NodeGPUNICMapping"
+	Resource = "nodegpunicmappings"
 
 	PluginLabel      = "topograph.run/node-metadata-plugin"
 	NodeUIDLabel     = "topograph.run/node-uid"
@@ -46,7 +46,7 @@ const (
 	resourceNamePref = "node-"
 )
 
-// GVR identifies the NodeGPUNICRailMapping resource.
+// GVR identifies the NodeGPUNICMapping resource.
 var GVR = schema.GroupVersionResource{Group: Group, Version: Version, Resource: Resource}
 
 // Mapping modes.
@@ -74,7 +74,7 @@ type GPU struct {
 // NICMapping is the mapping record of one NIC.
 type NICMapping struct {
 	Interface      string `json:"interface"`
-	RailID         string `json:"railID"`
+	SwitchName     string `json:"switchName,omitempty"`
 	TopologyTarget string `json:"topologyTarget,omitempty"`
 	MappingMode    string `json:"mappingMode"`
 	BestPath       string `json:"bestPath,omitempty"`
@@ -96,19 +96,14 @@ type Status struct {
 
 // Validate enforces the cross-field invariants that the CRD schema cannot.
 func (s *Status) Validate() error {
-	rails := make(map[string]string, len(s.NICs))
 	for pci, n := range s.NICs {
 		norm, err := NormalizePCI(pci)
 		if err != nil || norm != pci {
 			return fmt.Errorf("nics key %q is not a normalized PCI address", pci)
 		}
-		if n.Interface == "" || n.RailID == "" {
-			return fmt.Errorf("nic %s: interface and railID are required", pci)
+		if n.Interface == "" {
+			return fmt.Errorf("nic %s: interface is required", pci)
 		}
-		if other, dup := rails[n.RailID]; dup {
-			return fmt.Errorf("railID %q is used by both %s and %s", n.RailID, other, pci)
-		}
-		rails[n.RailID] = pci
 		switch n.MappingMode {
 		case ModeNone:
 			if n.TopologyTarget != "" || n.BestPath != "" || len(n.BestGPUs) != 0 {
@@ -141,7 +136,7 @@ func sameMapping(a, b Status) bool {
 	}
 	for k, av := range a.NICs {
 		bv, ok := b.NICs[k]
-		if !ok || av.Interface != bv.Interface || av.RailID != bv.RailID ||
+		if !ok || av.Interface != bv.Interface || av.SwitchName != bv.SwitchName ||
 			av.TopologyTarget != bv.TopologyTarget || av.MappingMode != bv.MappingMode ||
 			av.BestPath != bv.BestPath || !slices.Equal(av.BestGPUs, bv.BestGPUs) {
 			return false
