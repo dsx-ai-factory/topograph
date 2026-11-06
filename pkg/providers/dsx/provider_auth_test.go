@@ -16,26 +16,40 @@
 package dsx
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"k8s.io/klog/v2"
+
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/pkg/providers"
 )
 
 func TestClientCredentials(t *testing.T) {
-	var tokenCalls int
-	var gotPath, gotAuth, gotPageSize string
+	// The handlers run on server goroutines, so mu guards what they record.
+	var (
+		mu                            sync.Mutex
+		tokenCalls                    int
+		gotPath, gotAuth, gotPageSize string
+	)
 
 	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
 			w.Write([]byte(`{"token_endpoint":"http://` + r.Host + `/token"}`))
 		case "/token":
+			mu.Lock()
 			tokenCalls++
+			mu.Unlock()
 			user, pass, _ := r.BasicAuth()
 			if user != "id" || pass != "secret" {
 				http.Error(w, `{"error":"invalid_client"}`, http.StatusUnauthorized)
@@ -48,7 +62,9 @@ func TestClientCredentials(t *testing.T) {
 	defer idp.Close()
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		gotPath, gotAuth, gotPageSize = r.URL.EscapedPath(), r.Header.Get("Authorization"), r.URL.Query().Get("page_size")
+		mu.Unlock()
 		w.Write([]byte(`{"switches":[{"leaf1":{"nodes":[{"node_id":"n1"}]}}]}`))
 	}))
 	defer api.Close()
@@ -66,6 +82,7 @@ func TestClientCredentials(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	mu.Lock()
 	if gotPath != "/v1/topology/vpcs/vpc-1/nodes" {
 		t.Errorf("path = %q", gotPath)
 	}
@@ -78,22 +95,55 @@ func TestClientCredentials(t *testing.T) {
 	if tokenCalls != 1 {
 		t.Errorf("token endpoint called %d times, want 1 (cached)", tokenCalls)
 	}
+	mu.Unlock()
+
+	// The token endpoint rejects the client: the failure is an upstream one, so 502.
+	p, herr = Loader(context.Background(), providersConfig(map[string]any{
+		"base_url": api.URL, "vpc_id": "vpc-1",
+	}, map[string]any{"client_id": "id", "client_secret": "wrong", "issuer_url": idp.URL}))
+	if herr != nil {
+		t.Fatal(herr)
+	}
+	prov = p.(*Provider)
+	c, _ := prov.clientFactory()
+	_, err := c.GetTopology(context.Background(), prov.vpcID, 0, "")
+	var he *httperr.Error
+	if !errors.As(err, &he) || he.Code() != http.StatusBadGateway {
+		t.Errorf("rejected token request: error = %v, want an httperr.Error with status %d", err, http.StatusBadGateway)
+	}
 }
 
 func TestLoaderCredentialValidation(t *testing.T) {
 	base := map[string]any{"base_url": "https://x", "vpc_id": "vpc-1"}
-	for name, creds := range map[string]map[string]any{
-		"id without secret": {"client_id": "a", "issuer_url": "http://i"},
-		"token and client":  {"token": "t", "client_id": "a", "client_secret": "b", "issuer_url": "http://i"},
-		"bad scopes type":   {"client_id": "a", "client_secret": "b", "issuer_url": "http://i", "scopes": 5},
+	// Each case uses an https issuer, so issuer validation cannot make it pass by accident.
+	for name, tc := range map[string]struct {
+		creds map[string]any
+		want  string
+	}{
+		"id without secret": {
+			creds: map[string]any{"client_id": "a", "issuer_url": "https://i"},
+			want:  "client ID and client secret are required",
+		},
+		"bad scopes type": {
+			creds: map[string]any{"client_id": "a", "client_secret": "b", "issuer_url": "https://i", "scopes": 5},
+			want:  "scopes a list or a string",
+		},
 	} {
-		if _, err := Loader(context.Background(), providersConfig(base, creds)); err == nil {
-			t.Errorf("%s: expected error", name)
+		if _, err := Loader(context.Background(), providersConfig(base, tc.creds)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: expected %q, got %v", name, tc.want, err)
 		}
 	}
 	if _, err := Loader(context.Background(), providersConfig(map[string]any{"base_url": "https://x", "vpc_id": "vpc-1"},
 		map[string]any{"client_id": "a", "client_secret": "b"})); err == nil || !strings.Contains(err.Error(), "issuer URL") {
 		t.Errorf("expected issuer_url error, got %v", err)
+	}
+
+	// An https issuer, so URL validation cannot mask the mutual-exclusion check.
+	_, err := Loader(context.Background(), providersConfig(base,
+		map[string]any{"token": "t", "client_id": "a", "client_secret": "b", "issuer_url": "https://i"}))
+	if err == nil || err.Code() != http.StatusBadRequest ||
+		!strings.Contains(err.Error(), "provide either 'token' or the OAuth2 client credentials, not both") {
+		t.Errorf("expected token/client conflict error, got %v", err)
 	}
 }
 
@@ -102,13 +152,14 @@ func providersConfig(params, creds map[string]any) providers.Config {
 }
 
 func TestLoaderVPCID(t *testing.T) {
-	for _, bad := range []string{"", "a/b", "..", "a?b", "a%2fb"} {
+	for _, bad := range []string{"", "a/b", ".", "..", "a?b", "a%2fb", "-a", " a", "a b", "a\n", "a\nb"} {
 		params := map[string]any{"base_url": "https://x"}
 		if bad != "" {
 			params["vpc_id"] = bad
 		}
-		if _, err := Loader(context.Background(), providersConfig(params, nil)); err == nil {
-			t.Errorf("vpc_id %q: expected error", bad)
+		_, err := Loader(context.Background(), providersConfig(params, nil))
+		if err == nil || err.Code() != http.StatusBadRequest {
+			t.Errorf("vpc_id %q: error = %v, want status %d", bad, err, http.StatusBadRequest)
 		}
 	}
 	if _, err := Loader(context.Background(), providersConfig(map[string]any{"base_url": "https://x", "vpc_id": "vpc-1.a_b"}, nil)); err != nil {
@@ -135,29 +186,58 @@ func TestBaseURLPathPrefixPreserved(t *testing.T) {
 
 func TestLoaderRejectsUnusedAuthSettings(t *testing.T) {
 	base := map[string]any{"base_url": "https://x", "vpc_id": "vpc-1"}
-	for name, creds := range map[string]map[string]any{
-		"issuer without client": {"issuer_url": "https://i"},
-		"scopes without client": {"scopes": []any{"a"}},
-		"token with issuer":     {"token": "t", "issuer_url": "https://i"},
+	const missingClient = "client ID and client secret are required"
+	for name, tc := range map[string]struct {
+		creds map[string]any
+		want  string
+	}{
+		"issuer without client": {map[string]any{"issuer_url": "https://i"}, missingClient},
+		"scopes without client": {map[string]any{"scopes": []any{"a"}}, missingClient},
+		"token with issuer": {
+			map[string]any{"token": "t", "issuer_url": "https://i"},
+			"provide either 'token' or the OAuth2 client credentials, not both",
+		},
 	} {
-		if _, err := Loader(context.Background(), providersConfig(base, creds)); err == nil {
-			t.Errorf("%s: expected error", name)
+		_, err := Loader(context.Background(), providersConfig(base, tc.creds))
+		if err == nil || err.Code() != http.StatusBadRequest || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want status %d containing %q", name, err, http.StatusBadRequest, tc.want)
 		}
 	}
 }
 
 func TestMissingNodesWarningAndMultiParent(t *testing.T) {
-	// Smoke test: neither helper may panic and the multi-parent child keeps the last parent.
+	// A switch listed under two parents keeps the last one.
 	sw := []map[string]SwitchAdjacency{
 		{"s1": {Switches: []string{"leaf"}}},
 		{"s2": {Switches: []string{"leaf"}}},
 		{"leaf": {Nodes: []NodeInfo{{NodeID: "n1"}}}},
 	}
 	want := map[string]struct{}{"n1": {}, "missing": {}}
+
+	var buf bytes.Buffer
+	klog.LogToStderr(false)
+	klog.SetOutput(&buf)
+	defer klog.LogToStderr(true)
 	warnMissingNodes(sw, want)
+	klog.Flush()
+	if out := buf.String(); !strings.Contains(out, "no topology for 1 of 2 requested nodes") || !strings.Contains(out, "missing") {
+		t.Errorf("missing-node warning not logged: %q", out)
+	}
+
 	topo := buildClusterTopology(sw, want)
 	if topo.Len() != 1 {
 		t.Fatalf("Len = %d, want 1", topo.Len())
+	}
+	inst := topo.Instances[0]
+	if inst.InstanceID != "n1" {
+		t.Errorf("InstanceID = %q, want n1", inst.InstanceID)
+	}
+	var tiers []string
+	for _, ft := range inst.FabricTiers {
+		tiers = append(tiers, ft.ID)
+	}
+	if !reflect.DeepEqual(tiers, []string{"leaf", "s2"}) {
+		t.Errorf("FabricTiers = %v, want [leaf s2]", tiers)
 	}
 }
 
@@ -166,14 +246,63 @@ func TestTokenFailureSurfacesAsBadGateway(t *testing.T) {
 	c := NewHTTPClientWithTokenSource("http://127.0.0.1:1", failing)
 	_, err := c.GetTopology(context.Background(), "vpc-1", 0, "")
 	if err == nil || !strings.Contains(err.Error(), "access token") {
-		t.Errorf("expected access token error, got %v", err)
+		t.Fatalf("expected access token error, got %v", err)
+	}
+	var herr *httperr.Error
+	if !errors.As(err, &herr) || herr.Code() != http.StatusBadGateway {
+		t.Errorf("error = %v, want an httperr.Error with status %d", err, http.StatusBadGateway)
+	}
+}
+
+// TestTokenSourceCancellation checks that cancelling the caller's context ends a
+// call that is waiting for a token: GetTopology returns promptly, the token
+// source runs once, and no request reaches the API.
+func TestTokenSourceCancellation(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+
+	var calls atomic.Int32
+	waiting := make(chan struct{})
+	tokenFn := func(ctx context.Context) (string, error) {
+		calls.Add(1)
+		close(waiting)
+		<-ctx.Done() // hold until the caller's cancellation reaches the token source
+		return "", ctx.Err()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := NewHTTPClientWithTokenSource(srv.URL, tokenFn).GetTopology(ctx, "vpc-1", 0, "")
+		done <- err
+	}()
+
+	<-waiting // the token source is blocked; now cancel the caller's context
+	cancel()
+
+	select {
+	case err := <-done:
+		var herr *httperr.Error
+		if !errors.As(err, &herr) || herr.Code() != http.StatusBadGateway {
+			t.Errorf("error = %v, want an httperr.Error with status %d", err, http.StatusBadGateway)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("GetTopology did not return promptly after context cancellation")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("token source called %d times, want 1", n)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("API received %d requests, want 0", n)
 	}
 }
 
 func TestLoaderBaseURLValidation(t *testing.T) {
 	for _, bad := range []string{"", "topology.example.com", "ftp://x", "https://"} {
-		if _, err := Loader(context.Background(), providersConfig(map[string]any{"base_url": bad, "vpc_id": "vpc-1"}, nil)); err == nil {
-			t.Errorf("base_url %q: expected error", bad)
+		_, err := Loader(context.Background(), providersConfig(map[string]any{"base_url": bad, "vpc_id": "vpc-1"}, nil))
+		if err == nil || err.Code() != http.StatusBadRequest {
+			t.Errorf("base_url %q: error = %v, want status %d", bad, err, http.StatusBadRequest)
 		}
 	}
 
@@ -186,8 +315,9 @@ func TestLoaderBaseURLValidation(t *testing.T) {
 		"token": {"token": "t"},
 		"oauth": {"client_id": "a", "client_secret": "b", "issuer_url": "https://i"},
 	} {
-		if _, err := Loader(context.Background(), providersConfig(map[string]any{"base_url": "http://topology.svc:8080", "vpc_id": "vpc-1"}, creds)); err == nil {
-			t.Errorf("http with %s credentials: expected error", name)
+		_, err := Loader(context.Background(), providersConfig(map[string]any{"base_url": "http://topology.svc:8080", "vpc_id": "vpc-1"}, creds))
+		if err == nil || err.Code() != http.StatusBadRequest {
+			t.Errorf("http with %s credentials: error = %v, want status %d", name, err, http.StatusBadRequest)
 		}
 	}
 }

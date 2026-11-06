@@ -27,7 +27,6 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mitchellh/mapstructure"
@@ -129,16 +128,22 @@ func NewClientCredentialsSource(cfg Config) (TokenFunc, error) {
 		return nil, err
 	}
 	var (
-		mu  sync.Mutex
-		src oauth2.TokenSource
+		// lock is a one-slot semaphore, not a sync.Mutex, so a caller waiting
+		// behind a slow discovery can give up when its ctx ends.
+		lock = make(chan struct{}, 1)
+		src  oauth2.TokenSource
 	)
 
 	// source returns the cached token source, resolving the endpoint on first
 	// use. The lock is held only for discovery (bounded by authTimeout and the
 	// caller's ctx), never for the token request itself.
 	source := func(ctx context.Context) (oauth2.TokenSource, error) {
-		mu.Lock()
-		defer mu.Unlock()
+		select {
+		case lock <- struct{}{}:
+			defer func() { <-lock }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		if src != nil {
 			return src, nil
 		}

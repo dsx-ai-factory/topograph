@@ -6,7 +6,12 @@ The provider calls `GET /v1/topology/vpcs/{vpc_id}/nodes`, which returns an orde
 
 The caller's org must own the VPC; otherwise the API returns `403`. The `Region` field on each node group in the request is not used.
 
-With the Slurm engine, the provider takes the Slurm node names as the DSX node IDs, so a request without a `nodes` map works when the Slurm hostnames equal the DSX `node_id` values. Otherwise supply the `nodes` map (DSX node ID to node name) in the request, as in the example request payload below.
+Without a `nodes` map in the request, node discovery depends on the engine:
+
+- **Slurm**: the provider takes the Slurm node names as the DSX node IDs, so this works when the Slurm hostnames equal the DSX `node_id` values.
+- **Kubernetes**: the provider uses the instance ID and region of the selected nodes. By default these come from the `topograph.run/instance` and `topograph.run/region` annotations written by the Node Data Broker, or from the sources configured in `nodeMetadata` (see [Node instance ID and region sources](../api.md#node-instance-id-and-region-sources)). The instance ID must equal the DSX `node_id`. Nodes missing either value are skipped.
+
+In either case, a request can instead supply the `nodes` map (DSX node ID to node name), as in the example request payload below.
 
 Authentication and rate limiting are enforced by the Envoy proxy sidecar before requests reach this service. Topograph authenticates with a Bearer token, either a static `token` or one it requests with OAuth2 client credentials. When no credentials are configured, no `Authorization` header is sent and the Envoy sidecar is expected to supply SVID-based authentication transparently for in-cluster callers.
 
