@@ -71,7 +71,7 @@ func TestHTTPClientGetTopologyContextCancellation(t *testing.T) {
 	}
 	ch := make(chan result, 1)
 	go func() {
-		resp, err := client.GetTopology(ctx, "", nil, 0, "")
+		resp, err := client.GetTopology(ctx, testVPCID, 0, "")
 		ch <- result{resp, err}
 	}()
 
@@ -98,14 +98,14 @@ func validResponseBody(t *testing.T) ([]byte, TopologyResponse) {
 	return b, resp
 }
 
+const testVPCID = "vpc-1"
+
 func TestHTTPClientGetTopology(t *testing.T) {
 	validBody, validResp := validResponseBody(t)
 
 	tests := []struct {
 		name      string
 		token     string
-		vpcID     string
-		nodeIDs   []string
 		pageSize  int
 		pageToken string
 		status    int
@@ -117,30 +117,21 @@ func TestHTTPClientGetTopology(t *testing.T) {
 		wantResp  *TopologyResponse
 	}{
 		{
-			name:     "global nodes path when vpcID is empty",
+			name:     "nodes path",
 			status:   http.StatusOK,
 			body:     validBody,
-			wantPath: "/v1/topology/nodes",
+			wantPath: "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantResp: &validResp,
 		},
 		{
-			name:     "VPC path when vpcID is set",
-			vpcID:    "vpc-123",
-			status:   http.StatusOK,
-			body:     validBody,
-			wantPath: "/v1/topology/vpcs/vpc-123/nodes",
-			wantResp: &validResp,
-		},
-		{
-			name:      "query params: node_ids comma-joined, page_size and page_token encoded",
-			nodeIDs:   []string{"n1", "n2", "n3"},
+			name:      "query params: page_size and page_token encoded, node_ids never sent",
 			pageSize:  200,
 			pageToken: "cursor-abc",
 			status:    http.StatusOK,
 			body:      validBody,
-			wantPath:  "/v1/topology/nodes",
+			wantPath:  "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantQuery: map[string]string{
-				"node_ids":   "n1,n2,n3",
+				"node_ids":   "",
 				"page_size":  "200",
 				"page_token": "cursor-abc",
 			},
@@ -151,7 +142,7 @@ func TestHTTPClientGetTopology(t *testing.T) {
 			pageSize: 1,
 			status:   http.StatusOK,
 			body:     validBody,
-			wantPath: "/v1/topology/nodes",
+			wantPath: "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantQuery: map[string]string{
 				"page_size": strconv.Itoa(minPageSize),
 			},
@@ -162,7 +153,7 @@ func TestHTTPClientGetTopology(t *testing.T) {
 			token:    "secret-token",
 			status:   http.StatusOK,
 			body:     validBody,
-			wantPath: "/v1/topology/nodes",
+			wantPath: "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantAuth: "Bearer secret-token",
 			wantResp: &validResp,
 		},
@@ -171,40 +162,31 @@ func TestHTTPClientGetTopology(t *testing.T) {
 			token:    "",
 			status:   http.StatusOK,
 			body:     validBody,
-			wantPath: "/v1/topology/nodes",
+			wantPath: "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantAuth: "", // expect header absent
 			wantResp: &validResp,
-		},
-		{
-			name:      "empty nodeIDs omits node_ids param",
-			nodeIDs:   nil,
-			status:    http.StatusOK,
-			body:      validBody,
-			wantPath:  "/v1/topology/nodes",
-			wantQuery: map[string]string{"node_ids": ""},
-			wantResp:  &validResp,
 		},
 		{
 			name:      "zero pageSize omits page_size param",
 			pageSize:  0,
 			status:    http.StatusOK,
 			body:      validBody,
-			wantPath:  "/v1/topology/nodes",
+			wantPath:  "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantQuery: map[string]string{"page_size": ""},
 			wantResp:  &validResp,
 		},
 		{
 			name:     "non-2xx response returns error",
 			status:   http.StatusBadRequest,
-			body:     []byte(`{"detail":"bad node_ids"}`),
-			wantPath: "/v1/topology/nodes",
+			body:     []byte(`{"detail":"bad page_token"}`),
+			wantPath: "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantErr:  true,
 		},
 		{
 			name:     "malformed JSON with 200 OK returns error",
 			status:   http.StatusOK,
 			body:     []byte(`{not valid json`),
-			wantPath: "/v1/topology/nodes",
+			wantPath: "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantErr:  true,
 		},
 		{
@@ -212,7 +194,7 @@ func TestHTTPClientGetTopology(t *testing.T) {
 			token:    "tok",
 			status:   http.StatusOK,
 			body:     validBody,
-			wantPath: "/v1/topology/nodes",
+			wantPath: "/v1/topology/vpcs/" + testVPCID + "/nodes",
 			wantAuth: "Bearer tok",
 			wantResp: &validResp,
 		},
@@ -223,7 +205,7 @@ func TestHTTPClientGetTopology(t *testing.T) {
 			srv, cap := newTestServer(t, tc.status, tc.body)
 
 			client := NewHTTPClient(srv.URL, tc.token)
-			got, err := client.GetTopology(context.Background(), tc.vpcID, tc.nodeIDs, tc.pageSize, tc.pageToken)
+			got, err := client.GetTopology(context.Background(), testVPCID, tc.pageSize, tc.pageToken)
 
 			// --- server-side assertions ---
 			require.Equal(t, tc.wantPath, cap.path)

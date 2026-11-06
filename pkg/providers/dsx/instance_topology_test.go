@@ -24,23 +24,22 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
 // mockClient is a controllable Client for unit testing pagination and error paths.
 type mockClient struct {
-	responses      []*TopologyResponse
-	errors         []error
-	idx            int
-	pageSizes      []int
-	pageTokens     []string
-	nodeIDsPerCall [][]string
+	responses  []*TopologyResponse
+	errors     []error
+	idx        int
+	pageSizes  []int
+	pageTokens []string
+	calls      int
 }
 
-func (m *mockClient) GetTopology(ctx context.Context, _ string, nodeIDs []string, pageSize int, pageToken string) (*TopologyResponse, error) {
-	cp := make([]string, len(nodeIDs))
-	copy(cp, nodeIDs)
-	m.nodeIDsPerCall = append(m.nodeIDsPerCall, cp)
+func (m *mockClient) GetTopology(ctx context.Context, _ string, pageSize int, pageToken string) (*TopologyResponse, error) {
+	m.calls++
 	m.pageSizes = append(m.pageSizes, pageSize)
 	m.pageTokens = append(m.pageTokens, pageToken)
 	if err := ctx.Err(); err != nil {
@@ -470,7 +469,7 @@ func TestGenerateInstanceTopologyContextCancelled(t *testing.T) {
 func TestGenerateInstanceTopologyTotalTimeout(t *testing.T) {
 	// Lower the total deadline so the test completes quickly. Page 1 returns
 	// immediately; page 2 blocks on ctx.Done(), simulating a stalled server.
-	// The total deadline fires and the call must return 422 Unprocessable Entity.
+	// The total deadline fires and the call must return 504 Gateway Timeout.
 	oldTimeout := totalGenerationTimeout
 	totalGenerationTimeout = 50 * time.Millisecond
 	defer func() { totalGenerationTimeout = oldTimeout }()
@@ -483,7 +482,7 @@ func TestGenerateInstanceTopologyTotalTimeout(t *testing.T) {
 	_, err := newProvider(stallingPage2Client(stallOnPage2)).generateInstanceTopology(context.Background(), nil, cis)
 
 	require.NotNil(t, err)
-	require.Equal(t, http.StatusUnprocessableEntity, err.Code())
+	require.Equal(t, http.StatusGatewayTimeout, err.Code())
 	require.Contains(t, err.Error(), "deadline exceeded")
 }
 
@@ -494,7 +493,7 @@ type stallingMockClient struct {
 	called        bool
 }
 
-func (s *stallingMockClient) GetTopology(ctx context.Context, _ string, _ []string, _ int, _ string) (*TopologyResponse, error) {
+func (s *stallingMockClient) GetTopology(ctx context.Context, _ string, _ int, _ string) (*TopologyResponse, error) {
 	if !s.called {
 		s.called = true
 		return s.firstResponse, nil
@@ -564,7 +563,7 @@ func TestGenerateInstanceTopologyNilResponse(t *testing.T) {
 
 type nilResponseClient struct{}
 
-func (nilResponseClient) GetTopology(_ context.Context, _ string, _ []string, _ int, _ string) (*TopologyResponse, error) {
+func (nilResponseClient) GetTopology(_ context.Context, _ string, _ int, _ string) (*TopologyResponse, error) {
 	return nil, nil
 }
 
@@ -596,22 +595,34 @@ func TestGenerateInstanceTopologySinglePage(t *testing.T) {
 	}
 }
 
-func TestGenerateInstanceTopologyDeduplicatesAndSortsNodeIDs(t *testing.T) {
-	// "n2" appears in both ComputeInstances groups; only one copy should reach
-	// the API. The three unique IDs must arrive sorted so requests are
-	// deterministic regardless of map-iteration order.
+func TestGenerateInstanceTopologyFiltersResponseToRequestedNodes(t *testing.T) {
+	// The API is queried once with no node filter; nodes that were not requested
+	// are dropped client-side, and an ID repeated across groups is harmless.
 	mc := &mockClient{
-		responses: []*TopologyResponse{{}},
+		responses: []*TopologyResponse{{Switches: []map[string]SwitchAdjacency{
+			{"leaf": {Nodes: []NodeInfo{{NodeID: "n1"}, {NodeID: "n2"}, {NodeID: "other"}}}},
+		}}},
 	}
 	cis := []topology.ComputeInstances{
 		{Instances: map[string]string{"n2": "node2a", "n3": "node3"}},
 		{Instances: map[string]string{"n1": "node1", "n2": "node2b"}},
 	}
-	_, err := newProvider(mc).generateInstanceTopology(context.Background(), nil, cis)
+	topo, err := newProvider(mc).generateInstanceTopology(context.Background(), nil, cis)
 	require.Nil(t, err)
+	require.Equal(t, 1, mc.calls, "exactly one API call expected")
+	require.Equal(t, 2, topo.Len(), "only requested nodes present in the response are kept")
+}
 
-	require.Len(t, mc.nodeIDsPerCall, 1, "exactly one API call expected")
-	// Fails if deduplication is removed (n2 appears twice) or sorting is
-	// removed (order becomes non-deterministic).
-	require.Equal(t, []string{"n1", "n2", "n3"}, mc.nodeIDsPerCall[0])
+func TestGenerateInstanceTopologyPreservesUpstream4xx(t *testing.T) {
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"n1": "node1"}}}
+	for code, want := range map[int]int{
+		http.StatusForbidden:           http.StatusForbidden,
+		http.StatusNotFound:            http.StatusNotFound,
+		http.StatusInternalServerError: http.StatusBadGateway,
+	} {
+		mc := &mockClient{errors: []error{httperr.NewError(code, "boom")}}
+		_, err := newProvider(mc).generateInstanceTopology(context.Background(), nil, cis)
+		require.NotNil(t, err)
+		require.Equal(t, want, err.Code(), "upstream %d", code)
+	}
 }

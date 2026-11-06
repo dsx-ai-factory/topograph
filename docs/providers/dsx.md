@@ -2,30 +2,36 @@
 
 The `dsx` topology provider reads topology data from the **DSX Topology API** and converts it into Topograph's canonical topology graph.
 
-The provider calls `GET /v1/topology/nodes`, which returns an ordered list of switch adjacency entries. Each entry maps a switch name to the set of downstream switches and compute nodes it serves. From this it builds a switch tree (for Slurm `topology/tree` or Kubernetes labels) and, when NVLink domain IDs are present, an accelerator domain map (for `topology/block`).
+The provider calls `GET /v1/topology/vpcs/{vpc_id}/nodes`, which returns an ordered list of switch adjacency entries. Each entry maps a switch name to the set of downstream switches and compute nodes it serves. From this it builds a switch tree (for Slurm `topology/tree` or Kubernetes labels) and, when NVLink domain IDs are present, an accelerator domain map (for `topology/block`).
 
-All `topology.ComputeInstances` groups in the request are aggregated into a single node-ID list sent to this endpoint. The `Region` field on each group and any VPC ID are not used — the DSX service infers the scope from the caller's identity.
+The caller's org must own the VPC; otherwise the API returns `403`. The `Region` field on each node group in the request is not used.
 
-Authentication and rate limiting are enforced by the Envoy proxy sidecar before requests reach this service. Topograph sends an optional `Authorization: Bearer <token>` header; when no token is configured, the Envoy sidecar is expected to supply SVID-based authentication transparently for in-cluster callers.
+Authentication and rate limiting are enforced by the Envoy proxy sidecar before requests reach this service. Topograph authenticates with a Bearer token, either a static `token` or one it requests with OAuth2 client credentials. When no credentials are configured, no `Authorization` header is sent and the Envoy sidecar is expected to supply SVID-based authentication transparently for in-cluster callers.
 
 ## When to Use This Provider
 
 Use this provider for **DSX clusters** where the DSX Topology API is the topology source. It works with both the Slurm engine (generating `topology.conf`) and the Kubernetes engine (labeling nodes).
 
-The request's `nodes` list maps provider node IDs to hostnames. All entries across every group are merged into a single paginated sequence of API calls against `GET /v1/topology/nodes`.
-
 ## Prerequisites
 
 - The DSX Topology API endpoint reachable from the Topograph host (`base_url`)
-- The caller's SVID injected by Envoy (in-cluster, zero-config), **or** a Bearer token with permission to read topology
+- The VPC ID (`vpc_id`) whose topology to read
+- One of: the caller's SVID injected by Envoy (in-cluster, zero-config), a static Bearer token, or OAuth2 client credentials with permission to read topology
 
 ## Credentials
 
 | Field | Required | Description |
 |---|---|---|
-| `token` | No | Bearer token sent as `Authorization: Bearer <token>`. Omit when running in-cluster and relying on the Envoy sidecar for SVID-based authentication |
+| `token` | No | Static Bearer token sent as `Authorization: Bearer <token>`. Omit when running in-cluster and relying on the Envoy sidecar for SVID-based authentication |
+| `client_id` | No | OAuth2 client ID for the client-credentials grant (SSA). Requires `client_secret`; mutually exclusive with `token` |
+| `client_secret` | No | OAuth2 client secret. Requires `client_id` |
+| `issuer_url` | With `client_id`, unless `token_url` is set | OIDC issuer (must be `https`); the token endpoint is read from `<issuer_url>/.well-known/openid-configuration` |
+| `token_url` | No | Token endpoint (must be `https`). When set, OIDC discovery is skipped and `issuer_url` is not needed |
+| `scopes` | No | OAuth2 scopes to request, as a list or a space-separated string, for example `[nvll_operator_user_ro]` |
 
-Store the token in a YAML file when needed:
+With `client_id` and `client_secret`, Topograph requests an access token from the token endpoint, caches it until it expires, and sends it as the Bearer token. If `token_url` is not set, the token endpoint is discovered from `issuer_url`. `token` and the client credentials cannot be combined. Supply `client_secret` through the credentials file or the request payload, never in committed files.
+
+Store credentials in a YAML file when needed, for a static token:
 
 ```yaml
 token: <API_TOKEN>
@@ -43,10 +49,11 @@ Credentials can also be supplied directly in the topology request payload under 
 
 | Field | Required | Description |
 |---|---|---|
-| `base_url` | Yes | Base URL for the DSX Topology API, for example `https://topology.example.com` |
+| `base_url` | Yes | Base URL for the DSX Topology API, for example `https://topology.example.com`. Must be `http` or `https`; `https` is required when a token or client credentials are configured. If a gateway serves the API under a path prefix, include it, for example `https://gateway.example.com/topology`; the request path `/v1/topology/vpcs/{vpc_id}/nodes` is appended to it |
+| `vpc_id` | Yes | VPC whose nodes are queried, sent as `GET /v1/topology/vpcs/{vpc_id}/nodes`. Letters, digits, `.`, `_` and `-` only |
 | `trimTiers` | No | Number of highest topology tiers to trim from output. Defaults to `0` |
 
-The top-level Topograph `pageSize` setting controls the `page_size` query parameter for paginated topology requests (default 100, max 1000 per the API). The `region` field on each `nodes` entry is not used by this provider — the DSX service infers the scope from the caller's identity.
+The top-level Topograph `pageSize` setting controls the `page_size` query parameter. Values outside the API range of 100–1000 are clamped; when unset, the API default (100) applies.
 
 ## Configuration
 
@@ -65,11 +72,23 @@ credentialsPath: /etc/topograph/dsx-credentials.yaml
 
 providerParams:
   base_url: https://topology.example.com
+  vpc_id: <VPC_ID>
 
 engineParams:
   plugin: topology/tree
   topologyConfigPath: /etc/slurm/topology.conf
 ```
+
+Example credentials file for OAuth2 client credentials (for example SSA):
+
+```yaml
+client_id: <CLIENT_ID>
+client_secret: <CLIENT_SECRET>
+issuer_url: https://<ssa-issuer-host>
+scopes: [nvll_operator_user_ro]
+```
+
+The provider parameters are the same as above.
 
 Example request payload:
 
@@ -81,7 +100,8 @@ Example request payload:
       "token": "<API_TOKEN>"
     },
     "params": {
-      "base_url": "https://topology.example.com"
+      "base_url": "https://topology.example.com",
+      "vpc_id": "<VPC_ID>"
     }
   },
   "engine": {
@@ -106,10 +126,12 @@ When running in-cluster without a token, omit the `creds` field entirely — the
 
 ## How It Works
 
-The provider aggregates node IDs from all `topology.ComputeInstances` groups in the request (the `Region` field on each group is ignored) and sends them as the `node_ids` comma-separated query parameter. It pages through the single global endpoint until the response carries an empty `next_page_token`:
+The provider collects the node IDs from all node groups in the request. It does not send a node filter, because a long `node_ids` list would not fit in a URL for large clusters. Instead it pages through the VPC's topology until the response carries an empty `next_page_token`, then keeps only the requested nodes. Requested nodes that the API does not return are logged as a warning.
+
+Each page is requested as:
 
 ```text
-GET <base_url>/v1/topology/nodes?node_ids=<id1>,<id2>&page_size=<pageSize>
+GET <base_url>/v1/topology/vpcs/<vpc_id>/nodes?page_size=<pageSize>&page_token=<cursor>
 Authorization: Bearer <token>          # omitted when using Envoy SVID
 ```
 
@@ -141,19 +163,23 @@ Each node is translated as follows:
 
 Tier assignment is closest-first: tier 0 is the leaf switch directly attached to the node, tier 1 is the spine, and tier 2 is the core. When `accelerated_network_id` is non-empty the node is placed into that NVLink domain, enabling `topology/block` output.
 
+## Error Handling
+
+A `4xx` response from the DSX API (for example `403` when the caller does not own the VPC, or `404` for an unknown VPC) is returned with the same status code, except `401`. A `401` means DSX rejected Topograph's own credentials, so it is returned as `502`, like other upstream failures and token-request failures. If generation exceeds its 10-minute total deadline, the provider returns `504`. It returns `422` if the request context is cancelled, the API repeats a page token, or pagination exceeds 10,000 pages.
+
 ## Verifying the Output
 
 Sanity-check the API directly (in-cluster, Envoy supplies auth):
 
 ```bash
-curl -s "$BASE_URL/v1/topology/nodes?node_ids=node1,node2" | jq .
+curl -s "$BASE_URL/v1/topology/vpcs/$VPC_ID/nodes?page_size=100" | jq .
 ```
 
 Or with an explicit token:
 
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "$BASE_URL/v1/topology/nodes?node_ids=node1,node2" | jq .
+  "$BASE_URL/v1/topology/vpcs/$VPC_ID/nodes?page_size=100" | jq .
 ```
 
 Then trigger topology generation and read the result:

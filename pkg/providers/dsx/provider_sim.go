@@ -39,14 +39,9 @@ type simClient struct {
 	apiErr int
 }
 
-func (client *simClient) GetTopology(ctx context.Context, _ string, nodeIDs []string, pageSize int, pageToken string) (*TopologyResponse, error) {
+func (client *simClient) GetTopology(ctx context.Context, _ string, pageSize int, pageToken string) (*TopologyResponse, error) {
 	if client.apiErr == errAPIError {
 		return nil, providers.ErrAPIError
-	}
-
-	want := make(map[string]struct{})
-	for _, nodeID := range nodeIDs {
-		want[nodeID] = struct{}{}
 	}
 
 	// Build the ordered list of single-key entries matching the API wire format.
@@ -54,9 +49,6 @@ func (client *simClient) GetTopology(ctx context.Context, _ string, nodeIDs []st
 	for _, sw := range client.model.Switches {
 		adj := SwitchAdjacency{}
 		for _, nodeName := range sw.Nodes {
-			if _, exists := want[nodeName]; !exists {
-				continue
-			}
 			node, exists := client.model.Nodes[nodeName]
 			if !exists {
 				continue
