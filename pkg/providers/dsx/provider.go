@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 
 	"github.com/mitchellh/mapstructure"
 	"k8s.io/klog/v2"
@@ -43,14 +44,17 @@ const (
 // and "." / ".." are rejected.
 var validVPCID = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*$`)
 
+// baseProvider holds the state shared by the real and the simulated provider.
 type baseProvider struct {
 	clientFactory ClientFactory
 	trimTiers     int
 	vpcID         string
 }
 
+// ClientFactory creates the Client used for one topology generation.
 type ClientFactory func() (Client, error)
 
+// Client fetches one page of the VPC topology from the DSX API.
 type Client interface {
 	GetTopology(ctx context.Context, vpcID string, pageSize int, pageToken string) (*TopologyResponse, error)
 }
@@ -74,6 +78,7 @@ type NodeInfo struct {
 	AcceleratedNetworkID string `json:"accelerated_network_id,omitempty"`
 }
 
+// paramsConfig holds the provider parameters.
 type paramsConfig struct {
 	BaseURL string `mapstructure:"base_url"`
 	// VPCID selects GET /v1/topology/vpcs/{vpc_id}/nodes. It is embedded in the
@@ -81,10 +86,12 @@ type paramsConfig struct {
 	VPCID string `mapstructure:"vpc_id"`
 }
 
+// NamedLoader returns the provider name and its loader for the registry.
 func NamedLoader() (string, providers.Loader) {
 	return NAME, Loader
 }
 
+// Loader validates the parameters and credentials and returns the DSX provider.
 func Loader(ctx context.Context, config providers.Config) (providers.Provider, *httperr.Error) {
 	var params paramsConfig
 	if err := mapstructure.Decode(config.Params, &params); err != nil {
@@ -96,6 +103,16 @@ func Loader(ctx context.Context, config providers.Config) (providers.Provider, *
 
 	if u, err := url.Parse(params.BaseURL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return nil, httperr.NewError(http.StatusBadRequest, fmt.Sprintf("parameters error: invalid '%s'", paramBaseURL))
+	}
+
+	// The server's credentials are sent to base_url, so a request that brings no
+	// credentials of its own must not point them at another endpoint.
+	if config.ServerCreds {
+		serverURL, _ := config.ServerParams[paramBaseURL].(string)
+		if strings.TrimRight(params.BaseURL, "/") != strings.TrimRight(serverURL, "/") {
+			return nil, httperr.NewError(http.StatusForbidden, fmt.Sprintf(
+				"parameters error: '%s' must match the server configuration when the request supplies no credentials", paramBaseURL))
+		}
 	}
 
 	if params.VPCID == "" {
@@ -167,6 +184,7 @@ func Loader(ctx context.Context, config providers.Config) (providers.Provider, *
 	return p, nil
 }
 
+// GenerateTopologyConfig fetches the VPC topology and converts it to a graph.
 func (p *baseProvider) GenerateTopologyConfig(ctx context.Context, pageSize *int, instances []topology.ComputeInstances) (*topology.Graph, *httperr.Error) {
 	topo, err := p.generateInstanceTopology(ctx, pageSize, instances)
 	if err != nil {
@@ -178,10 +196,18 @@ func (p *baseProvider) GenerateTopologyConfig(ctx context.Context, pageSize *int
 	return topo.ToGraph(NAME, instances, p.trimTiers, false), nil
 }
 
+// GetNodeInstances implements slurm.instanceMapper. Slurm node names are the DSX
+// node IDs, so each node maps to itself. The region is unused by this provider.
+func (p *baseProvider) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, "local"), nil
+}
+
+// Provider is the DSX topology provider.
 type Provider struct {
 	baseProvider
 }
 
+// New returns a Provider that obtains its API client from clientFactory.
 func New(clientFactory ClientFactory, trimTiers int) *Provider {
 	return &Provider{
 		baseProvider: baseProvider{

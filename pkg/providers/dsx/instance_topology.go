@@ -46,6 +46,8 @@ var totalGenerationTimeout = 10 * time.Minute
 // It is a var so tests can lower it without allocating thousands of responses.
 var maxPaginationPages = 10_000
 
+// generateInstanceTopology pages through the VPC topology and returns the
+// topology of the requested instances.
 func (p *baseProvider) generateInstanceTopology(ctx context.Context, pageSize *int, cis []topology.ComputeInstances) (*topology.ClusterTopology, *httperr.Error) {
 	client, err := p.clientFactory()
 	if err != nil {

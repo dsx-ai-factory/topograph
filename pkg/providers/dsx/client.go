@@ -48,6 +48,7 @@ const (
 	maxPageSize = 1000
 )
 
+// httpClient is the Client that calls the DSX Topology API over HTTP.
 type httpClient struct {
 	baseURL string
 	// tokenFn supplies the Bearer token for each request; nil means no
@@ -81,6 +82,8 @@ func clampPageSize(n int) int {
 	return min(max(n, minPageSize), maxPageSize)
 }
 
+// GetTopology fetches one page of the topology of vpcID. An empty pageToken
+// requests the first page.
 func (c *httpClient) GetTopology(ctx context.Context, vpcID string, pageSize int, pageToken string) (*TopologyResponse, error) {
 	// Derive callCtx from context.Background() so requestTimeout is the true
 	// per-page deadline, independent of any total-generation deadline already
@@ -90,15 +93,6 @@ func (c *httpClient) GetTopology(ctx context.Context, vpcID string, pageSize int
 	defer cancel()
 	stopPropagation := context.AfterFunc(ctx, cancel)
 	defer stopPropagation()
-
-	headers := map[string]string{}
-	if c.tokenFn != nil {
-		token, err := c.tokenFn(callCtx)
-		if err != nil {
-			return nil, httperr.NewError(http.StatusBadGateway, "failed to obtain access token: "+err.Error())
-		}
-		headers["Authorization"] = "Bearer " + token
-	}
 
 	pageSize = clampPageSize(pageSize)
 
@@ -110,8 +104,32 @@ func (c *httpClient) GetTopology(ctx context.Context, vpcID string, pageSize int
 		query["page_token"] = pageToken
 	}
 
-	f := httpreq.GetRequestFunc(callCtx, http.MethodGet, headers, query, nil, c.baseURL, fmt.Sprintf(pathVPCNodesFmt, vpcID))
-	body, httpErr := httpreq.DoRequestWithRetries(f, false)
+	build := httpreq.GetRequestFunc(callCtx, http.MethodGet, nil, query, nil, c.baseURL, fmt.Sprintf(pathVPCNodesFmt, vpcID))
+	// The token is fetched for every attempt, not once up front, so a retry that
+	// waited out a Retry-After longer than the token's lifetime gets a refreshed one.
+	// A token failure is reported through tokenErr and a status the retry loop
+	// does not retry: the loop cannot see the context of a request that was never
+	// built, so it would otherwise keep retrying after cancellation.
+	var tokenErr error
+	f := func() (*http.Request, *httperr.Error) {
+		req, httpErr := build()
+		if httpErr != nil {
+			return nil, httpErr
+		}
+		if c.tokenFn != nil {
+			token, err := c.tokenFn(callCtx)
+			if err != nil {
+				tokenErr = err
+				return nil, httperr.NewError(http.StatusUnauthorized, err.Error())
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return req, nil
+	}
+	body, httpErr := httpreq.DoRequestWithRetriesNoDowngrade(f)
+	if tokenErr != nil {
+		return nil, httperr.NewError(http.StatusBadGateway, "failed to obtain access token: "+tokenErr.Error())
+	}
 	if httpErr != nil {
 		return nil, httpErr
 	}

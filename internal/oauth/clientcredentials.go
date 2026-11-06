@@ -57,6 +57,10 @@ type Config struct {
 	// identity providers that publish no discovery document.
 	TokenURL string   `mapstructure:"token_url"`
 	Scopes   []string `mapstructure:"scopes"`
+
+	// transport replaces the default HTTP transport. It lets tests trust a
+	// self-signed server without changing any global state.
+	transport http.RoundTripper
 }
 
 // DecodeConfig decodes the client-credentials settings from a credentials map.
@@ -72,7 +76,9 @@ func DecodeConfig(creds map[string]any) (Config, error) {
 		return cfg, err
 	}
 	if err := dec.Decode(creds); err != nil {
-		return cfg, err
+		// The mapstructure error quotes the offending value, which may be the
+		// client secret, so it is not passed on.
+		return Config{}, fmt.Errorf("invalid client-credentials settings: client_id, client_secret, issuer_url and token_url must be strings, and scopes a list or a string")
 	}
 	return cfg, nil
 }
@@ -81,7 +87,7 @@ func DecodeConfig(creds map[string]any) (Config, error) {
 // scopes may be written as "a b c" as well as a YAML list.
 func splitFields(from, to reflect.Type, data any) (any, error) {
 	if from.Kind() == reflect.String && to == reflect.TypeOf([]string{}) {
-		return strings.Fields(data.(string)), nil
+		return strings.Fields(reflect.ValueOf(data).String()), nil
 	}
 	return data, nil
 }
@@ -114,7 +120,10 @@ func (c Config) Validate() error {
 // client-credentials grant. The token endpoint is cfg.TokenURL when set,
 // otherwise the token_endpoint found by OIDC discovery at cfg.IssuerURL. The
 // endpoint is resolved once and the token is cached and refreshed by oauth2
-// until it expires. It returns an error if cfg is invalid.
+// for the lifetime of the returned TokenFunc only. Nothing is shared between
+// calls to this function, so a provider that is loaded for every request
+// discovers the endpoint and requests a new token for each request. It returns
+// an error if cfg is invalid.
 func NewClientCredentialsSource(cfg Config) (TokenFunc, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -136,14 +145,14 @@ func NewClientCredentialsSource(cfg Config) (TokenFunc, error) {
 		endpoint := cfg.TokenURL
 		if endpoint == "" {
 			var err error
-			if endpoint, err = discoverTokenEndpoint(ctx, cfg.IssuerURL); err != nil {
+			if endpoint, err = discoverTokenEndpoint(ctx, newHTTPClient(cfg.transport), cfg.IssuerURL); err != nil {
 				return nil, err
 			}
 		}
 		cc := clientcredentials.Config{ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, TokenURL: endpoint, Scopes: cfg.Scopes}
 		// The source outlives one request, so it uses a detached context carrying
 		// an HTTP client with a timeout.
-		hctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: authTimeout})
+		hctx := context.WithValue(context.Background(), oauth2.HTTPClient, newHTTPClient(cfg.transport))
 		src = oauth2.ReuseTokenSource(nil, cc.TokenSource(hctx))
 		return src, nil
 	}
@@ -153,13 +162,61 @@ func NewClientCredentialsSource(cfg Config) (TokenFunc, error) {
 		if err != nil {
 			return "", err
 		}
-		// ReuseTokenSource is safe for concurrent use.
-		tok, err := ts.Token()
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		return tok.AccessToken, nil
+		// The fetch runs on a detached context bounded by authTimeout, so a caller
+		// that gives up must stop waiting without cancelling it: other callers and
+		// later requests reuse its result. The buffered channel lets it finish
+		// without a receiver. ReuseTokenSource is safe for concurrent use.
+		type result struct {
+			token string
+			err   error
+		}
+		ch := make(chan result, 1)
+		go func() {
+			tok, err := ts.Token()
+			if err != nil {
+				ch <- result{err: err}
+				return
+			}
+			ch <- result{token: tok.AccessToken}
+		}()
+		select {
+		case r := <-ch:
+			return r.token, r.err
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}, nil
+}
+
+// maxRedirects bounds the redirects followed by the OAuth HTTP client.
+const maxRedirects = 10
+
+// newHTTPClient returns the HTTP client for discovery and token requests. It has
+// a timeout and refuses any redirect that leaves https or fails ValidateURL, so
+// Go cannot forward the client secret in cleartext. A nil
+// transport selects the default one.
+func newHTTPClient(transport http.RoundTripper) *http.Client {
+	return &http.Client{
+		Transport: transport,
+		Timeout:   authTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxRedirects {
+				return fmt.Errorf("stopped after %d redirects", maxRedirects)
+			}
+			// The loopback exemption in ValidateURL is for tests that talk to a
+			// local http server directly; a redirect must never leave https.
+			if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect refused: https to %s", req.URL.Scheme)
+			}
+			if err := ValidateURL(req.URL.String()); err != nil {
+				return fmt.Errorf("redirect refused: %w", err)
+			}
+			return nil
+		},
+	}
 }
 
 // ValidateURL requires an https URL, so credentials are never sent in
@@ -184,7 +241,7 @@ func ValidateURL(raw string) error {
 
 // discoverTokenEndpoint reads the token_endpoint from the OIDC discovery document
 // of issuerURL. Both URLs must use https (loopback hosts may use http).
-func discoverTokenEndpoint(ctx context.Context, issuerURL string) (string, error) {
+func discoverTokenEndpoint(ctx context.Context, client *http.Client, issuerURL string) (string, error) {
 	if err := ValidateURL(issuerURL); err != nil {
 		return "", fmt.Errorf("issuer: %w", err)
 	}
@@ -195,7 +252,7 @@ func discoverTokenEndpoint(ctx context.Context, issuerURL string) (string, error
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("OIDC discovery: %w", err)
 	}
@@ -218,6 +275,13 @@ func discoverTokenEndpoint(ctx context.Context, issuerURL string) (string, error
 	}
 	if err := ValidateURL(doc.TokenEndpoint); err != nil {
 		return "", fmt.Errorf("token_endpoint: %w", err)
+	}
+	// A secure issuer must not point the client secret at a plain-http endpoint,
+	// even a loopback one that ValidateURL would accept on its own.
+	if iu, err := url.Parse(issuerURL); err == nil && iu.Scheme == "https" {
+		if tu, err := url.Parse(doc.TokenEndpoint); err != nil || tu.Scheme != "https" {
+			return "", fmt.Errorf("token_endpoint %q must use https because the issuer does", doc.TokenEndpoint)
+		}
 	}
 	return doc.TokenEndpoint, nil
 }

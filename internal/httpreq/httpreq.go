@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -93,8 +94,27 @@ func ParseRetryAfter(resp *http.Response) (time.Duration, bool) {
 
 type RequestFunc func() (*http.Request, *httperr.Error)
 
+// refuseDowngrade stops a redirect from https to http, which would make Go
+// forward the Authorization header in cleartext. It otherwise keeps the default
+// limit of 10 redirects.
+func refuseDowngrade(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("refusing redirect from https to %s", req.URL.Scheme)
+	}
+	return nil
+}
+
 // DoRequest sends HTTP requests and returns HTTP response
 func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, *httperr.Error) {
+	return doRequest(f, insecureSkipVerify, nil)
+}
+
+// doRequest is DoRequest with an optional redirect policy; a nil checkRedirect
+// keeps the net/http default.
+func doRequest(f RequestFunc, insecureSkipVerify bool, checkRedirect func(*http.Request, []*http.Request) error) (*http.Response, []byte, *httperr.Error) {
 	req, httpErr := f()
 	if httpErr != nil {
 		return nil, nil, httpErr
@@ -102,7 +122,7 @@ func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, 
 	// URL.String() keeps RawQuery as is; %q escapes any line break in it so
 	// the URL cannot forge log lines.
 	klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
-	client := &http.Client{}
+	client := &http.Client{CheckRedirect: checkRedirect}
 	if insecureSkipVerify {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -132,18 +152,29 @@ func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, 
 
 // DoRequestWithRetries sends HTTP requests and returns HTTP response; retries if needed
 func DoRequestWithRetries(f RequestFunc, insecureSkipVerify bool) ([]byte, *httperr.Error) {
+	return doRequestWithRetries(f, insecureSkipVerify, nil)
+}
+
+// DoRequestWithRetriesNoDowngrade is DoRequestWithRetries for requests that carry
+// credentials. It verifies TLS and refuses a redirect from https to http, which
+// would make Go forward the Authorization header in cleartext.
+func DoRequestWithRetriesNoDowngrade(f RequestFunc) ([]byte, *httperr.Error) {
+	return doRequestWithRetries(f, false, refuseDowngrade)
+}
+
+func doRequestWithRetries(f RequestFunc, insecureSkipVerify bool, checkRedirect func(*http.Request, []*http.Request) error) ([]byte, *httperr.Error) {
 	klog.V(4).Infof("Sending HTTP request with retries")
 	attempt := 0
 	for {
 		attempt++
 		var requestCtx context.Context
-		resp, body, err := DoRequest(func() (*http.Request, *httperr.Error) {
+		resp, body, err := doRequest(func() (*http.Request, *httperr.Error) {
 			req, httpErr := f()
 			if req != nil {
 				requestCtx = req.Context()
 			}
 			return req, httpErr
-		}, insecureSkipVerify)
+		}, insecureSkipVerify, checkRedirect)
 		if requestCtx != nil && requestCtx.Err() != nil {
 			return body, err
 		}

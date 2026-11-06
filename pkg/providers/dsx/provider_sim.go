@@ -34,11 +34,13 @@ const (
 	errAPIError
 )
 
+// simClient serves a simulation model through the Client interface.
 type simClient struct {
 	model  *models.Model
 	apiErr int
 }
 
+// GetTopology returns the whole simulated topology as a single page.
 func (client *simClient) GetTopology(ctx context.Context, _ string, pageSize int, pageToken string) (*TopologyResponse, error) {
 	if client.apiErr == errAPIError {
 		return nil, providers.ErrAPIError
@@ -65,10 +67,12 @@ func (client *simClient) GetTopology(ctx context.Context, _ string, pageSize int
 	return &TopologyResponse{Switches: switches}, nil
 }
 
+// NamedLoaderSim returns the simulation provider name and its loader.
 func NamedLoaderSim() (string, providers.Loader) {
 	return NAME_SIM, LoaderSim
 }
 
+// LoaderSim loads the simulation model and returns the dsx-sim provider.
 func LoaderSim(ctx context.Context, cfg providers.Config) (providers.Provider, *httperr.Error) {
 	p, err := providers.GetSimulationParams(cfg.Params)
 	if err != nil {
@@ -95,11 +99,13 @@ func LoaderSim(ctx context.Context, cfg providers.Config) (providers.Provider, *
 	return NewSim(clientFactory, p.TrimTiers, model), nil
 }
 
+// simProvider is the simulated DSX provider.
 type simProvider struct {
 	baseProvider
 	*providers.BaseSimProvider
 }
 
+// NewSim returns a simulated provider that obtains its client from clientFactory.
 func NewSim(clientFactory ClientFactory, trimTiers int, model *models.Model) *simProvider {
 	return &simProvider{
 		baseProvider: baseProvider{
