@@ -89,5 +89,7 @@ navigation:
     contents:
       - page: Node Labels and Annotations
         path: reference/node-labels.md
+      - page: GPU/NIC Rail Mapping
+        path: reference/gpu-nic-rail-mapping.md
       - link: Changelog
         href: https://github.com/dsx-ai-factory/topograph/blob/main/CHANGELOG.md

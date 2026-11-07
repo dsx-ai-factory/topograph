@@ -21,12 +21,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
@@ -51,9 +53,8 @@ func TestGetAnnotations(t *testing.T) {
 			err:  "must set provider",
 		},
 		{
-			name:     "Case 2: invalid provider",
+			name:     "Case 2: provider without an annotation handler",
 			provider: "invalid",
-			err:      `unsupported provider "invalid"`,
 		},
 	}
 
@@ -63,7 +64,11 @@ func TestGetAnnotations(t *testing.T) {
 				config: nodeDataBrokerConfig{Provider: topology.Provider{Name: tt.provider}},
 			}
 			_, err := broker.getAnnotations(ctx)
-			require.EqualError(t, err, tt.err)
+			if tt.err != "" {
+				require.EqualError(t, err, tt.err)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 
@@ -276,5 +281,57 @@ func TestGetAnnotationsNscaleDispatchCanceledContext(t *testing.T) {
 		require.Error(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("getAnnotations did not return after context cancellation")
+	}
+}
+
+func TestNewNodeDataBrokerConfigNICRailPlugin(t *testing.T) {
+	write := func(plugin string) string {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		body := "provider:\n  name: test\nhealthzPort: 8080\n" + plugin
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+		return path
+	}
+
+	valid := `nodeMetadata:
+  plugins:
+    gpuNicRailMapping:
+      enabled: true
+      releaseName: rel
+      namespace: topograph
+      railSource:
+        name: host-lldp
+        hostLLDP:
+          interfaceRegex: '^roce_vf_r([0-9]+)$'
+          railIDFormat: 'rail-$1'
+      gpuSource:
+        gpuOperatorNamespace: gpu-operator
+        daemonSet: nvidia-device-plugin-daemonset
+`
+	cfg, err := newNodeDataBrokerConfig(write(valid))
+	require.NoError(t, err)
+	require.True(t, cfg.NodeMetadata.Enabled())
+	require.Equal(t, 10*time.Minute, cfg.NodeMetadata.Plugins.GPUNICRailMapping.RefreshInterval.Duration)
+
+	// An enabled plugin with an invalid rail template fails at startup.
+	_, err = newNodeDataBrokerConfig(write(strings.Replace(valid, "rail-$1", "rail-$2", 1)))
+	require.ErrorContains(t, err, "railSource.hostLLDP")
+
+	// Without the section the plugin is off.
+	cfg, err = newNodeDataBrokerConfig(write(""))
+	require.NoError(t, err)
+	require.False(t, cfg.NodeMetadata.Enabled())
+}
+
+func TestApplyWithoutAnnotationHandler(t *testing.T) {
+	for _, name := range []string{"netq", "dsx-sim", "invalid"} {
+		t.Run(name, func(t *testing.T) {
+			client := kubefake.NewSimpleClientset()
+			broker := &nodeBroker{
+				clientset: client,
+				config:    nodeDataBrokerConfig{Provider: topology.Provider{Name: name}},
+			}
+			require.NoError(t, broker.apply(context.Background()))
+			require.Empty(t, client.Actions(), "no annotations must mean no Node reads or writes")
+		})
 	}
 }

@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Optional `gpu-nic-rail-mapping` node-metadata plugin. Each Node Data Broker joins the host LLDP neighbors (rail from the interface name through `interfaceRegex` capture groups and the `railIDFormat` template) with the `nvidia-smi topo -all -m` matrix, picks the GPUs closest to each rail's NIC (a matching Data Direct row is authoritative), and publishes one `NodeGPUNICRailMapping` (`topograph.run/v1alpha1`) per Node for the SR-IOV DRA driver. It is independent of `provider.name` and `topology.Graph`; providers without a broker annotation handler skip Node annotation updates. Enable it with `nodeMetadata.plugins.gpuNicRailMapping` in the Helm values; the chart ships the CRD under `crds/`, adds a Role in the GPU Operator namespace for `pods/exec`. The Node Observer removes the resources when the plugin is disabled and reconciles stale ones, and now has namespaced `get`, `list`, `watch` and `delete` on `nodegpunicrailmappings` in every release. The Topograph image now installs `lldpd` for `lldpctl`; the broker mounts the socket's parent directory so missing or replaced sockets can be retried without preventing pod startup. Broker scheduling selects the intended GPU nodes; collection requires GPU discovery whenever rail interfaces are present, without inspecting GPU labels or capacity. See [GPU/NIC Rail Mapping](docs/reference/gpu-nic-rail-mapping.md).
+
 - `k8s-node-labels` provider discovers fabric topology from configurable Node labels, with stable label-compatible switch IDs, optional readiness filtering, and provider-independent observer label triggers for Slinky and other engines.
 
 - The Node Observer serves `/healthz` on `nodeObserver.port` (default `8080`), and the chart gives its Deployment liveness and readiness probes on it, as the Node Data Broker already has. Set through `healthzPort` in the Node Observer config; without it, no endpoint is served.
@@ -27,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The Markdown issue templates `documentation-request.md` and `submit-question.md`. The two documentation forms and the Question form replace them.
 
 ### Fixed
+
+- GPU/NIC rail mapping ignores ANSI formatting in NVIDIA topology output, preventing an underlined header from causing a false "topology matrix has no row for GPU0" error.
+
+- GPU/NIC rail collection retries `nvidia-smi topo -m` when the installed CLI explicitly rejects `-all`, while preserving the complete matrix on supported versions. Pod execution retains partial stdout on failure so NVIDIA option diagnostics can be recognized.
+
+- GPU/NIC rail mapping falls back from interface/RDMA names to exact PCI identities and explicit PF/VF relationships when joining NVIDIA topology entries. The collected NIC PCI address stays the resource key; Data Direct remains authoritative, and ambiguous matches fail collection instead of selecting an arbitrary VF. Per-NIC logs report selected GPUs or why no mapping exists; verbosity 4 adds the match method and PF/VF addresses.
 
 - The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.
 

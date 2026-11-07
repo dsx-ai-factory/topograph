@@ -1,0 +1,90 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/ -}}
+{{- /*
+Namespaced RBAC of the gpu-nic-rail-mapping plugin. Pod and pods/exec access is
+granted only in the GPU Operator namespace and never through a
+ClusterRoleBinding. Reading the broker's own Node is covered by the broker
+ClusterRole.
+*/ -}}
+{{- if and .Values.nodeDataBroker.enabled .Values.nodeDataBroker.rbac.create (eq (include "nodeMetadata.gpuNicRailMapping.enabled" .) "true") }}
+{{- $gpu := .Values.nodeMetadata.plugins.gpuNicRailMapping.gpuSource }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nodeDataBroker.labels" . | nindent 4 }}
+rules:
+- apiGroups: [topograph.run]
+  resources: [nodegpunicrailmappings]
+  verbs: [get, create, delete]
+- apiGroups: [topograph.run]
+  resources: [nodegpunicrailmappings/status]
+  verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nodeDataBroker.labels" . | nindent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "nodeDataBroker.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail-gpu
+  namespace: {{ $gpu.gpuOperatorNamespace }}
+  labels:
+    {{- include "nodeDataBroker.labels" . | nindent 4 }}
+rules:
+- apiGroups: [apps]
+  resources: [daemonsets]
+  resourceNames: [{{ $gpu.daemonSet | quote }}]
+  verbs: [get]
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [list]
+- apiGroups: [""]
+  resources: [pods/exec]
+  verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail-gpu
+  namespace: {{ $gpu.gpuOperatorNamespace }}
+  labels:
+    {{- include "nodeDataBroker.labels" . | nindent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "nodeDataBroker.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-rail-gpu
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
