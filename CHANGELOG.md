@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Updated `github.com/klauspost/compress` from **v1.20.1** to **v1.20.2** to include the upstream fix for CVE-2026-116591.
+
 - The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.
 
 - `GET /v1/topology` responses now carry `Content-Type: text/plain; charset=utf-8` and `X-Content-Type-Options: nosniff` for completed and pending requests, as error responses already did, instead of leaving the content type to sniffing. A result of an unexpected type returns HTTP 500 instead of panicking the handler.
