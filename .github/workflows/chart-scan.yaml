@@ -149,7 +149,7 @@ jobs:
       - name: Scan rendered manifests
         # The action SHA also pins the Checkov version (by image tag): its
         # action.yml runs docker://ghcr.io/bridgecrewio/checkov:3.3.30.
-        uses: bridgecrewio/checkov-action@c10e2438743528f9e4549758fad8b7a62052541d # v12.3136.0
+        uses: bridgecrewio/checkov-action@45edc9d8856b664db2ec251f5f8632361f0a67aa # v12.3139.0
         with:
           # Absolute path inside the action container, where the workspace is
           # mounted. A relative path makes Checkov prefix the SARIF file paths
@@ -166,7 +166,7 @@ jobs:
 
       - name: Upload results to code scanning
         if: ${{ !cancelled() && hashFiles('results.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: results.sarif
           category: checkov-helm-chart
