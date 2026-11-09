@@ -91,6 +91,12 @@ branch. Do not rebase or force-push the shared release branch.
    the configured NVIDIA staging repositories. Confirm their destinations
    are restricted to staging before running them. Keep the branch at the
    recorded commit while both builds run, and verify both builds used it.
+   For the image, the Docker workflow also signs the image index with cosign,
+   attests a CycloneDX SBOM to each platform manifest and the OpenVEX
+   document to the index (when `.openvex.json` exists), and verifies all of
+   it against the exact identity of the run before the
+   run succeeds. Only a dispatch from a `vX.Y.Z` branch is signed; a dispatch
+   from any other ref publishes the image and its provenance only.
 
 2. Record the source commit, staging image reference and manifest digest,
    chart version and SHA-256 checksum, and signed build provenance. Test the
@@ -117,7 +123,10 @@ branch. Do not rebase or force-push the shared release branch.
    to `nvcr.io/nvidia/topograph/topograph:v1.2.0` and the approved chart to
    `https://helm.ngc.nvidia.com/nvidia/topograph`. Preserve the image manifest
    digest and chart package bytes; do not rebuild, repackage, or edit either
-   artifact during promotion. Retain their checksums and provenance.
+   artifact during promotion. Retain their checksums and provenance. Copy the
+   image together with its OCI referrers, the cosign signature and the SBOM,
+   OpenVEX and provenance attestations attached to the index and platform
+   digests, so they verify against the public image.
 
 3. Verify the public image digest and chart checksum against the approved
    values using the commands in [release verification](#release-verification).
@@ -167,7 +176,7 @@ flowchart TD
     A[main or selected release commit] --> B[Dedicated vX.Y.Z branch]
     B --> C[Update Chart.yaml and CHANGELOG.md]
     C --> D[Review and quality gates]
-    D --> E[Build image and chart in staging]
+    D --> E[Build image and chart in staging<br/>sign and attest the image]
     E --> F[Test and submit to internal security system]
     F -->|Changes required| C
     F -->|Approved| G[Promote the same artifacts to public NGC]
@@ -189,6 +198,10 @@ An official release provides:
   to the public artifacts
 - Versioned documentation generated from the release tag
 - Checksums and signed SLSA build provenance retained for artifact verification
+- A keyless cosign signature on the container image index
+- A CycloneDX SBOM attested with cosign to each platform manifest of the
+  container image, and the OpenVEX document attested to the index when
+  `.openvex.json` exists
 
 ## Quality gates
 
@@ -200,6 +213,8 @@ All releases must pass:
 - Review of `CHANGELOG.md` for complete, user-facing release notes
 - DCO sign-off verification for every commit
 - Successful SLSA provenance generation for release artifacts
+- Successful cosign signing and verification of the container image, its
+  SBOMs, and its OpenVEX attestations when `.openvex.json` exists
 - Completion of NVIDIA's internal security review and approval process
 - Verification that public artifacts match the artifacts approved for publication
 
@@ -228,6 +243,38 @@ to the expected public image and release tag.
 
 Verify signed provenance against the approved artifact digests and source
 commits, following the release verification instructions.
+
+Verify the public image's cosign signature, SBOMs, and OpenVEX attestations.
+Which digest carries which evidence is explained in
+[SECURITY.md](./SECURITY.md#container-image-signature-sbom-and-openvex). Use
+the exact identity of the release branch, so the image behind the tag is bound
+to that release's workflow run. Drop `openvex` from the first loop for an image
+built before `.openvex.json` was added. A missing signature or attestation here, when
+the staging run verified them, means promotion did not copy the referrers:
+
+```bash
+IMAGE=nvcr.io/nvidia/topograph/topograph
+ISSUER=https://token.actions.githubusercontent.com
+IDENTITY=https://github.com/dsx-ai-factory/topograph/.github/workflows/docker.yml@refs/heads/v1.2.0
+INDEX=$(crane digest "$IMAGE:v1.2.0")
+
+cosign verify --certificate-oidc-issuer "$ISSUER" \
+  --certificate-identity "$IDENTITY" "$IMAGE@$INDEX"
+for TYPE in slsaprovenance1 openvex; do
+  cosign verify-attestation --type "$TYPE" --certificate-oidc-issuer "$ISSUER" \
+    --certificate-identity "$IDENTITY" "$IMAGE@$INDEX" > /dev/null
+done
+for PLATFORM in linux/amd64 linux/arm64; do
+  DIGEST=$(crane digest --platform "$PLATFORM" "$IMAGE@$INDEX")
+  cosign verify-attestation --type cyclonedx --certificate-oidc-issuer "$ISSUER" \
+    --certificate-identity "$IDENTITY" "$IMAGE@$DIGEST" > /dev/null
+done
+```
+
+The Docker workflow's own verification step uses the exact identity of the
+run, as above. The admission policy sample in SECURITY.md uses a regular
+expression that accepts any `vX.Y.Z` branch instead, because it accepts every
+release rather than checking one.
 
 Also confirm that:
 
@@ -272,3 +319,30 @@ documentation publication.
 Review the **Generate SLSA provenance** step in the publishing workflow and its
 required permissions. Retry from the same source reference and retain the
 provenance for the artifact approved for publication. Missing provenance must be resolved before completing the release.
+
+The container image's signed provenance comes only from that step. The Docker
+build runs with BuildKit provenance turned off (`provenance: false`), so the
+image index lists only the `linux/amd64` and `linux/arm64` manifests and no
+`unknown/unknown` attestation entries. Their absence is expected.
+
+### Failed image signing or verification
+
+- Review the **Sign the image and attest SBOM and OpenVEX** and **Verify
+  signature and attestations** steps of the **Docker** workflow. They run only
+  for a dispatch from a `vX.Y.Z` branch.
+- Signing is keyless and needs the job's `id-token: write` permission. The
+  signature and attestations are pushed to the staging repository with the
+  same NGC login as the image.
+- The workflow verifies against the exact identity of the run, `docker.yml`
+  on the `vX.Y.Z` branch it was dispatched from. A run from any other ref is
+  not signed, by design.
+- The steps fail closed when the image index does not list exactly one
+  manifest for each of `linux/amd64` and `linux/arm64`, when an SBOM is not
+  CycloneDX 1.6 for the manifest it describes, or when `.openvex.json` is not
+  an OpenVEX document. Fix the cause through a reviewed pull request.
+- Retry by dispatching **Docker** from the same `vX.Y.Z` branch. Every SBOM
+  and VEX document is generated and validated before anything is published,
+  and the index is not signed until every attestation has been published, so
+  a failed run never leaves a signed index with missing evidence. A failure
+  part way through attesting can leave some attestations on the platform
+  manifests of an unsigned index; the retry publishes a complete set.
