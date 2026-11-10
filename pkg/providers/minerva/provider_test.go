@@ -1,7 +1,17 @@
-/*
- * Copyright 2026 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package minerva
 
@@ -13,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -154,6 +165,12 @@ func TestGenerateTopologyConfig(t *testing.T) {
 	require.Nil(t, httpErr)
 	require.NotNil(t, graph.Tiers)
 	require.Contains(t, graph.Tiers.Vertices, "super-01")
+	// compute leaves carry the requested instance IDs and node names
+	leaf01 := graph.Tiers.Vertices["super-01"].Vertices["p1-spine-01"].Vertices["p1-leaf-01"]
+	require.Equal(t, map[string]*topology.Vertex{
+		"i-01": {ID: "i-01", Name: "srv-01"},
+		"i-02": {ID: "i-02", Name: "srv-02"},
+	}, leaf01.Vertices)
 	require.Equal(t, []string{LayerEastWest, LayerNVLink}, layers)
 	require.Equal(t, []int{50, 50}, limits)
 
@@ -228,6 +245,21 @@ func TestGenerateTopologyConfigNVLinkUnavailable(t *testing.T) {
 		})
 	}
 
+	t.Run("nvlink request that never answers", func(t *testing.T) {
+		setTimeouts(t, 100*time.Millisecond, time.Minute)
+		srv := nvlink(func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+		})
+		defer srv.Close()
+
+		start := time.Now()
+		graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+		require.Nil(t, httpErr)
+		require.Contains(t, graph.Tiers.Vertices, "super-01")
+		require.Nil(t, graph.Domains)
+		require.Less(t, time.Since(start), 5*time.Second)
+	})
+
 	t.Run("canceled during the nvlink request", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -259,7 +291,8 @@ func TestExportTopologyRequest(t *testing.T) {
 	defer srv.Close()
 
 	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
-	_, _ = newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+	_, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+	require.Nil(t, httpErr)
 	require.Equal(t, []string{
 		`{"layers":["east-west"],"deviceLimit":500}`,
 		`{"layers":["nvlink"],"deviceLimit":500}`,
@@ -268,27 +301,7 @@ func TestExportTopologyRequest(t *testing.T) {
 	require.Equal(t, []string{"application/json", "application/json"}, accepts)
 }
 
-// TestGenerateOutputWithSlurmEngine feeds the graph produced by the Minerva
-// provider straight into the Slurm engine's GenerateOutput, exercising the
-// provider and engine together end to end and validating the exact
-// topology.conf text the switch tree renders to.
-func TestGenerateOutputWithSlurmEngine(t *testing.T) {
-	srv := layerServer(t, map[string][]byte{
-		LayerEastWest: readFixture(t, fixtureEastWest),
-		LayerNVLink:   readFixture(t, fixtureNVLink),
-	})
-	defer srv.Close()
-
-	cis := []topology.ComputeInstances{
-		{Instances: map[string]string{"i-01": "srv-01", "i-02": "srv-02", "i-03": "srv-03"}},
-	}
-	graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
-	require.Nil(t, httpErr)
-
-	data, httpErr := slurm.GenerateOutput(context.Background(), graph, nil)
-	require.Nil(t, httpErr)
-
-	expected := `# super-01=super-01
+const expectedSlurmTopology = `# super-01=super-01
 SwitchName=super-01 Switches=p1-spine-01
 # p1-spine-01=p1-spine-01
 SwitchName=p1-spine-01 Switches=p1-leaf-[01-02]
@@ -297,19 +310,56 @@ SwitchName=p1-leaf-01 Nodes=srv-[01-02]
 # p1-leaf-02=p1-leaf-02
 SwitchName=p1-leaf-02 Nodes=srv-03
 `
-	require.Equal(t, expected, string(data))
+
+// TestGenerateOutputWithSlurmEngine feeds the graph produced by the Minerva
+// provider straight into the Slurm engine's GenerateOutput, exercising the
+// provider and engine together end to end and validating the exact
+// topology.conf text the switch tree renders to. The graph carries NVLink
+// domains in one case and none in the other, and the tree renders the same.
+func TestGenerateOutputWithSlurmEngine(t *testing.T) {
+	cis := []topology.ComputeInstances{
+		{Instances: map[string]string{"i-01": "srv-01", "i-02": "srv-02", "i-03": "srv-03"}},
+	}
+
+	for name, nvlink := range map[string][]byte{
+		"with NVLink domains":    readFixture(t, fixtureNVLink),
+		"without NVLink domains": []byte(`{"complete":true,"nextCursor":null,"nvlink":{"records":[]}}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := layerServer(t, map[string][]byte{
+				LayerEastWest: readFixture(t, fixtureEastWest),
+				LayerNVLink:   nvlink,
+			})
+			defer srv.Close()
+
+			graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+			require.Nil(t, httpErr)
+			require.Equal(t, name == "with NVLink domains", graph.Domains != nil)
+
+			data, httpErr := slurm.GenerateOutput(context.Background(), graph, nil)
+			require.Nil(t, httpErr)
+			require.Equal(t, expectedSlurmTopology, string(data))
+		})
+	}
 }
 
-func TestInstances2NodeMap(t *testing.T) {
-	p := &Provider{}
-	i2n, err := p.Instances2NodeMap(context.Background(), []string{"node-01", "node-02"})
-	require.NoError(t, err)
-	require.Equal(t, map[string]string{"node-01": "node-01", "node-02": "node-02"}, i2n)
+// slurmInstanceMapper is the interface the Slurm engine needs from a provider
+// to discover the nodes of a request that lists none.
+type slurmInstanceMapper interface {
+	GetNodeInstances(context.Context, []string) ([]topology.ComputeInstances, error)
 }
 
-func TestGetInstancesRegions(t *testing.T) {
-	p := &Provider{}
-	regions, err := p.GetInstancesRegions(context.Background(), []string{"node-01", "node-02"})
+func TestGetNodeInstances(t *testing.T) {
+	var mapper slurmInstanceMapper = &Provider{}
+
+	cis, err := mapper.GetNodeInstances(context.Background(), []string{"node-01", "node-02"})
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{"node-01": regionLocal, "node-02": regionLocal}, regions)
+	require.Equal(t, []topology.ComputeInstances{{
+		Region:    regionLocal,
+		Instances: map[string]string{"node-01": "node-01", "node-02": "node-02"},
+	}}, cis)
+
+	cis, err = mapper.GetNodeInstances(context.Background(), nil)
+	require.NoError(t, err)
+	require.Empty(t, cis)
 }

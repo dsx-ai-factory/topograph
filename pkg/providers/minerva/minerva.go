@@ -1,7 +1,17 @@
-/*
- * Copyright 2026 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package minerva
 
@@ -14,6 +24,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"k8s.io/klog/v2"
 
@@ -45,14 +56,24 @@ const (
 
 	// maxDeviceLimit is the largest page Minerva accepts (devices per page).
 	maxDeviceLimit = 500
-	// maxPages bounds a traversal, so a server that never completes cannot
-	// keep the request looping.
-	maxPages = 10000
 
 	headerXApiKey     = "X-Api-Key"
 	headerContentType = "Content-Type"
 	headerAccept      = "Accept"
 	contentTypeJSON   = "application/json"
+)
+
+// The server calls the provider with a context that has no deadline, and the
+// HTTP client sets none, so an endpoint that accepts a connection but never
+// answers would block generation forever. requestTimeout bounds one page;
+// layerTimeout bounds a whole traversal, so a slow, endless one cannot run
+// for maxPages times requestTimeout. maxPages bounds a traversal by count, so a
+// server that never completes cannot keep the request looping. They are
+// variables so tests can shorten them.
+var (
+	requestTimeout = 2 * time.Minute
+	layerTimeout   = 10 * time.Minute
+	maxPages       = 10000
 )
 
 // roleTier gives the authoritative hierarchy tier for Minerva's standard
@@ -75,9 +96,9 @@ type ExportTopologyRequest struct {
 	Cursor      json.RawMessage `json:"cursor,omitempty"` // the previous page's nextCursor, unchanged
 }
 
-// ExportTopologyResponse is one page of the export. Exactly one of EastWest,
-// NVLink or Topology is present, depending on the requested layers; this
-// provider requests one layer at a time.
+// ExportTopologyResponse is one page of the export. The records are in EastWest
+// or NVLink, according to the layer requested; this provider requests one layer
+// at a time.
 type ExportTopologyResponse struct {
 	NextCursor json.RawMessage `json:"nextCursor"`
 	Complete   bool            `json:"complete"`
@@ -85,6 +106,7 @@ type ExportTopologyResponse struct {
 	NVLink     *Records        `json:"nvlink"`
 }
 
+// Records is the ordered record collection of one layer.
 type Records struct {
 	Records []Record `json:"records"`
 }
@@ -102,6 +124,7 @@ type Record struct {
 	To           Endpoint `json:"to"`
 }
 
+// Endpoint is one end of a neighbor record: the device that owns it.
 type Endpoint struct {
 	Device string `json:"device"`
 }
@@ -142,6 +165,9 @@ func deviceLimit(pageSize *int) int {
 // Pages are requested one at a time by following nextCursor, which is passed
 // back to Minerva unchanged.
 func (p *Provider) exportLayer(ctx context.Context, layer string, limit int) ([]Record, *httperr.Error) {
+	ctx, cancel := context.WithTimeout(ctx, layerTimeout)
+	defer cancel()
+
 	headers := map[string]string{
 		headerContentType: contentTypeJSON,
 		headerAccept:      contentTypeJSON,
@@ -157,10 +183,9 @@ func (p *Provider) exportLayer(ctx context.Context, layer string, limit int) ([]
 			return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to marshal request: %v", err))
 		}
 
-		f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, ExportTopologyURL)
 		// The server certificate is verified and redirects are refused: the API key
 		// is sent in a header and the response decides the cluster topology.
-		_, data, httpErr := httpreq.DoRequestWithRedirects(f, false, false)
+		data, httpErr := p.post(ctx, headers, payload)
 		if httpErr != nil {
 			return nil, upstreamError(layer, httpErr)
 		}
@@ -196,6 +221,16 @@ func (p *Provider) exportLayer(ctx context.Context, layer string, limit int) ([]
 		fmt.Sprintf("minerva export-topology (%s): more than %d pages", layer, maxPages))
 }
 
+// post sends one export request, giving up after requestTimeout.
+func (p *Provider) post(ctx context.Context, headers map[string]string, payload []byte) ([]byte, *httperr.Error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
+	f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, ExportTopologyURL)
+	_, data, httpErr := httpreq.DoRequestWithRedirects(f, false, false)
+	return data, httpErr
+}
+
 // upstreamError reports a failed Minerva request as a 502: the caller's own
 // request was fine, so Minerva's status (for example a 403 for a bad API key)
 // must not be mistaken for the caller's. Minerva's status stays in the message.
@@ -216,7 +251,7 @@ func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topo
 	}
 
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	if httpErr := parseResponse(treeRoot, buildDevices(records), topology.GetNodeNameMap(cis)); httpErr != nil {
+	if httpErr := parseResponse(treeRoot, buildDevices(records), nodeInstances(cis)); httpErr != nil {
 		return nil, httpErr
 	}
 
@@ -328,21 +363,46 @@ func buildDomains(records []Record, instances map[string]string) topology.Domain
 // outward from the requested nodes rather than materializing the whole fabric.
 // Minerva reports a flat device/link list with no tier numbers, so tiers are
 // derived from each device's role (see roleTier); devices with an
-// unrecognized role take no part in the tree. A device's name is its vertex ID.
-func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputNodes map[string]bool) *httperr.Error {
+// unrecognized role take no part in the tree. A switch's vertex ID is its name,
+// unless that name is a requested instance ID or the ID of the fallback group,
+// in which case it is prefixed with "switch-". The prefix uses only characters
+// valid in a Kubernetes label value, since engines publish switch IDs as labels.
+// A compute node's vertex ID is the instance ID it was requested with, and its
+// name is the node name. inputNodes maps each requested node name to its
+// instance ID.
+func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputNodes map[string]string) *httperr.Error {
 	tiers := computeTiers(devices)
 	parents := parentLinks(devices, tiers)
+
+	// Vertices are merged, placed and keyed by ID, so a switch must not share an
+	// ID with a requested compute node: it would hide the node from the merge
+	// and from the check that every requested node made it into the tree. Nor
+	// may it share the ID of the fallback group, which would replace it.
+	instanceIDs := make(map[string]bool, len(inputNodes))
+	for _, instanceID := range inputNodes {
+		instanceIDs[instanceID] = true
+	}
+
+	// The fallback group is called no-topology, which engines recognize. Only if
+	// a requested instance ID is itself no-topology does the group need another
+	// ID, since a group cannot contain a node with its own ID. It is chosen
+	// before the switch IDs so that they can avoid it.
+	groupID := topology.NoTopology
+	for instanceIDs[groupID] {
+		groupID += "-group"
+	}
 
 	switches := make(map[string]*topology.Vertex)  // every switch, regardless of whether it's reachable from a requested node
 	requested := make(map[string]*topology.Vertex) // requested servers: the starting point for growing the tree upward
 	for name, dev := range devices {
-		v := &topology.Vertex{ID: name, Name: name}
-		switch {
-		case dev.Role != RoleServer:
-			v.Vertices = make(map[string]*topology.Vertex)
-			switches[name] = v
-		case inputNodes[name]:
-			requested[name] = v
+		if dev.Role != RoleServer {
+			id := name
+			for instanceIDs[id] || id == groupID || (id != name && devices[id] != nil) {
+				id = "switch-" + id
+			}
+			switches[name] = &topology.Vertex{ID: id, Name: name, Vertices: make(map[string]*topology.Vertex)}
+		} else if instanceID, ok := inputNodes[name]; ok {
+			requested[name] = &topology.Vertex{ID: instanceID, Name: name}
 		}
 	}
 	frontier := maps.Clone(requested)
@@ -358,15 +418,15 @@ func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputN
 	hasParent := make(map[string]bool)
 	for len(frontier) != 0 {
 		next := make(map[string]*topology.Vertex)
-		for id, v := range frontier {
-			for parentID := range parents[id] {
+		for key, v := range frontier {
+			for parentID := range parents[key] {
 				parent, ok := switches[parentID]
 				if !ok {
 					continue
 				}
-				parent.Vertices[id] = v
-				if _, isSwitch := switches[id]; isSwitch {
-					hasParent[id] = true
+				parent.Vertices[v.ID] = v
+				if _, isSwitch := switches[key]; isSwitch {
+					hasParent[key] = true
 				}
 				if !visited[parentID] {
 					visited[parentID] = true
@@ -414,21 +474,21 @@ func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputN
 		collect(v)
 	}
 
-	noTopology := &topology.Vertex{ID: topology.NoTopology, Vertices: make(map[string]*topology.Vertex)}
-	for name := range inputNodes {
+	noTopology := &topology.Vertex{ID: groupID, Vertices: make(map[string]*topology.Vertex)}
+	for name, instanceID := range inputNodes {
 		v, ok := requested[name]
-		if ok && placed[name] {
+		if ok && placed[v.ID] {
 			continue
 		}
 		if !ok {
 			klog.Warningf("Requested node %q is not a server in the Minerva topology", name)
-			v = &topology.Vertex{ID: name, Name: name}
+			v = &topology.Vertex{ID: instanceID, Name: name}
 		}
-		noTopology.Vertices[name] = v
+		noTopology.Vertices[v.ID] = v
 		metrics.SetMissingTopology(NAME, name)
 	}
 	if len(noTopology.Vertices) != 0 {
-		treeRoot.Vertices[topology.NoTopology] = noTopology
+		treeRoot.Vertices[groupID] = noTopology
 	}
 
 	return nil
