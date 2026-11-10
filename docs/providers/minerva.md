@@ -1,8 +1,8 @@
 # Minerva Topology Provider
 
-[NVIDIA Minerva](https://docs.nvidia.com/) exports the physical Layer-2 topology of a fabric — every device, its interfaces, the links between them, and the GPUs attached to server nodes — as a single JSON document via its `export-topology` API.
+[NVIDIA Minerva](https://docs.nvidia.com/) exports the topology model of a fabric — hierarchy groups, devices, physical Layer-2 and NVLink connections, BGP adjacencies, and hosted components such as GPUs — as typed records through its `export-topology` API. The API returns the records in device-based pages that the client follows with a cursor.
 
-The Topograph Minerva provider queries this endpoint to build the switch tree consumed by your workload manager, in the same style as the [NetQ provider](./netq.md): it fetches the raw device/link graph, derives switch tiers from each device's role, and reduces Clos fabrics to a canonical tree using `topology.Merger`.
+The Topograph Minerva provider queries this endpoint twice per request. The `east-west` layer gives the device/link graph, from which the provider builds the switch tree consumed by your workload manager in the same style as the [NetQ provider](./netq.md): it derives switch tiers from each device's role and reduces Clos fabrics to a canonical tree using `topology.Merger`. The `nvlink` layer gives the rack that holds each node, which the provider reports as the node's NVLink domain.
 
 ## When to Use This Provider
 
@@ -16,21 +16,25 @@ Use the Minerva provider when Minerva is deployed as the fabric management plane
 
 ## Output
 
-The Minerva provider produces a switch tree (`topology/tree`), consumed by whichever engine you configure:
+The Minerva provider produces a switch tree (`topology/tree`) and, when Minerva models racks for the NVLink layer, accelerator domains (`topology/block`), consumed by whichever engine you configure:
 
 - **Slurm engine** (`engine: slurm`) — writes a `topology.conf` file for Slurm topology-aware scheduling
 - **Kubernetes engine** (`engine: k8s`) — applies `fabric.topograph.run/` labels to nodes
 - **NFD engine** (`engine: nfd`) — publishes topology as Node Feature Discovery `NodeFeature` and `NodeFeatureGroup` custom resources
 - **Slinky engine** (`engine: slinky`) — writes topology data to a Kubernetes ConfigMap
 
-The Minerva `export-topology` response also carries per-server GPU attachments (`GPUs`) and `nvlink-switch` devices cabled to the servers, but it has no attribute that names an NVLink domain or sub-domain, so this provider does not populate `topology/block`. Devices with the `nvlink-switch` role are ignored. Topograph selects a single provider per request, so the [DRA provider](./dra.md) can't be combined with Minerva in the same request — DRA derives `topology/block` from an existing `nvidia.com/gpu.clique` node label, but has no way to discover Minerva's switch-fabric data, so it can't augment a Minerva response either. If you need `topology/block` alongside Minerva's `topology/tree`, set the `k8s`/`nfd`/`slinky` engine's `acceleratorDomainSourceLabel` parameter to read accelerator-domain membership directly from that same node label — this is engine-level configuration and works with any provider, including Minerva. See the [Kubernetes engine documentation](../engines/k8s.md#configuration) for details.
+### NVLink domains
+
+Minerva's `nvlink` layer reports a rack hierarchy, the devices in each rack, NVLink neighbors, and hosted components such as GPUs. It has no attribute that names an NVLink domain, so the provider treats each rack as one NVLink domain: a requested node's domain is the rack named in its `rack` field or, when that field is absent, its primary parent when that parent is a `rack` group. Sub-domains are not populated. A requested node that the `nvlink` layer does not place in a rack gets no domain, and when no requested node has one the graph carries no `topology/block` data. NVLink neighbors and GPU components are not read.
+
+The switch tree does not depend on the `nvlink` layer. If the `nvlink` request fails or returns no records, for example on an Ethernet-only fabric, the provider logs a warning and returns the tree without `topology/block` data; only a canceled request still fails. Topograph selects a single provider per request, so the [DRA provider](./dra.md) can't be combined with Minerva in the same request. If your Minerva deployment does not model NVLink racks, set the `k8s`/`nfd`/`slinky` engine's `acceleratorDomainSourceLabel` parameter to read accelerator-domain membership directly from a node label — this is engine-level configuration and works with any provider, including Minerva. See the [Kubernetes engine documentation](../engines/k8s.md#configuration) for details.
 
 See the engine documentation (`docs/engines/`) for details on each output format.
 
 ## Prerequisites
 
 - A running NVIDIA Minerva instance accessible from the Topograph host, serving a TLS certificate that the Topograph host trusts (see [TLS](#tls))
-- An API key authorized to call `POST /v1/export-topology`
+- An API key authorized to call `POST /v2/export-topology`
 
 ## TLS
 
@@ -46,7 +50,7 @@ Topograph verifies the Minerva server certificate and does not offer a way to sk
 
 | Field | Required | Description |
 |---|---|---|
-| `apiUrl` | Yes | Base URL of the Minerva API (e.g. `https://minerva.example.com/minerva/api`). Must be an `https` URL; any other scheme is rejected so the API key is never sent in clear text. |
+| `apiUrl` | Yes | Base URL of the Minerva API (e.g. `https://minerva.example.com/minerva/api`); the provider appends `v2/export-topology`. Must be an `https` URL; any other scheme is rejected so the API key is never sent in clear text. |
 
 ## Configuration
 
@@ -96,8 +100,8 @@ Pass credentials directly in the topology request:
 
 ## How It Works
 
-1. Calls `POST /v1/export-topology` with a JSON-marshaled empty `ExportTopologyRequest` payload (`{}`) to export the entire fabric — a full-fabric export is a single, consistent snapshot with no client-side paging to manage. The optional page-size request parameter, when set, is forwarded as `limit` to control Minerva's internal pagination batch size.
-2. Parses the returned device/link list (`topology.layer2`). Minerva does not report tier numbers, so each device's tier is derived from its `role`, per Minerva's documented standard roles and interface-role pairs: `server` is tier `-1`, `leaf` is tier `0`, `spine` is tier `1`, and `super_spine` is tier `2`. Devices with any other role — including `nvlink-switch`, `unknown`, and Minerva's deployment-specific "Custom" roles — take no part in the switch tree. A device is identified by its `device_id`, or by its `deviceName` when `device_id` is null or empty (as it is for `nvlink-switch` devices); two devices that resolve to the same ID fail the request.
+1. Calls `POST /v2/export-topology` with `layers: ["east-west"]` and a `deviceLimit`. The request page size, when set, is the `deviceLimit`; it defaults to, and is capped at, Minerva's maximum of 500 devices per page. The provider follows `nextCursor`, passing it back unchanged, until `complete` is `true`, and fails the request with a `502` if an incomplete page carries no cursor, if a cursor repeats, or if a traversal exceeds 10,000 pages. Minerva reads a live, eventually consistent model, so a multi-page traversal is not a point-in-time snapshot.
+2. Collects the `device` records and the `layer2` neighbor records. Minerva does not report tier numbers, so each device's tier is derived from its `role`, per Minerva's documented standard roles and interface-role pairs: `server` is tier `-1`, `leaf` is tier `0`, `spine` is tier `1`, and `super_spine` is tier `2`. Devices with any other role — including `unknown` and Minerva's deployment-specific "Custom" roles — take no part in the switch tree, and neither does a device that only appears as the far end of a link without a `device` record of its own. A physical neighbor's `from`/`to` order carries no meaning, so each link is recorded on both devices. BGP sessions are ignored. A device's name is its vertex ID.
 3. Builds the switch tree outward from the requested server nodes (filtered by the incoming `ComputeInstances`), following each device's links to a neighbor at a higher tier — regardless of which of the two devices declared the link in Minerva's response — the same directed-by-tier approach the NetQ provider uses once it has tier data. A requested server with no resolvable switch parent is grouped under a shared `no-topology` switch rather than being dropped or reported as a partial failure. A requested node that Minerva does not report at all is grouped there too.
 
    A server cabled to more than one leaf (for example one per plane in a multi-plane fabric) can have only one parent in the output tree, so the provider keeps the parent at the lowest tier and, among equals, the one whose device name sorts first.
@@ -105,17 +109,21 @@ Pass credentials directly in the topology request:
 
    Known limitation: if a switch has children at different depths (for example a spine with both a directly attached server and a leaf branch beneath it), `topology.Merger` can drop the deeper branch's children from the merged tree. A requested server lost this way is not omitted silently; it is grouped under `no-topology` and a warning is logged.
 
+5. Calls `POST /v2/export-topology` again with `layers: ["nvlink"]`, following the same pagination, and maps each requested node to its rack as described under [NVLink domains](#nvlink-domains).
+
 ## Errors
 
 | Condition | Result |
 |---|---|
 | `apiUrl` missing, not an `https` URL, or `apiKey` missing or empty | `400`, when the provider is loaded |
-| Minerva answers with a non-2xx status (for example `401` for a bad key) | That status is returned |
+| Minerva answers the `east-west` request with a non-2xx status (for example `400` for a rejected request, `403` for a missing or invalid key, or `503` for a model-query failure) | `502`; the message names Minerva's status and carries its response body. The caller's own request was valid, so Minerva's status is not passed through |
 | The server certificate is not trusted, Minerva answers with a redirect, or the host cannot be reached | `502` |
-| `success` is `false` | `502` with Minerva's `error`, or its `message` when `error` is empty |
 | Response is not valid JSON | `502` |
-| Two devices resolve to the same ID | `502` |
+| The response has no record collection for the requested layer (an empty collection is fine) | `502` |
+| An incomplete page has no `nextCursor`, a `nextCursor` repeats, or a layer takes more than 10,000 pages | `502` |
 | The request contains no nodes | `502` `no topology available from Minerva` |
+
+These errors describe the `east-west` request. The same failures on the `nvlink` request are logged as a warning and leave the graph without domains, unless the request was canceled.
 
 A request whose nodes Minerva does not know is not an error: those nodes are grouped under `no-topology` and a warning naming each one is logged.
 

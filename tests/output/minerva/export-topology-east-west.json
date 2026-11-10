@@ -1,0 +1,346 @@
+{
+  "cursorScope": {
+    "id": "request:fixture",
+    "createdAt": "2026-10-05T18:00:00+00:00"
+  },
+  "layers": [
+    "east-west"
+  ],
+  "detail": "summary",
+  "devicesReturned": 12,
+  "nextCursor": null,
+  "complete": true,
+  "eastWest": {
+    "records": [
+      {
+        "type": "datacenter",
+        "name": "DC1",
+        "parent": null,
+        "children": [
+          {
+            "type": "pod",
+            "name": "Pod-1"
+          }
+        ]
+      },
+      {
+        "type": "pod",
+        "name": "Pod-1",
+        "parent": "DC1"
+      },
+      {
+        "type": "device",
+        "name": "srv-01",
+        "role": "server",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "srv-02",
+        "role": "server",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "srv-03",
+        "role": "server",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p1-leaf-01",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p1-leaf-09",
+        "role": "unknown",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p1-spine-01",
+        "role": "spine",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p2-leaf-01",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p2-leaf-09",
+        "role": "unknown",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p2-spine-01",
+        "role": "spine",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "super-01",
+        "role": "super_spine",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p1-leaf-02",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "device",
+        "name": "p2-leaf-02",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west"
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-01",
+          "port": "eth_p0"
+        },
+        "to": {
+          "device": "p1-leaf-01",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-01",
+          "port": "eth_p1"
+        },
+        "to": {
+          "device": "p2-leaf-01",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-02",
+          "port": "eth_p0"
+        },
+        "to": {
+          "device": "p1-leaf-01",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-02",
+          "port": "eth_p1"
+        },
+        "to": {
+          "device": "p2-leaf-01",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-03",
+          "port": "eth_p0"
+        },
+        "to": {
+          "device": "p1-leaf-02",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-03",
+          "port": "eth_p1"
+        },
+        "to": {
+          "device": "p2-leaf-02",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-leaf-01",
+          "port": "swp2"
+        },
+        "to": {
+          "device": "srv-02",
+          "port": "eth_p0"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-leaf-01",
+          "port": "swp33"
+        },
+        "to": {
+          "device": "p1-spine-01",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-leaf-09",
+          "port": "swp33"
+        },
+        "to": {
+          "device": "p1-spine-01",
+          "port": "swp2"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-spine-01",
+          "port": "swp46"
+        },
+        "to": {
+          "device": "super-01",
+          "port": "swp10"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-spine-01",
+          "port": "swp3"
+        },
+        "to": {
+          "device": "p1-leaf-02",
+          "port": "swp33"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-01",
+          "port": "swp1"
+        },
+        "to": {
+          "device": "srv-01",
+          "port": "eth_p0"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-01",
+          "port": "swp2"
+        },
+        "to": {
+          "device": "srv-02",
+          "port": "eth_p0"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-01",
+          "port": "swp33"
+        },
+        "to": {
+          "device": "p2-spine-01",
+          "port": "swp1"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-09",
+          "port": "swp33"
+        },
+        "to": {
+          "device": "p2-spine-01",
+          "port": "swp2"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-spine-01",
+          "port": "swp46"
+        },
+        "to": {
+          "device": "super-01",
+          "port": "swp10"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-spine-01",
+          "port": "swp3"
+        },
+        "to": {
+          "device": "p2-leaf-02",
+          "port": "swp33"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "super-01",
+          "port": "swp11"
+        },
+        "to": {
+          "device": "p2-spine-01",
+          "port": "swp46"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "bgp",
+        "from": {
+          "device": "p1-leaf-01",
+          "vrf": "default",
+          "peerId": "192.0.2.2"
+        },
+        "to": {},
+        "resolved": false,
+        "peerType": "EBGP",
+        "peerState": "Active"
+      }
+    ]
+  }
+}

@@ -120,33 +120,32 @@ func TestLoader(t *testing.T) {
 	}
 }
 
-// TestGenerateTopologyConfig exercises the full HTTP round trip: the request
-// carries the X-Api-Key header and the optional page size as "limit", and a
-// successful response is parsed into the switch tree.
+// TestGenerateTopologyConfig exercises the full HTTP round trip: both layers
+// are requested with the X-Api-Key header and the page size as deviceLimit,
+// the east-west layer becomes the switch tree and the nvlink layer the
+// accelerator domains.
 func TestGenerateTopologyConfig(t *testing.T) {
-	fixture, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
-	require.NoError(t, err)
-
+	var limits []int
+	var layers []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// this runs on the server's goroutine, so it reports with assert, not require
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/"+ExportTopologyURL, r.URL.Path)
-		assert.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
-
 		var body ExportTopologyRequest
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-		assert.Equal(t, 50, body.Limit)
+		limits = append(limits, body.DeviceLimit)
+		layers = append(layers, body.Layers...)
 
+		fixture := fixtureEastWest
+		if len(body.Layers) == 1 && body.Layers[0] == LayerNVLink {
+			fixture = fixtureNVLink
+		}
+		data, err := os.ReadFile(fixture)
+		assert.NoError(t, err)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(fixture)
+		_, _ = w.Write(data)
 	}))
 	defer srv.Close()
 
-	p := &Provider{
-		params: &ProviderParams{ApiURL: srv.URL},
-		creds:  &Credentials{ApiKey: "test-key"},
-	}
-
+	p := newProvider(srv)
 	pageSize := 50
 	cis := []topology.ComputeInstances{
 		{Instances: map[string]string{"i-01": "srv-01", "i-02": "srv-02", "i-03": "srv-03"}},
@@ -154,20 +153,29 @@ func TestGenerateTopologyConfig(t *testing.T) {
 	graph, httpErr := p.GenerateTopologyConfig(context.Background(), &pageSize, cis)
 	require.Nil(t, httpErr)
 	require.NotNil(t, graph.Tiers)
-	require.Contains(t, graph.Tiers.Vertices, "ss1")
+	require.Contains(t, graph.Tiers.Vertices, "super-01")
+	require.Equal(t, []string{LayerEastWest, LayerNVLink}, layers)
+	require.Equal(t, []int{50, 50}, limits)
+
+	require.Equal(t, topology.DomainMap{
+		"NVL-Rack-1": {
+			"srv-01": {Domain: "NVL-Rack-1", InstanceID: "i-01", HostName: "srv-01"},
+			"srv-02": {Domain: "NVL-Rack-1", InstanceID: "i-02", HostName: "srv-02"},
+		},
+		"NVL-Rack-2": {
+			"srv-03": {Domain: "NVL-Rack-2", InstanceID: "i-03", HostName: "srv-03"},
+		},
+	}, graph.Domains)
 
 	// server-side failure surfaces as an error, not a partial graph
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
+		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer srv2.Close()
-	p2 := &Provider{
-		params: &ProviderParams{ApiURL: srv2.URL},
-		creds:  &Credentials{ApiKey: "bad-key"},
-	}
-	_, httpErr = p2.GenerateTopologyConfig(context.Background(), nil, cis)
+	_, httpErr = newProvider(srv2).GenerateTopologyConfig(context.Background(), nil, cis)
 	require.NotNil(t, httpErr)
-	require.Equal(t, http.StatusUnauthorized, httpErr.Code())
+	require.Equal(t, http.StatusBadGateway, httpErr.Code())
+	require.Contains(t, httpErr.Error(), "status 403")
 
 	// a canceled context must fail fast rather than waiting on the HTTP handler
 	ctx, cancel := context.WithCancel(context.Background())
@@ -176,32 +184,88 @@ func TestGenerateTopologyConfig(t *testing.T) {
 	require.NotNil(t, httpErr)
 }
 
-// TestExportTopologyRequest verifies that without a page size the request body
-// is an empty object, which exports the entire fabric, and that the JSON
-// content type is set.
-func TestExportTopologyRequest(t *testing.T) {
-	fixture, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
+// TestGenerateTopologyConfigNVLinkUnavailable verifies that the switch tree
+// does not depend on the nvlink layer: when that layer fails, or is empty, the
+// graph has the tree and no domains. Only a canceled request still fails.
+func TestGenerateTopologyConfigNVLinkUnavailable(t *testing.T) {
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
+	eastWest, err := os.ReadFile(fixtureEastWest)
 	require.NoError(t, err)
 
-	var body []byte
-	var contentType string
+	nvlink := func(handler http.HandlerFunc) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body ExportTopologyRequest
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			if len(body.Layers) == 1 && body.Layers[0] == LayerNVLink {
+				handler(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(eastWest)
+		}))
+	}
+
+	for name, handler := range map[string]http.HandlerFunc{
+		"error status": func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) },
+		"malformed": func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`not json`))
+		},
+		"no nvlink records": func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null}`))
+		},
+		"empty": func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null,"nvlink":{"records":[]}}`))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := nvlink(handler)
+			defer srv.Close()
+
+			graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+			require.Nil(t, httpErr)
+			require.Contains(t, graph.Tiers.Vertices, "super-01")
+			require.Nil(t, graph.Domains)
+		})
+	}
+
+	t.Run("canceled during the nvlink request", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		srv := nvlink(func(w http.ResponseWriter, r *http.Request) {
+			cancel()
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+		defer srv.Close()
+
+		_, httpErr := newProvider(srv).GenerateTopologyConfig(ctx, nil, cis)
+		require.NotNil(t, httpErr)
+	})
+}
+
+// TestExportTopologyRequest verifies the request body: one layer, the largest
+// page without a page size, no cursor on the first page, and the JSON content
+// types.
+func TestExportTopologyRequest(t *testing.T) {
+	var bodies []string
+	var contentTypes, accepts []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ = io.ReadAll(r.Body)
-		contentType = r.Header.Get("Content-Type")
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
+		accepts = append(accepts, r.Header.Get("Accept"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(fixture)
+		_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null,"eastWest":{"records":[]},"nvlink":{"records":[]}}`))
 	}))
 	defer srv.Close()
 
-	p := &Provider{
-		params: &ProviderParams{ApiURL: srv.URL},
-		creds:  &Credentials{ApiKey: "test-key"},
-	}
 	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
-	_, httpErr := p.GenerateTopologyConfig(context.Background(), nil, cis)
-	require.Nil(t, httpErr)
-	require.JSONEq(t, `{}`, string(body))
-	require.Equal(t, "application/json", contentType)
+	_, _ = newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+	require.Equal(t, []string{
+		`{"layers":["east-west"],"deviceLimit":500}`,
+		`{"layers":["nvlink"],"deviceLimit":500}`,
+	}, bodies)
+	require.Equal(t, []string{"application/json", "application/json"}, contentTypes)
+	require.Equal(t, []string{"application/json", "application/json"}, accepts)
 }
 
 // TestGenerateOutputWithSlurmEngine feeds the graph produced by the Minerva
@@ -209,36 +273,28 @@ func TestExportTopologyRequest(t *testing.T) {
 // provider and engine together end to end and validating the exact
 // topology.conf text the switch tree renders to.
 func TestGenerateOutputWithSlurmEngine(t *testing.T) {
-	fixture, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
-	require.NoError(t, err)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(fixture)
-	}))
+	srv := layerServer(t, map[string][]byte{
+		LayerEastWest: readFixture(t, fixtureEastWest),
+		LayerNVLink:   readFixture(t, fixtureNVLink),
+	})
 	defer srv.Close()
-
-	p := &Provider{
-		params: &ProviderParams{ApiURL: srv.URL},
-		creds:  &Credentials{ApiKey: "test-key"},
-	}
 
 	cis := []topology.ComputeInstances{
 		{Instances: map[string]string{"i-01": "srv-01", "i-02": "srv-02", "i-03": "srv-03"}},
 	}
-	graph, httpErr := p.GenerateTopologyConfig(context.Background(), nil, cis)
+	graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
 	require.Nil(t, httpErr)
 
 	data, httpErr := slurm.GenerateOutput(context.Background(), graph, nil)
 	require.Nil(t, httpErr)
 
-	expected := `# super-01=ss1
+	expected := `# super-01=super-01
 SwitchName=super-01 Switches=p1-spine-01
-# p1-spine-01=p1-s1
+# p1-spine-01=p1-spine-01
 SwitchName=p1-spine-01 Switches=p1-leaf-[01-02]
-# p1-leaf-01=p1-l1
+# p1-leaf-01=p1-leaf-01
 SwitchName=p1-leaf-01 Nodes=srv-[01-02]
-# p1-leaf-02=p1-l2
+# p1-leaf-02=p1-leaf-02
 SwitchName=p1-leaf-02 Nodes=srv-03
 `
 	require.Equal(t, expected, string(data))
