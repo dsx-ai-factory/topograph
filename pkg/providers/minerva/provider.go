@@ -12,6 +12,7 @@ import (
 	"net/url"
 
 	"github.com/mitchellh/mapstructure"
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/internal/config"
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
@@ -106,8 +107,21 @@ func (p *Provider) GenerateTopologyConfig(ctx context.Context, pageSize *int, in
 		return nil, err
 	}
 
+	// The tree is the primary output. Without NVLink data, for example on an
+	// Ethernet-only fabric or when the nvlink layer is unavailable, the graph
+	// simply has no domains; only a canceled request fails.
+	domains, err := p.getDomains(ctx, pageSize, instances)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, err
+		}
+		klog.Warningf("Minerva NVLink domains are unavailable: %v", err)
+		domains = nil
+	}
+
 	return &topology.Graph{
-		Tiers: treeRoot,
+		Tiers:   treeRoot,
+		Domains: domains,
 	}, nil
 }
 

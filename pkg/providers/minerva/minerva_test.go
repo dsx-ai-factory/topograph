@@ -8,7 +8,6 @@ package minerva
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,255 +21,256 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
-// TestParseResponse parses a fixture shaped like a real export-topology
-// payload: numeric GPU componentId, an nvlink-switch with a null device_id,
-// empty interface objects, an unrecognized-role switch, extra top-level
-// fields, and servers cabled to a leaf in each of two planes.
-func TestParseResponse(t *testing.T) {
-	data, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
+const (
+	fixtureEastWest = "../../../tests/output/minerva/export-topology-east-west.json"
+	fixtureNVLink   = "../../../tests/output/minerva/export-topology-nvlink.json"
+)
+
+func deviceRec(name, role string) Record {
+	return Record{Type: recordTypeDevice, Name: name, Role: role}
+}
+
+func linkRec(a, b string) Record {
+	return Record{Type: recordTypeNeighbor, NeighborType: neighborLayer2, From: Endpoint{Device: a}, To: Endpoint{Device: b}}
+}
+
+// fabric builds the device map the tree builder works on from records.
+func fabric(records ...Record) map[string]*Device { return buildDevices(records) }
+
+func newTreeRoot() *topology.Vertex {
+	return &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
+}
+
+func readFixture(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
 	require.NoError(t, err)
+	return data
+}
 
+func fixtureRecords(t *testing.T, path, layer string) []Record {
+	t.Helper()
 	var resp ExportTopologyResponse
-	require.NoError(t, json.Unmarshal(data, &resp))
-	require.True(t, resp.Success)
-	require.Len(t, resp.Topology.Layer2, 13)
-	require.Len(t, resp.Topology.Layer2["srv-01"].GPUs, 4)
-	require.Equal(t, 0, resp.Topology.Layer2["srv-01"].GPUs[0].ComponentID)
-	require.Empty(t, resp.Topology.Layer2["nvl-sw-01"].DeviceID)
+	require.NoError(t, json.Unmarshal(readFixture(t, path), &resp))
+	require.True(t, resp.Complete)
+	records, ok := resp.records(layer)
+	require.True(t, ok)
+	return records
+}
 
-	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr := parseResponse(treeRoot, &resp, map[string]bool{
-		"srv-01": true,
-		"srv-02": true,
-		"srv-03": true,
+// newProvider returns a provider pointed at srv, with a fixed API key.
+func newProvider(srv *httptest.Server) *Provider {
+	return &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
+}
+
+// layerServer answers each export request with the fixture of the layer it
+// asks for. It reports what it received with assert, since handlers run on the
+// server's goroutine.
+func layerServer(t *testing.T, fixtures map[string][]byte) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/"+ExportTopologyURL, r.URL.Path)
+		assert.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
+
+		var body ExportTopologyRequest
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) || !assert.Len(t, body.Layers, 1) {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		data, ok := fixtures[body.Layers[0]]
+		if !assert.True(t, ok, "unexpected layer %v", body.Layers) {
+			http.Error(w, "bad layer", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(data)
+	}))
+}
+
+func TestBuildDevices(t *testing.T) {
+	records := fixtureRecords(t, fixtureEastWest, LayerEastWest)
+	devices := buildDevices(records)
+
+	// 12 east-west devices: the nvlink-switch belongs to the nvlink layer
+	require.Len(t, devices, 12)
+	require.Equal(t, RoleServer, devices["srv-01"].Role)
+	require.Equal(t, "unknown", devices["p1-leaf-09"].Role)
+
+	// links are unordered: both ends know each other whichever end was reported
+	require.Equal(t, map[string]bool{"srv-01": true, "srv-02": true, "p1-spine-01": true}, devices["p1-leaf-01"].Peers)
+	require.Equal(t, map[string]bool{"p1-leaf-01": true, "p2-leaf-01": true}, devices["srv-01"].Peers)
+
+	// BGP sessions and self-links are not physical links
+	devices = buildDevices([]Record{
+		deviceRec("a", RoleLeaf),
+		{Type: recordTypeNeighbor, NeighborType: "bgp", From: Endpoint{Device: "a"}, To: Endpoint{Device: "b"}},
+		linkRec("a", "a"),
+		linkRec("a", ""),
 	})
-	require.Nil(t, httpErr)
+	require.Len(t, devices, 1)
+	require.Empty(t, devices["a"].Peers)
 
-	srv01 := &topology.Vertex{ID: "s1", Name: "srv-01"}
-	srv02 := &topology.Vertex{ID: "s2", Name: "srv-02"}
-	srv03 := &topology.Vertex{ID: "s3", Name: "srv-03"}
+	// a device that only appears as a link end has no role, and a device record
+	// that arrives after its links still sets the role
+	devices = buildDevices([]Record{linkRec("a", "b"), deviceRec("a", RoleLeaf)})
+	require.Equal(t, RoleLeaf, devices["a"].Role)
+	require.Empty(t, devices["b"].Role)
+
+	// a repeated device record without a role does not erase the role
+	devices = buildDevices([]Record{deviceRec("a", RoleLeaf), deviceRec("a", "")})
+	require.Equal(t, RoleLeaf, devices["a"].Role)
+}
+
+func TestBuildDomains(t *testing.T) {
+	records := fixtureRecords(t, fixtureNVLink, LayerNVLink)
+	instances := map[string]string{"srv-01": "i-01", "srv-02": "i-02", "srv-03": "i-03", "srv-other": "i-04"}
+
+	domains := buildDomains(records, instances)
+	require.Equal(t, topology.DomainMap{
+		// srv-01 and srv-02 name their rack; srv-03 gets it from its primary parent
+		"NVL-Rack-1": {
+			"srv-01": {Domain: "NVL-Rack-1", InstanceID: "i-01", HostName: "srv-01"},
+			"srv-02": {Domain: "NVL-Rack-1", InstanceID: "i-02", HostName: "srv-02"},
+		},
+		"NVL-Rack-2": {
+			"srv-03": {Domain: "NVL-Rack-2", InstanceID: "i-03", HostName: "srv-03"},
+		},
+	}, domains)
+
+	// only requested nodes are placed
+	domains = buildDomains(records, map[string]string{"srv-03": "i-03"})
+	require.Len(t, domains, 1)
+	require.Contains(t, domains["NVL-Rack-2"], "srv-03")
+
+	// a rack record that follows the devices it contains still counts
+	var devicesFirst, groups []Record
+	for _, r := range records {
+		if r.Type == recordTypeDevice {
+			devicesFirst = append(devicesFirst, r)
+		} else {
+			groups = append(groups, r)
+		}
+	}
+	require.Equal(t, buildDomains(records, instances), buildDomains(append(devicesFirst, groups...), instances))
+
+	// a device whose parent is not a rack and that names no rack has no domain
+	domains = buildDomains([]Record{
+		{Type: "pod", Name: "Pod-1"},
+		{Type: recordTypeDevice, Name: "srv-01", Role: RoleServer, Parent: "Pod-1"},
+	}, map[string]string{"srv-01": "i-01"})
+	require.Empty(t, domains)
+}
+
+// TestParseResponse parses a fixture shaped like a real export: an unknown-role
+// switch, BGP records, and servers cabled to a leaf in each of two planes.
+func TestParseResponse(t *testing.T) {
+	devices := buildDevices(fixtureRecords(t, fixtureEastWest, LayerEastWest))
+
+	treeRoot := newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"srv-01": true, "srv-02": true, "srv-03": true}))
+
+	srv01 := &topology.Vertex{ID: "srv-01", Name: "srv-01"}
+	srv02 := &topology.Vertex{ID: "srv-02", Name: "srv-02"}
+	srv03 := &topology.Vertex{ID: "srv-03", Name: "srv-03"}
 
 	// each server is cabled to a leaf in both planes; only one parent is kept
 	// so the result is a tree, and the plane-2 switches never appear.
-	leaf01 := &topology.Vertex{ID: "p1-l1", Name: "p1-leaf-01", Vertices: map[string]*topology.Vertex{
-		"s1": srv01, "s2": srv02,
+	leaf01 := &topology.Vertex{ID: "p1-leaf-01", Name: "p1-leaf-01", Vertices: map[string]*topology.Vertex{
+		"srv-01": srv01, "srv-02": srv02,
 	}}
-	leaf02 := &topology.Vertex{ID: "p1-l2", Name: "p1-leaf-02", Vertices: map[string]*topology.Vertex{
-		"s3": srv03,
+	leaf02 := &topology.Vertex{ID: "p1-leaf-02", Name: "p1-leaf-02", Vertices: map[string]*topology.Vertex{
+		"srv-03": srv03,
 	}}
-	spine01 := &topology.Vertex{ID: "p1-s1", Name: "p1-spine-01", Vertices: map[string]*topology.Vertex{
-		"p1-l1": leaf01, "p1-l2": leaf02,
+	spine01 := &topology.Vertex{ID: "p1-spine-01", Name: "p1-spine-01", Vertices: map[string]*topology.Vertex{
+		"p1-leaf-01": leaf01, "p1-leaf-02": leaf02,
 	}}
-	super01 := &topology.Vertex{ID: "ss1", Name: "super-01", Vertices: map[string]*topology.Vertex{
-		"p1-s1": spine01,
+	super01 := &topology.Vertex{ID: "super-01", Name: "super-01", Vertices: map[string]*topology.Vertex{
+		"p1-spine-01": spine01,
 	}}
+	require.Equal(t, &topology.Vertex{Vertices: map[string]*topology.Vertex{"super-01": super01}}, treeRoot)
 
-	expected := &topology.Vertex{Vertices: map[string]*topology.Vertex{"ss1": super01}}
-	require.Equal(t, expected, treeRoot)
-
-	// only a subset of nodes requested: p1-leaf-01 (whose servers srv-01 and
-	// srv-02 are not requested) must not appear in the tree, and the
-	// super-spine must remain the root.
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr = parseResponse(treeRoot, &resp, map[string]bool{"srv-03": true})
-	require.Nil(t, httpErr)
-
-	expectedSubset := &topology.Vertex{Vertices: map[string]*topology.Vertex{
-		"ss1": {ID: "ss1", Name: "super-01", Vertices: map[string]*topology.Vertex{
-			"p1-s1": {ID: "p1-s1", Name: "p1-spine-01", Vertices: map[string]*topology.Vertex{
-				"p1-l2": {ID: "p1-l2", Name: "p1-leaf-02", Vertices: map[string]*topology.Vertex{
-					"s3": {ID: "s3", Name: "srv-03"},
+	// only a subset of nodes requested: p1-leaf-01 (whose servers are not
+	// requested) must not appear, and the super-spine must remain the root.
+	treeRoot = newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"srv-03": true}))
+	require.Equal(t, &topology.Vertex{Vertices: map[string]*topology.Vertex{
+		"super-01": {ID: "super-01", Name: "super-01", Vertices: map[string]*topology.Vertex{
+			"p1-spine-01": {ID: "p1-spine-01", Name: "p1-spine-01", Vertices: map[string]*topology.Vertex{
+				"p1-leaf-02": {ID: "p1-leaf-02", Name: "p1-leaf-02", Vertices: map[string]*topology.Vertex{
+					"srv-03": {ID: "srv-03", Name: "srv-03"},
 				}},
 			}},
 		}},
-	}}
-	require.Equal(t, expectedSubset, treeRoot)
-
-	// a link referencing an undeclared device must not panic; since the remote
-	// device can't be resolved, the requested server has no switch parent and
-	// is grouped under the shared no-topology switch instead of being dropped
-	// or surfacing as a top-level switch itself.
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	crasher := &ExportTopologyResponse{
-		Success: true,
-		Topology: Topology{
-			Layer2: map[string]Device{
-				"node-a": {
-					DeviceName: "node-a",
-					Role:       RoleServer,
-					DeviceID:   "d-a",
-					LocalInterface: map[string]InterfaceLink{
-						"eth0": {RemoteInterface: "swp1", RemoteDevice: "sw-undeclared"},
-					},
-				},
-			},
-		},
-	}
-	httpErr = parseResponse(treeRoot, crasher, map[string]bool{"node-a": true})
-	require.Nil(t, httpErr)
-	require.Equal(t, map[string]*topology.Vertex{
-		topology.NoTopology: {ID: topology.NoTopology, Vertices: map[string]*topology.Vertex{
-			"d-a": {ID: "d-a", Name: "node-a"},
-		}},
-	}, treeRoot.Vertices)
-
-	// two devices resolving to the same ID must error out rather than
-	// silently overwrite each other in the ID-keyed adjacency/vertex maps.
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	dup := &ExportTopologyResponse{
-		Success: true,
-		Topology: Topology{
-			Layer2: map[string]Device{
-				"node-b": {DeviceName: "node-b", Role: RoleServer, DeviceID: "d-dup"},
-				"node-c": {DeviceName: "node-c", Role: RoleServer, DeviceID: "d-dup"},
-			},
-		},
-	}
-	httpErr = parseResponse(treeRoot, dup, map[string]bool{"node-b": true, "node-c": true})
-	require.NotNil(t, httpErr)
-	require.Equal(t, http.StatusBadGateway, httpErr.Code())
-	require.Contains(t, httpErr.Error(), `duplicate device id "d-dup"`)
-	require.Contains(t, httpErr.Error(), "node-b")
-	require.Contains(t, httpErr.Error(), "node-c")
+	}}, treeRoot)
 
 	// an empty set of requested nodes yields an empty tree, not an error
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr = parseResponse(treeRoot, &resp, map[string]bool{})
-	require.Nil(t, httpErr)
+	treeRoot = newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{}))
 	require.Empty(t, treeRoot.Vertices)
 
-	// a requested server with no resolvable switch parent must not surface as
-	// a top-level root in the tree; it's grouped under no-topology instead
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	orphan := &ExportTopologyResponse{
-		Success: true,
-		Topology: Topology{
-			Layer2: map[string]Device{
-				"node-orphan": {DeviceName: "node-orphan", Role: RoleServer, DeviceID: "d-orphan"},
-			},
-		},
-	}
-	httpErr = parseResponse(treeRoot, orphan, map[string]bool{"node-orphan": true})
-	require.Nil(t, httpErr)
+	// a link to a device without a record is not a switch: the requested
+	// server has no parent and is grouped under no-topology
+	treeRoot = newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, fabric(deviceRec("node-a", RoleServer), linkRec("node-a", "sw-undeclared")),
+		map[string]bool{"node-a": true}))
 	require.Equal(t, map[string]*topology.Vertex{
 		topology.NoTopology: {ID: topology.NoTopology, Vertices: map[string]*topology.Vertex{
-			"d-orphan": {ID: "d-orphan", Name: "node-orphan"},
+			"node-a": {ID: "node-a", Name: "node-a"},
 		}},
 	}, treeRoot.Vertices)
 
-	// a mixed request — one server resolves to a switch, the other has no
-	// switch parent — must keep the resolved switch tree intact and group the
-	// unresolved server separately, rather than losing either.
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	mixed := &ExportTopologyResponse{
-		Success: true,
-		Topology: Topology{
-			Layer2: map[string]Device{
-				"leaf-01": {
-					DeviceName: "leaf-01",
-					Role:       "leaf",
-					DeviceID:   "d-leaf",
-					LocalInterface: map[string]InterfaceLink{
-						"swp1": {RemoteInterface: "eth0", RemoteDevice: "node-ok"},
-					},
-				},
-				"node-ok": {
-					DeviceName: "node-ok",
-					Role:       RoleServer,
-					DeviceID:   "d-ok",
-					LocalInterface: map[string]InterfaceLink{
-						"eth0": {RemoteInterface: "swp1", RemoteDevice: "leaf-01"},
-					},
-				},
-				"node-orphan": {DeviceName: "node-orphan", Role: RoleServer, DeviceID: "d-orphan2"},
-			},
-		},
-	}
-	httpErr = parseResponse(treeRoot, mixed, map[string]bool{"node-ok": true, "node-orphan": true})
-	require.Nil(t, httpErr)
+	// a mixed request keeps the resolved tree intact and groups the other server separately
+	treeRoot = newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, fabric(
+		deviceRec("leaf-01", RoleLeaf), deviceRec("node-ok", RoleServer), deviceRec("node-orphan", RoleServer),
+		linkRec("leaf-01", "node-ok"),
+	), map[string]bool{"node-ok": true, "node-orphan": true}))
 	require.Equal(t, map[string]*topology.Vertex{
-		"d-leaf": {ID: "d-leaf", Name: "leaf-01", Vertices: map[string]*topology.Vertex{
-			"d-ok": {ID: "d-ok", Name: "node-ok"},
+		"leaf-01": {ID: "leaf-01", Name: "leaf-01", Vertices: map[string]*topology.Vertex{
+			"node-ok": {ID: "node-ok", Name: "node-ok"},
 		}},
 		topology.NoTopology: {ID: topology.NoTopology, Vertices: map[string]*topology.Vertex{
-			"d-orphan2": {ID: "d-orphan2", Name: "node-orphan"},
+			"node-orphan": {ID: "node-orphan", Name: "node-orphan"},
 		}},
 	}, treeRoot.Vertices)
 }
 
 // TestParseResponseRoleHierarchy covers non-uniform fabrics where a switch's
-// distance to the nearest server (the old tiering heuristic) doesn't match
-// its actual role-based hierarchy level.
+// distance to the nearest server doesn't match its actual role-based level.
 //
-// Note: a spine with both a directly-attached server and a leaf branch below
-// it (i.e. a switch whose children sit at different depths) isn't covered
-// here — that shape hits a separate, pre-existing bug in topology.Merger
-// (traverse's per-layer, rather than per-vertex, leaf detection drops the
-// deeper branch's children), independent of tier derivation.
+// A spine with both a directly-attached server and a leaf branch below it
+// isn't covered here — that shape hits a separate, pre-existing limitation in
+// topology.Merger (see TestParseResponseKeepsRequestedServers).
 func TestParseResponseRoleHierarchy(t *testing.T) {
-	link := func(remote string) map[string]InterfaceLink {
-		return map[string]InterfaceLink{"eth0": {RemoteDevice: remote}}
-	}
-
 	t.Run("leaf with no server of its own is not inverted above the spine", func(t *testing.T) {
-		// A spine one hop from its server, plus a leaf with no server of its
-		// own that only connects to the spine, used to end up farther from the
-		// nearest server than the spine under distance-based tiering, wrongly
-		// making the leaf the parent of the spine.
-		resp := &ExportTopologyResponse{
-			Success: true,
-			Topology: Topology{
-				Layer2: map[string]Device{
-					"spine-01": {DeviceName: "spine-01", Role: RoleSpine, DeviceID: "d-sp",
-						LocalInterface: map[string]InterfaceLink{
-							"swp1": {RemoteDevice: "leaf-01"},
-							"swp2": {RemoteDevice: "server-a"},
-						}},
-					"leaf-01":  {DeviceName: "leaf-01", Role: RoleLeaf, DeviceID: "d-lf", LocalInterface: link("spine-01")},
-					"server-a": {DeviceName: "server-a", Role: RoleServer, DeviceID: "d-a", LocalInterface: link("spine-01")},
-				},
-			},
-		}
-
-		treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-		httpErr := parseResponse(treeRoot, resp, map[string]bool{"server-a": true})
-		require.Nil(t, httpErr)
+		devices := fabric(
+			deviceRec("spine-01", RoleSpine), deviceRec("leaf-01", RoleLeaf), deviceRec("server-a", RoleServer),
+			linkRec("spine-01", "leaf-01"), linkRec("spine-01", "server-a"),
+		)
+		treeRoot := newTreeRoot()
+		require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"server-a": true}))
 		require.Equal(t, map[string]*topology.Vertex{
-			"d-sp": {ID: "d-sp", Name: "spine-01", Vertices: map[string]*topology.Vertex{
-				"d-a": {ID: "d-a", Name: "server-a"},
+			"spine-01": {ID: "spine-01", Name: "spine-01", Vertices: map[string]*topology.Vertex{
+				"server-a": {ID: "server-a", Name: "server-a"},
 			}},
 		}, treeRoot.Vertices)
 	})
 
 	t.Run("super_spine sits above spine", func(t *testing.T) {
-		resp := &ExportTopologyResponse{
-			Success: true,
-			Topology: Topology{
-				Layer2: map[string]Device{
-					"super-01": {DeviceName: "super-01", Role: RoleSuperSpine, DeviceID: "d-ss", LocalInterface: link("spine-01")},
-					"spine-01": {DeviceName: "spine-01", Role: RoleSpine, DeviceID: "d-sp",
-						LocalInterface: map[string]InterfaceLink{
-							"swp1": {RemoteDevice: "super-01"},
-							"swp2": {RemoteDevice: "leaf-01"},
-						}},
-					"leaf-01": {DeviceName: "leaf-01", Role: RoleLeaf, DeviceID: "d-lf",
-						LocalInterface: map[string]InterfaceLink{
-							"swp1": {RemoteDevice: "spine-01"},
-							"swp2": {RemoteDevice: "node-x"},
-						}},
-					"node-x": {DeviceName: "node-x", Role: RoleServer, DeviceID: "d-x", LocalInterface: link("leaf-01")},
-				},
-			},
-		}
-
-		treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-		httpErr := parseResponse(treeRoot, resp, map[string]bool{"node-x": true})
-		require.Nil(t, httpErr)
+		devices := fabric(
+			deviceRec("super-01", RoleSuperSpine), deviceRec("spine-01", RoleSpine),
+			deviceRec("leaf-01", RoleLeaf), deviceRec("node-x", RoleServer),
+			linkRec("super-01", "spine-01"), linkRec("spine-01", "leaf-01"), linkRec("leaf-01", "node-x"),
+		)
+		treeRoot := newTreeRoot()
+		require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"node-x": true}))
 		require.Equal(t, map[string]*topology.Vertex{
-			"d-ss": {ID: "d-ss", Name: "super-01", Vertices: map[string]*topology.Vertex{
-				"d-sp": {ID: "d-sp", Name: "spine-01", Vertices: map[string]*topology.Vertex{
-					"d-lf": {ID: "d-lf", Name: "leaf-01", Vertices: map[string]*topology.Vertex{
-						"d-x": {ID: "d-x", Name: "node-x"},
+			"super-01": {ID: "super-01", Name: "super-01", Vertices: map[string]*topology.Vertex{
+				"spine-01": {ID: "spine-01", Name: "spine-01", Vertices: map[string]*topology.Vertex{
+					"leaf-01": {ID: "leaf-01", Name: "leaf-01", Vertices: map[string]*topology.Vertex{
+						"node-x": {ID: "node-x", Name: "node-x"},
 					}},
 				}},
 			}},
@@ -278,103 +278,162 @@ func TestParseResponseRoleHierarchy(t *testing.T) {
 	})
 
 	t.Run("unrecognized role is excluded and its server falls under no-topology", func(t *testing.T) {
-		resp := &ExportTopologyResponse{
-			Success: true,
-			Topology: Topology{
-				Layer2: map[string]Device{
-					"custom-tor": {DeviceName: "custom-tor", Role: "custom-tor", DeviceID: "d-custom", LocalInterface: link("node-z")},
-					"node-z":     {DeviceName: "node-z", Role: RoleServer, DeviceID: "d-z", LocalInterface: link("custom-tor")},
-				},
-			},
-		}
-
-		treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-		httpErr := parseResponse(treeRoot, resp, map[string]bool{"node-z": true})
-		require.Nil(t, httpErr)
+		devices := fabric(deviceRec("custom-tor", "custom-tor"), deviceRec("node-z", RoleServer), linkRec("custom-tor", "node-z"))
+		treeRoot := newTreeRoot()
+		require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"node-z": true}))
 		require.Equal(t, map[string]*topology.Vertex{
 			topology.NoTopology: {ID: topology.NoTopology, Vertices: map[string]*topology.Vertex{
-				"d-z": {ID: "d-z", Name: "node-z"},
+				"node-z": {ID: "node-z", Name: "node-z"},
 			}},
 		}, treeRoot.Vertices)
 	})
 }
 
+// TestExportLayerPagination verifies that every page is requested, with the
+// previous page's nextCursor passed back unchanged and the layer and device
+// limit kept, and that the records of all pages are combined.
+func TestExportLayerPagination(t *testing.T) {
+	var requests []ExportTopologyRequest
+	var raw []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var buf [4096]byte
+		n, _ := r.Body.Read(buf[:])
+		raw = append(raw, string(buf[:n]))
+		var body ExportTopologyRequest
+		assert.NoError(t, json.Unmarshal(buf[:n], &body))
+		requests = append(requests, body)
+
+		w.Header().Set("Content-Type", "application/json")
+		switch len(requests) {
+		case 1:
+			_, _ = w.Write([]byte(`{"complete":false,"nextCursor":{"lastGroupPath":"Pod-1/Rack-1","lastDevice":"srv-02"},
+				"eastWest":{"records":[{"type":"device","name":"srv-01","role":"server"}]}}`))
+		default:
+			_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null,
+				"eastWest":{"records":[{"type":"device","name":"srv-02","role":"server"}]}}`))
+		}
+	}))
+	defer srv.Close()
+
+	records, httpErr := newProvider(srv).exportLayer(context.Background(), LayerEastWest, 2)
+	require.Nil(t, httpErr)
+	require.Len(t, records, 2)
+	require.Equal(t, "srv-01", records[0].Name)
+	require.Equal(t, "srv-02", records[1].Name)
+
+	require.Len(t, raw, 2)
+	require.JSONEq(t, `{"layers":["east-west"],"deviceLimit":2}`, raw[0])
+	require.JSONEq(t, `{"layers":["east-west"],"deviceLimit":2,"cursor":{"lastGroupPath":"Pod-1/Rack-1","lastDevice":"srv-02"}}`, raw[1])
+}
+
+// TestExportLayerMissingLayer verifies that a response without the requested
+// layer's collection is an error, not an empty topology, while an empty
+// collection is fine.
+func TestExportLayerMissingLayer(t *testing.T) {
+	serve := func(t *testing.T, page string) *Provider {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(page))
+		}))
+		t.Cleanup(srv.Close)
+		return newProvider(srv)
+	}
+
+	for _, layer := range []string{LayerEastWest, LayerNVLink} {
+		for _, page := range []string{
+			`{"complete":true,"nextCursor":null}`,
+			`{"complete":true,"nextCursor":null,"eastWest":null,"nvlink":null}`,
+			// the other layer's collection does not satisfy this one
+			`{"complete":true,"nextCursor":null,"topology":{"records":[]}}`,
+		} {
+			_, httpErr := serve(t, page).exportLayer(context.Background(), layer, 10)
+			require.NotNil(t, httpErr, "%s: %s", layer, page)
+			require.Equal(t, http.StatusBadGateway, httpErr.Code())
+			require.Contains(t, httpErr.Error(), "response has no "+layer+" records")
+		}
+	}
+
+	records, httpErr := serve(t, `{"complete":true,"nextCursor":null,"nvlink":{"records":[]}}`).exportLayer(context.Background(), LayerNVLink, 10)
+	require.Nil(t, httpErr)
+	require.Empty(t, records)
+}
+
+func TestExportLayerPaginationErrors(t *testing.T) {
+	serve := func(t *testing.T, pages ...string) *Provider {
+		var n int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			page := pages[min(n, len(pages)-1)]
+			n++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(page))
+		}))
+		t.Cleanup(srv.Close)
+		return newProvider(srv)
+	}
+
+	t.Run("incomplete page without a cursor", func(t *testing.T) {
+		for _, cursor := range []string{`"nextCursor":null,`, ``} {
+			_, httpErr := serve(t, `{`+cursor+`"complete":false,"eastWest":{"records":[]}}`).exportLayer(context.Background(), LayerEastWest, 10)
+			require.NotNil(t, httpErr)
+			require.Equal(t, http.StatusBadGateway, httpErr.Code())
+			require.Contains(t, httpErr.Error(), "without a nextCursor")
+		}
+	})
+
+	t.Run("cursor that does not advance", func(t *testing.T) {
+		p := serve(t, `{"complete":false,"nextCursor":{"lastGroupPath":"a","lastDevice":"b"},"eastWest":{"records":[]}}`)
+		_, httpErr := p.exportLayer(context.Background(), LayerEastWest, 10)
+		require.NotNil(t, httpErr)
+		require.Equal(t, http.StatusBadGateway, httpErr.Code())
+		require.Contains(t, httpErr.Error(), "nextCursor repeated")
+	})
+}
+
 // TestGetNetworkTreeErrors exercises the error paths of getNetworkTree that
-// TestGenerateTopologyConfig's happy-path fixture doesn't reach: an
-// application-level failure reported via resp.Error, a malformed response
-// body, and a response with no vertices for the requested nodes.
+// the happy-path fixtures don't reach.
 func TestGetNetworkTreeErrors(t *testing.T) {
 	cis := []topology.ComputeInstances{
 		{Instances: map[string]string{"i-01": "node-01"}},
 	}
 
-	// every handler that serves a response also checks the request it got; it
-	// runs on the server's goroutine, so it reports with assert, not require
-	assertExportRequest := func(t *testing.T, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/"+ExportTopologyURL, r.URL.Path)
-		assert.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
-	}
-
-	t.Run("unsuccessful response", func(t *testing.T) {
+	t.Run("error response", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assertExportRequest(t, r)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"success": false, "error": "export failed"}`))
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"success": false, "error": "fabricType must be east-west or north-south"}`))
 		}))
 		defer srv.Close()
 
-		p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
-		_, httpErr := p.getNetworkTree(context.Background(), nil, cis)
+		_, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, cis)
 		require.NotNil(t, httpErr)
 		require.Equal(t, http.StatusBadGateway, httpErr.Code())
-		require.Contains(t, httpErr.Error(), "export failed")
+		require.Contains(t, httpErr.Error(), "status 400")
+		require.Contains(t, httpErr.Error(), "fabricType must be")
 	})
 
-	t.Run("unsuccessful response reports message when error is empty", func(t *testing.T) {
+	t.Run("forbidden", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assertExportRequest(t, r)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"success": false, "message": "invalid limit"}`))
+			w.WriteHeader(http.StatusForbidden)
 		}))
 		defer srv.Close()
 
-		p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
-		_, httpErr := p.getNetworkTree(context.Background(), nil, cis)
+		_, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, cis)
 		require.NotNil(t, httpErr)
-		require.Contains(t, httpErr.Error(), "invalid limit")
+		require.Equal(t, http.StatusBadGateway, httpErr.Code())
+		require.Contains(t, httpErr.Error(), "status 403")
 	})
 
 	t.Run("malformed JSON", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assertExportRequest(t, r)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`not json`))
 		}))
 		defer srv.Close()
 
-		p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
-		_, httpErr := p.getNetworkTree(context.Background(), nil, cis)
+		_, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, cis)
 		require.NotNil(t, httpErr)
 		require.Equal(t, http.StatusBadGateway, httpErr.Code())
 		require.Contains(t, httpErr.Error(), "minerva output read failed")
-	})
-
-	t.Run("duplicate device id", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assertExportRequest(t, r)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"success": true, "topology": {"layer2": {
-				"node-01": {"deviceName": "node-01", "role": "server", "device_id": "dup"},
-				"node-02": {"deviceName": "node-02", "role": "server", "device_id": "dup"}}}}`))
-		}))
-		defer srv.Close()
-
-		p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
-		_, httpErr := p.getNetworkTree(context.Background(), nil, cis)
-		require.NotNil(t, httpErr)
-		require.Equal(t, http.StatusBadGateway, httpErr.Code())
-		require.Contains(t, httpErr.Error(), "duplicate device id")
 	})
 
 	t.Run("untrusted certificate is rejected", func(t *testing.T) {
@@ -384,8 +443,7 @@ func TestGetNetworkTreeErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
-		_, httpErr := p.getNetworkTree(context.Background(), nil, cis)
+		_, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, cis)
 		require.NotNil(t, httpErr)
 		require.Contains(t, httpErr.Error(), "certificate")
 		require.False(t, called, "the request, and the API key with it, must not reach an untrusted server")
@@ -409,8 +467,7 @@ func TestGetNetworkTreeErrors(t *testing.T) {
 				}))
 				defer srv.Close()
 
-				p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
-				_, httpErr := p.getNetworkTree(context.Background(), nil, cis)
+				_, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, cis)
 				require.NotNil(t, httpErr)
 				require.Equal(t, http.StatusBadGateway, httpErr.Code())
 				require.Contains(t, httpErr.Error(), "refusing to follow a redirect")
@@ -440,7 +497,7 @@ func TestGetNetworkTreeErrors(t *testing.T) {
 			cancel()
 		}()
 
-		p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
+		p := newProvider(srv)
 		done := make(chan *httperr.Error, 1)
 		go func() {
 			_, httpErr := p.getNetworkTree(ctx, nil, cis)
@@ -456,28 +513,24 @@ func TestGetNetworkTreeErrors(t *testing.T) {
 	})
 
 	t.Run("no nodes requested", func(t *testing.T) {
-		fixture, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
-		require.NoError(t, err)
-
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assertExportRequest(t, r)
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(fixture)
-		}))
+		srv := layerServer(t, map[string][]byte{LayerEastWest: readFixture(t, fixtureEastWest)})
 		defer srv.Close()
 
-		p := &Provider{params: &ProviderParams{ApiURL: srv.URL}, creds: &Credentials{ApiKey: "test-key"}}
-		_, httpErr := p.getNetworkTree(context.Background(), nil, nil)
+		_, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, nil)
 		require.NotNil(t, httpErr)
 		require.Equal(t, http.StatusBadGateway, httpErr.Code())
 		require.Contains(t, httpErr.Error(), "no topology available from Minerva")
 	})
-
 }
 
-func TestDeviceID(t *testing.T) {
-	require.Equal(t, "d-1", deviceID(Device{DeviceName: "node-01", DeviceID: "d-1"}))
-	require.Equal(t, "node-01", deviceID(Device{DeviceName: "node-01"}))
+func TestDeviceLimit(t *testing.T) {
+	n := func(v int) *int { return &v }
+	require.Equal(t, maxDeviceLimit, deviceLimit(nil))
+	require.Equal(t, maxDeviceLimit, deviceLimit(n(0)))
+	require.Equal(t, maxDeviceLimit, deviceLimit(n(-3)))
+	require.Equal(t, 50, deviceLimit(n(50)))
+	require.Equal(t, maxDeviceLimit, deviceLimit(n(maxDeviceLimit)))
+	require.Equal(t, maxDeviceLimit, deviceLimit(n(10000)))
 }
 
 // vertexCounts returns how many times each vertex ID appears in the tree.
@@ -496,66 +549,36 @@ func vertexCounts(treeRoot *topology.Vertex) map[string]int {
 	return counts
 }
 
-// vertexNames returns how many times each vertex name appears in the tree.
-func vertexNames(treeRoot *topology.Vertex) map[string]int {
-	counts := make(map[string]int)
-	var walk func(v *topology.Vertex)
-	walk = func(v *topology.Vertex) {
-		counts[v.Name]++
-		for _, c := range v.Vertices {
-			walk(c)
-		}
-	}
-	for _, v := range treeRoot.Vertices {
-		walk(v)
-	}
-	return counts
-}
-
 // TestParseResponseMissingServers verifies that a requested server Minerva
 // doesn't know about is kept under no-topology, as ClusterTopology.ToGraph
 // does, rather than silently dropped.
 func TestParseResponseMissingServers(t *testing.T) {
-	data, err := os.ReadFile("../../../tests/output/minerva/export-topology.json")
-	require.NoError(t, err)
-	var resp ExportTopologyResponse
-	require.NoError(t, json.Unmarshal(data, &resp))
+	devices := buildDevices(fixtureRecords(t, fixtureEastWest, LayerEastWest))
 
-	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr := parseResponse(treeRoot, &resp, map[string]bool{"srv-03": true, "srv-missing": true})
-	require.Nil(t, httpErr)
-	require.Contains(t, treeRoot.Vertices, "ss1")
+	treeRoot := newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"srv-03": true, "srv-missing": true}))
+	require.Contains(t, treeRoot.Vertices, "super-01")
 	require.Equal(t, &topology.Vertex{
 		ID: topology.NoTopology,
 		Vertices: map[string]*topology.Vertex{
-			"missing/srv-missing": {ID: "missing/srv-missing", Name: "srv-missing"},
+			"srv-missing": {ID: "srv-missing", Name: "srv-missing"},
 		},
 	}, treeRoot.Vertices[topology.NoTopology])
 
-	// a requested name that equals the device ID of a reported server (srv-01
-	// has device ID s1) is a different node: it must not shadow the server nor
-	// be lost when the server is attached to its switch
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr = parseResponse(treeRoot, &resp, map[string]bool{"srv-01": true, "s1": true})
-	require.Nil(t, httpErr)
-	names := vertexNames(treeRoot)
-	require.Equal(t, 1, names["srv-01"])
-	require.Equal(t, 1, names["s1"])
-	require.Len(t, treeRoot.Vertices[topology.NoTopology].Vertices, 1)
-
 	// a requested name that Minerva reports as a switch, not a server, is not
 	// a node to place in the tree either
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr = parseResponse(treeRoot, &resp, map[string]bool{"srv-03": true, "p1-leaf-01": true})
-	require.Nil(t, httpErr)
-	require.Contains(t, treeRoot.Vertices[topology.NoTopology].Vertices, "missing/p1-leaf-01")
-	require.NotContains(t, vertexCounts(treeRoot), "p1-l1")
+	treeRoot = newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"srv-03": true, "p1-leaf-01": true}))
+	require.Contains(t, treeRoot.Vertices[topology.NoTopology].Vertices, "p1-leaf-01")
+	require.Equal(t, 1, vertexCounts(treeRoot)["p1-leaf-02"])
+	// it appears only as the childless placeholder, not as the switch
+	require.Equal(t, 1, vertexCounts(treeRoot)["p1-leaf-01"])
+	require.Empty(t, treeRoot.Vertices[topology.NoTopology].Vertices["p1-leaf-01"].Vertices)
 
 	// when none of the requested nodes are known, they all land under
 	// no-topology rather than failing the request
-	treeRoot = &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr = parseResponse(treeRoot, &resp, map[string]bool{"srv-missing": true})
-	require.Nil(t, httpErr)
+	treeRoot = newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"srv-missing": true}))
 	require.Len(t, treeRoot.Vertices, 1)
 	require.Contains(t, treeRoot.Vertices, topology.NoTopology)
 }
@@ -564,38 +587,23 @@ func TestParseResponseMissingServers(t *testing.T) {
 // two spines share one leaf, so merging identical child sets can't collapse
 // them. Every vertex must still appear exactly once in the output.
 func TestParseResponseSharedSwitches(t *testing.T) {
-	link := func(remotes ...string) map[string]InterfaceLink {
-		m := make(map[string]InterfaceLink)
-		for i, r := range remotes {
-			m[fmt.Sprintf("swp%d", i)] = InterfaceLink{RemoteDevice: r}
-		}
-		return m
-	}
-	resp := &ExportTopologyResponse{
-		Success: true,
-		Topology: Topology{
-			Layer2: map[string]Device{
-				"spine-a": {DeviceName: "spine-a", Role: RoleSpine, DeviceID: "sa", LocalInterface: link("leaf-x", "leaf-y")},
-				"spine-b": {DeviceName: "spine-b", Role: RoleSpine, DeviceID: "sb", LocalInterface: link("leaf-y", "leaf-z")},
-				"leaf-x":  {DeviceName: "leaf-x", Role: RoleLeaf, DeviceID: "lx", LocalInterface: link("srv-x")},
-				"leaf-y":  {DeviceName: "leaf-y", Role: RoleLeaf, DeviceID: "ly", LocalInterface: link("srv-y")},
-				"leaf-z":  {DeviceName: "leaf-z", Role: RoleLeaf, DeviceID: "lz", LocalInterface: link("srv-z")},
-				"srv-x":   {DeviceName: "srv-x", Role: RoleServer, DeviceID: "x", LocalInterface: link("leaf-x")},
-				"srv-y":   {DeviceName: "srv-y", Role: RoleServer, DeviceID: "y", LocalInterface: link("leaf-y")},
-				"srv-z":   {DeviceName: "srv-z", Role: RoleServer, DeviceID: "z", LocalInterface: link("leaf-z")},
-			},
-		},
-	}
+	devices := fabric(
+		deviceRec("spine-a", RoleSpine), deviceRec("spine-b", RoleSpine),
+		deviceRec("leaf-x", RoleLeaf), deviceRec("leaf-y", RoleLeaf), deviceRec("leaf-z", RoleLeaf),
+		deviceRec("srv-x", RoleServer), deviceRec("srv-y", RoleServer), deviceRec("srv-z", RoleServer),
+		linkRec("spine-a", "leaf-x"), linkRec("spine-a", "leaf-y"),
+		linkRec("spine-b", "leaf-y"), linkRec("spine-b", "leaf-z"),
+		linkRec("leaf-x", "srv-x"), linkRec("leaf-y", "srv-y"), linkRec("leaf-z", "srv-z"),
+	)
 
-	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr := parseResponse(treeRoot, resp, map[string]bool{"srv-x": true, "srv-y": true, "srv-z": true})
-	require.Nil(t, httpErr)
+	treeRoot := newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"srv-x": true, "srv-y": true, "srv-z": true}))
 
 	seen := vertexCounts(treeRoot)
 	for id, n := range seen {
 		require.Equal(t, 1, n, "vertex %q appears %d times", id, n)
 	}
-	for _, id := range []string{"x", "y", "z"} {
+	for _, id := range []string{"srv-x", "srv-y", "srv-z"} {
 		require.Equal(t, 1, seen[id], "server %q must be present", id)
 	}
 }
@@ -605,44 +613,37 @@ func TestParseResponseSharedSwitches(t *testing.T) {
 // children sit at different depths, and such servers must fall back to
 // no-topology rather than vanishing from the output.
 func TestParseResponseKeepsRequestedServers(t *testing.T) {
-	link := func(remotes ...string) map[string]InterfaceLink {
-		m := make(map[string]InterfaceLink)
-		for i, r := range remotes {
-			m[fmt.Sprintf("swp%d", i)] = InterfaceLink{RemoteDevice: r}
-		}
-		return m
-	}
-	resp := &ExportTopologyResponse{
-		Success: true,
-		Topology: Topology{
-			Layer2: map[string]Device{
-				"spine-01": {DeviceName: "spine-01", Role: RoleSpine, DeviceID: "sp", LocalInterface: link("leaf-01", "srv-a")},
-				"leaf-01":  {DeviceName: "leaf-01", Role: RoleLeaf, DeviceID: "lf", LocalInterface: link("srv-b")},
-				"srv-a":    {DeviceName: "srv-a", Role: RoleServer, DeviceID: "a", LocalInterface: link("spine-01")},
-				"srv-b":    {DeviceName: "srv-b", Role: RoleServer, DeviceID: "b", LocalInterface: link("leaf-01")},
-			},
-		},
-	}
+	devices := fabric(
+		deviceRec("spine-01", RoleSpine), deviceRec("leaf-01", RoleLeaf),
+		deviceRec("srv-a", RoleServer), deviceRec("srv-b", RoleServer),
+		linkRec("spine-01", "leaf-01"), linkRec("spine-01", "srv-a"), linkRec("leaf-01", "srv-b"),
+	)
 
-	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr := parseResponse(treeRoot, resp, map[string]bool{"srv-a": true, "srv-b": true})
-	require.Nil(t, httpErr)
+	treeRoot := newTreeRoot()
+	require.Nil(t, parseResponse(treeRoot, devices, map[string]bool{"srv-a": true, "srv-b": true}))
 	counts := vertexCounts(treeRoot)
-	require.Equal(t, 1, counts["a"])
-	require.Equal(t, 1, counts["b"])
+	require.Equal(t, 1, counts["srv-a"])
+	require.Equal(t, 1, counts["srv-b"])
 }
 
 // TestParentLinksPrefersLowestTier verifies a server linked to both a leaf and
 // a spine attaches to the leaf regardless of how the device names sort.
 func TestParentLinksPrefersLowestTier(t *testing.T) {
-	devices := map[string]Device{
-		"a-spine": {DeviceName: "a-spine", Role: RoleSpine, DeviceID: "sp", LocalInterface: map[string]InterfaceLink{"swp1": {RemoteDevice: "srv"}}},
-		"z-leaf":  {DeviceName: "z-leaf", Role: RoleLeaf, DeviceID: "lf", LocalInterface: map[string]InterfaceLink{"swp1": {RemoteDevice: "srv"}}},
-		"srv":     {DeviceName: "srv", Role: RoleServer, DeviceID: "s"},
-	}
-	nameToID := map[string]string{"a-spine": "sp", "z-leaf": "lf", "srv": "s"}
-	tiers := computeTiers(devices, nameToID)
-	require.Equal(t, map[string]bool{"lf": true}, parentLinks(devices, nameToID, tiers)["s"])
+	devices := fabric(
+		deviceRec("a-spine", RoleSpine), deviceRec("z-leaf", RoleLeaf), deviceRec("srv", RoleServer),
+		linkRec("a-spine", "srv"), linkRec("z-leaf", "srv"),
+	)
+	require.Equal(t, map[string]bool{"z-leaf": true}, parentLinks(devices, computeTiers(devices))["srv"])
+}
+
+// TestParentLinksSameTierPrefersFirstName verifies a multi-plane server keeps
+// the leaf whose name sorts first.
+func TestParentLinksSameTierPrefersFirstName(t *testing.T) {
+	devices := fabric(
+		deviceRec("p2-leaf", RoleLeaf), deviceRec("p1-leaf", RoleLeaf), deviceRec("srv", RoleServer),
+		linkRec("p2-leaf", "srv"), linkRec("p1-leaf", "srv"),
+	)
+	require.Equal(t, map[string]bool{"p1-leaf": true}, parentLinks(devices, computeTiers(devices))["srv"])
 }
 
 func TestSingleParent(t *testing.T) {
@@ -693,27 +694,4 @@ func TestSingleParent(t *testing.T) {
 		tree := singleParent([]*topology.Vertex{inner, a})
 		require.Equal(t, []*topology.Vertex{a}, tree)
 	})
-}
-
-// TestParseResponseMissingNodeIDsDoNotCollide verifies that the ID given to a
-// requested node Minerva doesn't report never equals a reported device's ID,
-// since both are keyed by ID under no-topology and in the switch tree.
-func TestParseResponseMissingNodeIDsDoNotCollide(t *testing.T) {
-	resp := &ExportTopologyResponse{
-		Success: true,
-		Topology: Topology{
-			Layer2: map[string]Device{
-				// a reported server whose ID is the one the fallback would pick first
-				"node-a": {DeviceName: "node-a", Role: RoleServer, DeviceID: "missing/ghost"},
-			},
-		},
-	}
-
-	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	httpErr := parseResponse(treeRoot, resp, map[string]bool{"node-a": true, "ghost": true})
-	require.Nil(t, httpErr)
-	require.Equal(t, map[string]*topology.Vertex{
-		"missing/ghost":  {ID: "missing/ghost", Name: "node-a"},
-		"_missing/ghost": {ID: "_missing/ghost", Name: "ghost"},
-	}, treeRoot.Vertices[topology.NoTopology].Vertices)
 }

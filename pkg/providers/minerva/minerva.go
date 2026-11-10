@@ -6,6 +6,7 @@
 package minerva
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -23,15 +24,34 @@ import (
 )
 
 const (
-	ExportTopologyURL = "v1/export-topology"
+	ExportTopologyURL = "v2/export-topology"
 
 	RoleServer     = "server"
 	RoleLeaf       = "leaf"
 	RoleSpine      = "spine"
 	RoleSuperSpine = "super_spine"
 
+	// Topology layers of the export. The east-west layer carries the
+	// Ethernet hierarchy and Layer-2 links; the nvlink layer carries the rack
+	// hierarchy and NVLink neighbors.
+	LayerEastWest = "east-west"
+	LayerNVLink   = "nvlink"
+
+	// Record and neighbor types of the export.
+	recordTypeDevice   = "device"
+	recordTypeRack     = "rack"
+	recordTypeNeighbor = "neighbor"
+	neighborLayer2     = "layer2"
+
+	// maxDeviceLimit is the largest page Minerva accepts (devices per page).
+	maxDeviceLimit = 500
+	// maxPages bounds a traversal, so a server that never completes cannot
+	// keep the request looping.
+	maxPages = 10000
+
 	headerXApiKey     = "X-Api-Key"
 	headerContentType = "Content-Type"
+	headerAccept      = "Accept"
 	contentTypeJSON   = "application/json"
 )
 
@@ -48,78 +68,155 @@ var roleTier = map[string]int{
 	RoleSuperSpine: 2,
 }
 
-// ExportTopologyRequest is the POST body for /v1/export-topology.
-// Sending an empty object exports the entire fabric.
+// ExportTopologyRequest is the POST body for the export-topology API.
 type ExportTopologyRequest struct {
-	Limit int `json:"limit,omitempty"`
+	Layers      []string        `json:"layers"`
+	DeviceLimit int             `json:"deviceLimit,omitempty"`
+	Cursor      json.RawMessage `json:"cursor,omitempty"` // the previous page's nextCursor, unchanged
 }
 
+// ExportTopologyResponse is one page of the export. Exactly one of EastWest,
+// NVLink or Topology is present, depending on the requested layers; this
+// provider requests one layer at a time.
 type ExportTopologyResponse struct {
-	Success  bool     `json:"success"`
-	Topology Topology `json:"topology"`
-	Message  string   `json:"message"`
-	Error    string   `json:"error"`
+	NextCursor json.RawMessage `json:"nextCursor"`
+	Complete   bool            `json:"complete"`
+	EastWest   *Records        `json:"eastWest"`
+	NVLink     *Records        `json:"nvlink"`
 }
 
-type Topology struct {
-	Layer2 map[string]Device `json:"layer2"`
+type Records struct {
+	Records []Record `json:"records"`
 }
 
+// Record is one hierarchy group, device, component or neighbor record. Only
+// the fields this provider reads are decoded; others are ignored.
+type Record struct {
+	Type         string   `json:"type"`
+	Name         string   `json:"name"`
+	Role         string   `json:"role"`
+	Parent       string   `json:"parent"`
+	Rack         string   `json:"rack"`
+	NeighborType string   `json:"neighborType"`
+	From         Endpoint `json:"from"`
+	To           Endpoint `json:"to"`
+}
+
+type Endpoint struct {
+	Device string `json:"device"`
+}
+
+// Device is a device of the east-west layer and the devices it is linked to.
 type Device struct {
-	DeviceName     string                   `json:"deviceName"`
-	HostName       string                   `json:"host_name"`
-	Role           string                   `json:"role"`
-	DeviceID       string                   `json:"device_id"`
-	LocalInterface map[string]InterfaceLink `json:"localInterface"`
-	GPUs           []GPU                    `json:"GPUs"`
+	Name  string
+	Role  string
+	Peers map[string]bool // names of directly linked devices
 }
 
-type InterfaceLink struct {
-	RemoteInterface string `json:"remoteInterface"`
-	RemoteDevice    string `json:"remoteDevice"`
-}
-
-type GPU struct {
-	Name        string `json:"name"`
-	ComponentID int    `json:"componentId"`
-}
-
-func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topology.ComputeInstances) (*topology.Vertex, *httperr.Error) {
-	req := ExportTopologyRequest{}
-	if pageSize != nil {
-		req.Limit = *pageSize
+// records returns the records of layer, and false when the response does not
+// carry that layer's collection at all, which is not the same as an empty one.
+func (r *ExportTopologyResponse) records(layer string) ([]Record, bool) {
+	var rec *Records
+	switch layer {
+	case LayerEastWest:
+		rec = r.EastWest
+	case LayerNVLink:
+		rec = r.NVLink
 	}
-	payload, err := json.Marshal(req)
-	if err != nil {
-		return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to marshal request: %v", err))
+	if rec == nil {
+		return nil, false
 	}
+	return rec.Records, true
+}
 
+// deviceLimit converts the request page size to Minerva's deviceLimit: the
+// largest page unless a smaller one is requested.
+func deviceLimit(pageSize *int) int {
+	if pageSize == nil || *pageSize <= 0 || *pageSize > maxDeviceLimit {
+		return maxDeviceLimit
+	}
+	return *pageSize
+}
+
+// exportLayer reads every page of one topology layer and returns its records.
+// Pages are requested one at a time by following nextCursor, which is passed
+// back to Minerva unchanged.
+func (p *Provider) exportLayer(ctx context.Context, layer string, limit int) ([]Record, *httperr.Error) {
 	headers := map[string]string{
 		headerContentType: contentTypeJSON,
+		headerAccept:      contentTypeJSON,
 		headerXApiKey:     p.creds.ApiKey,
 	}
-	f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, ExportTopologyURL)
-	// The server certificate is verified and redirects are refused: the API key
-	// is sent in a header and the response decides the cluster topology.
-	_, data, httpErr := httpreq.DoRequestWithRedirects(f, false, false)
+
+	var records []Record
+	var cursor json.RawMessage
+	seen := make(map[string]bool)
+	for page := 0; page < maxPages; page++ {
+		payload, err := json.Marshal(ExportTopologyRequest{Layers: []string{layer}, DeviceLimit: limit, Cursor: cursor})
+		if err != nil {
+			return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to marshal request: %v", err))
+		}
+
+		f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, ExportTopologyURL)
+		// The server certificate is verified and redirects are refused: the API key
+		// is sent in a header and the response decides the cluster topology.
+		_, data, httpErr := httpreq.DoRequestWithRedirects(f, false, false)
+		if httpErr != nil {
+			return nil, upstreamError(layer, httpErr)
+		}
+
+		var resp ExportTopologyResponse
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("minerva output read failed: %v", err))
+		}
+		pageRecords, ok := resp.records(layer)
+		if !ok {
+			return nil, httperr.NewError(http.StatusBadGateway,
+				fmt.Sprintf("minerva export-topology (%s): response has no %s records", layer, layer))
+		}
+		records = append(records, pageRecords...)
+		if resp.Complete {
+			return records, nil
+		}
+
+		next := bytes.TrimSpace(resp.NextCursor)
+		if len(next) == 0 || bytes.Equal(next, []byte("null")) {
+			return nil, httperr.NewError(http.StatusBadGateway,
+				fmt.Sprintf("minerva export-topology (%s): incomplete page without a nextCursor", layer))
+		}
+		if seen[string(next)] {
+			return nil, httperr.NewError(http.StatusBadGateway,
+				fmt.Sprintf("minerva export-topology (%s): nextCursor repeated, pagination is not advancing", layer))
+		}
+		seen[string(next)] = true
+		cursor = slices.Clone(next)
+	}
+
+	return nil, httperr.NewError(http.StatusBadGateway,
+		fmt.Sprintf("minerva export-topology (%s): more than %d pages", layer, maxPages))
+}
+
+// upstreamError reports a failed Minerva request as a 502: the caller's own
+// request was fine, so Minerva's status (for example a 403 for a bad API key)
+// must not be mistaken for the caller's. Minerva's status stays in the message.
+func upstreamError(layer string, httpErr *httperr.Error) *httperr.Error {
+	if httpErr.Code() == http.StatusBadGateway {
+		return httperr.NewError(http.StatusBadGateway, fmt.Sprintf("minerva export-topology (%s): %s", layer, httpErr.Error()))
+	}
+	return httperr.NewError(http.StatusBadGateway,
+		fmt.Sprintf("minerva export-topology (%s): status %d: %s", layer, httpErr.Code(), httpErr.Error()))
+}
+
+// getNetworkTree exports the east-west layer and builds the switch tree for
+// the requested nodes.
+func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topology.ComputeInstances) (*topology.Vertex, *httperr.Error) {
+	records, httpErr := p.exportLayer(ctx, LayerEastWest, deviceLimit(pageSize))
 	if httpErr != nil {
 		return nil, httpErr
 	}
 
-	var resp ExportTopologyResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("minerva output read failed: %v", err))
-	}
-	if !resp.Success {
-		reason := resp.Error
-		if len(reason) == 0 {
-			reason = resp.Message
-		}
-		return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("minerva export-topology failed: %s", reason))
-	}
-
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	if httpErr := parseResponse(treeRoot, &resp, topology.GetNodeNameMap(cis)); httpErr != nil {
+	if httpErr := parseResponse(treeRoot, buildDevices(records), topology.GetNodeNameMap(cis)); httpErr != nil {
 		return nil, httpErr
 	}
 
@@ -130,59 +227,125 @@ func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topo
 	return treeRoot, nil
 }
 
-// parseResponse parses the Minerva export-topology output into a switch tree,
-// growing it outward from the requested nodes rather than materializing the
-// whole fabric. Minerva reports a flat Layer-2 device/link list with no tier
-// numbers, so tiers are derived from each device's role (see roleTier);
-// devices with an unrecognized role take no part in the tree.
-func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inputNodes map[string]bool) *httperr.Error {
-	devices := resp.Topology.Layer2
-
-	nameToID, httpErr := deviceIDIndex(devices)
+// getDomains exports the nvlink layer and maps each requested node to its
+// NVLink domain. It returns nil when no requested node has one.
+func (p *Provider) getDomains(ctx context.Context, pageSize *int, cis []topology.ComputeInstances) (topology.DomainMap, *httperr.Error) {
+	records, httpErr := p.exportLayer(ctx, LayerNVLink, deviceLimit(pageSize))
 	if httpErr != nil {
-		return httpErr
+		return nil, httpErr
 	}
-	tiers := computeTiers(devices, nameToID)
-	parents := parentLinks(devices, nameToID, tiers)
 
-	switches := make(map[string]*topology.Vertex)   // every switch, keyed by ID, regardless of whether it's reachable from a requested node
-	frontier := make(map[string]*topology.Vertex)   // requested servers: the starting point for growing the tree upward
-	unresolved := make(map[string]*topology.Vertex) // requested nodes not yet attached to a switch, keyed by requested name
-	requested := make(map[string]*topology.Vertex)  // every requested server Minerva reports, to confirm it survives merging
+	domains := buildDomains(records, nodeInstances(cis))
+	if len(domains) == 0 {
+		return nil, nil
+	}
+	return domains, nil
+}
+
+// nodeInstances maps each requested node name to its instance ID.
+func nodeInstances(cis []topology.ComputeInstances) map[string]string {
+	nodes := make(map[string]string)
+	for _, ci := range cis {
+		for instanceID, node := range ci.Instances {
+			nodes[node] = instanceID
+		}
+	}
+	return nodes
+}
+
+// buildDevices collects the devices of the east-west layer and the Layer-2
+// links between them. Links are physical and unordered, so each one is
+// recorded on both ends no matter which end Minerva reported it from; BGP
+// sessions are not part of the physical switch tree and are ignored. A
+// device that only appears as a link end has no role and takes no part in the
+// tree.
+func buildDevices(records []Record) map[string]*Device {
+	devices := make(map[string]*Device)
+	get := func(name string) *Device {
+		d, ok := devices[name]
+		if !ok {
+			d = &Device{Name: name, Peers: make(map[string]bool)}
+			devices[name] = d
+		}
+		return d
+	}
+
+	for _, r := range records {
+		switch r.Type {
+		case recordTypeDevice:
+			// A device can be reported more than once; a record without a role
+			// must not erase the role an earlier one gave it.
+			if len(r.Name) != 0 {
+				if d := get(r.Name); len(r.Role) != 0 {
+					d.Role = r.Role
+				}
+			}
+		case recordTypeNeighbor:
+			a, b := r.From.Device, r.To.Device
+			if r.NeighborType != neighborLayer2 || len(a) == 0 || len(b) == 0 || a == b {
+				continue
+			}
+			get(a).Peers[b] = true
+			get(b).Peers[a] = true
+		}
+	}
+
+	return devices
+}
+
+// buildDomains maps each requested node to the rack that holds it in the
+// nvlink layer: a rack is an NVLink domain. A device record names its rack
+// directly, or through its primary parent when that parent is a rack group.
+// Racks are collected first, so the result does not depend on whether a group
+// record arrives before or after the devices it contains.
+func buildDomains(records []Record, instances map[string]string) topology.DomainMap {
+	racks := make(map[string]bool)
+	for _, r := range records {
+		if r.Type == recordTypeRack {
+			racks[r.Name] = true
+		}
+	}
+
+	domains := topology.NewDomainMap()
+	for _, r := range records {
+		instanceID, ok := instances[r.Name]
+		if r.Type != recordTypeDevice || !ok {
+			continue
+		}
+		rack := r.Rack
+		if len(rack) == 0 && racks[r.Parent] {
+			rack = r.Parent
+		}
+		if len(rack) != 0 {
+			domains.AddHost(rack, instanceID, r.Name)
+		}
+	}
+
+	return domains
+}
+
+// parseResponse builds a switch tree from the east-west devices, growing it
+// outward from the requested nodes rather than materializing the whole fabric.
+// Minerva reports a flat device/link list with no tier numbers, so tiers are
+// derived from each device's role (see roleTier); devices with an
+// unrecognized role take no part in the tree. A device's name is its vertex ID.
+func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputNodes map[string]bool) *httperr.Error {
+	tiers := computeTiers(devices)
+	parents := parentLinks(devices, tiers)
+
+	switches := make(map[string]*topology.Vertex)  // every switch, regardless of whether it's reachable from a requested node
+	requested := make(map[string]*topology.Vertex) // requested servers: the starting point for growing the tree upward
 	for name, dev := range devices {
-		id := nameToID[name]
-		v := &topology.Vertex{ID: id, Name: name}
-		if dev.Role != RoleServer {
+		v := &topology.Vertex{ID: name, Name: name}
+		switch {
+		case dev.Role != RoleServer:
 			v.Vertices = make(map[string]*topology.Vertex)
-			switches[id] = v
-			continue
-		}
-		if inputNodes[name] {
-			frontier[id] = v
-			unresolved[name] = v
-			requested[id] = v
+			switches[name] = v
+		case inputNodes[name]:
+			requested[name] = v
 		}
 	}
-
-	// A requested node Minerva doesn't report as a server has no switch
-	// parent either; keep it under no-topology instead of dropping it. Requested
-	// names and device IDs are unrelated namespaces, so its vertex gets an ID
-	// that no reported device uses.
-	reportedIDs := make(map[string]bool, len(nameToID))
-	for _, id := range nameToID {
-		reportedIDs[id] = true
-	}
-	for name := range inputNodes {
-		if dev, ok := devices[name]; ok && dev.Role == RoleServer {
-			continue
-		}
-		klog.Warningf("Requested node %q is not a server in the Minerva topology", name)
-		id := "missing/" + name
-		for reportedIDs[id] {
-			id = "_" + id
-		}
-		unresolved[name] = &topology.Vertex{ID: id, Name: name}
-	}
+	frontier := maps.Clone(requested)
 
 	// Grow the tree outward from the requested servers, one wave of parents
 	// at a time. Tiers aren't necessarily consecutive across a single link
@@ -202,9 +365,6 @@ func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inpu
 					continue
 				}
 				parent.Vertices[id] = v
-				if _, ok := requested[id]; ok {
-					delete(unresolved, v.Name)
-				}
 				if _, isSwitch := switches[id]; isSwitch {
 					hasParent[id] = true
 				}
@@ -238,39 +398,36 @@ func parseResponse(treeRoot *topology.Vertex, resp *ExportTopologyResponse, inpu
 		treeRoot.Vertices[v.ID] = v
 	}
 
-	// topology.Merger can drop a deeper branch under a switch whose children
-	// sit at different depths. A requested server that didn't make it into the
-	// tree is grouped under no-topology below instead of vanishing.
+	// A requested node is grouped under the shared no-topology switch, as every
+	// other provider does via topology.ClusterTopology.ToGraph, rather than
+	// being dropped, when Minerva doesn't report it as a server, when it has no
+	// switch parent, or when topology.Merger dropped it from the tree.
 	placed := make(map[string]bool)
 	var collect func(v *topology.Vertex)
 	collect = func(v *topology.Vertex) {
 		placed[v.ID] = true
 		for _, c := range v.Vertices {
-			if c != nil {
-				collect(c)
-			}
+			collect(c)
 		}
 	}
 	for _, v := range tree {
 		collect(v)
 	}
-	for id, v := range requested {
-		if !placed[id] {
-			klog.Warningf("Requested node %q was dropped while merging the Minerva switch tree", v.Name)
-			unresolved[v.Name] = v
-		}
-	}
 
-	// Requested servers with no resolvable switch parent are grouped under
-	// the shared no-topology switch, matching the convention every other
-	// provider uses via topology.ClusterTopology.ToGraph, rather than being
-	// silently dropped or surfacing as a top-level switch themselves.
-	if len(unresolved) != 0 {
-		noTopology := &topology.Vertex{ID: topology.NoTopology, Vertices: make(map[string]*topology.Vertex)}
-		for _, v := range unresolved {
-			noTopology.Vertices[v.ID] = v
-			metrics.SetMissingTopology(NAME, v.Name)
+	noTopology := &topology.Vertex{ID: topology.NoTopology, Vertices: make(map[string]*topology.Vertex)}
+	for name := range inputNodes {
+		v, ok := requested[name]
+		if ok && placed[name] {
+			continue
 		}
+		if !ok {
+			klog.Warningf("Requested node %q is not a server in the Minerva topology", name)
+			v = &topology.Vertex{ID: name, Name: name}
+		}
+		noTopology.Vertices[name] = v
+		metrics.SetMissingTopology(NAME, name)
+	}
+	if len(noTopology.Vertices) != 0 {
 		treeRoot.Vertices[topology.NoTopology] = noTopology
 	}
 
@@ -320,32 +477,11 @@ func singleParent(roots []*topology.Vertex) []*topology.Vertex {
 	return tree
 }
 
-// deviceIDIndex maps each device name to its ID. Vertex.Vertices (and
-// topology.Merger) key children by ID, but Minerva links reference devices by
-// name, so every name-keyed lookup elsewhere in this package is translated
-// through this map. It returns an error if two distinct devices resolve to
-// the same ID, since every downstream ID-keyed map built from it (switches,
-// parents, tiers) would otherwise let one silently overwrite the other.
-func deviceIDIndex(devices map[string]Device) (map[string]string, *httperr.Error) {
-	nameToID := make(map[string]string, len(devices))
-	idToName := make(map[string]string, len(devices))
-	for name, dev := range devices {
-		id := deviceID(dev)
-		if other, ok := idToName[id]; ok {
-			return nil, httperr.NewError(http.StatusBadGateway,
-				fmt.Sprintf("minerva export-topology: duplicate device id %q for devices %q and %q", id, other, name))
-		}
-		idToName[id] = name
-		nameToID[name] = id
-	}
-	return nameToID, nil
-}
-
-// computeTiers assigns each device a tier from roleTier, keyed by device ID.
+// computeTiers assigns each device a tier from roleTier, keyed by device name.
 // Devices whose role isn't in roleTier (including Minerva's
 // deployment-specific "Custom" roles) are left unassigned and take no part in
 // the tree.
-func computeTiers(devices map[string]Device, nameToID map[string]string) map[string]int {
+func computeTiers(devices map[string]*Device) map[string]int {
 	tier := make(map[string]int, len(devices))
 	for name, dev := range devices {
 		t, ok := roleTier[dev.Role]
@@ -353,19 +489,18 @@ func computeTiers(devices map[string]Device, nameToID map[string]string) map[str
 			klog.V(2).InfoS("Minerva device has unrecognized role; excluded from switch tree", "role", dev.Role, "name", name)
 			continue
 		}
-		tier[nameToID[name]] = t
+		tier[name] = t
 	}
 
 	return tier
 }
 
-// parentLinks maps each device ID to the set of device IDs it has a direct
-// link to at a higher tier. Minerva links are declared per device and aren't
-// guaranteed to be declared on both ends, so every link is classified by
-// comparing tiers rather than assuming a particular device declared it.
+// parentLinks maps each device name to the set of device names it has a direct
+// link to at a higher tier. Links are unordered, so every link is classified by
+// comparing tiers rather than by which end Minerva reported it from.
 // Devices with no assigned tier (see computeTiers) never appear as a parent
 // or a child. A server linked to several leaves keeps only one parent.
-func parentLinks(devices map[string]Device, nameToID map[string]string, tiers map[string]int) map[string]map[string]bool {
+func parentLinks(devices map[string]*Device, tiers map[string]int) map[string]map[string]bool {
 	parents := make(map[string]map[string]bool)
 	addParent := func(child, parent string) {
 		if parents[child] == nil {
@@ -375,25 +510,20 @@ func parentLinks(devices map[string]Device, nameToID map[string]string, tiers ma
 	}
 
 	for name, dev := range devices {
-		id := nameToID[name]
-		tier, ok := tiers[id]
+		tier, ok := tiers[name]
 		if !ok {
 			continue
 		}
-		for _, link := range dev.LocalInterface {
-			remoteID, ok := nameToID[link.RemoteDevice]
-			if !ok {
-				continue
-			}
-			remoteTier, ok := tiers[remoteID]
+		for peer := range dev.Peers {
+			peerTier, ok := tiers[peer]
 			if !ok {
 				continue
 			}
 			switch {
-			case tier < remoteTier:
-				addParent(id, remoteID)
-			case remoteTier < tier:
-				addParent(remoteID, id)
+			case tier < peerTier:
+				addParent(name, peer)
+			case peerTier < tier:
+				addParent(peer, name)
 			}
 		}
 	}
@@ -403,10 +533,6 @@ func parentLinks(devices map[string]Device, nameToID map[string]string, tiers ma
 	// parent at the lowest tier, so a server never skips past its leaf, and
 	// among those the one whose device name sorts first so the choice is
 	// deterministic.
-	idToName := make(map[string]string, len(nameToID))
-	for name, id := range nameToID {
-		idToName[id] = name
-	}
 	for child, set := range parents {
 		if tiers[child] != roleTier[RoleServer] || len(set) < 2 {
 			continue
@@ -414,7 +540,7 @@ func parentLinks(devices map[string]Device, nameToID map[string]string, tiers ma
 		var keep string
 		for parent := range set {
 			if keep == "" || tiers[parent] < tiers[keep] ||
-				(tiers[parent] == tiers[keep] && idToName[parent] < idToName[keep]) {
+				(tiers[parent] == tiers[keep] && parent < keep) {
 				keep = parent
 			}
 		}
@@ -422,11 +548,4 @@ func parentLinks(devices map[string]Device, nameToID map[string]string, tiers ma
 	}
 
 	return parents
-}
-
-func deviceID(dev Device) string {
-	if len(dev.DeviceID) != 0 {
-		return dev.DeviceID
-	}
-	return dev.DeviceName
 }
