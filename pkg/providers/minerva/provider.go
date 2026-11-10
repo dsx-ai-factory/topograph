@@ -1,7 +1,17 @@
-/*
- * Copyright 2026 NVIDIA CORPORATION
- * SPDX-License-Identifier: Apache-2.0
- */
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package minerva
 
@@ -108,8 +118,8 @@ func (p *Provider) GenerateTopologyConfig(ctx context.Context, pageSize *int, in
 	}
 
 	// The tree is the primary output. Without NVLink data, for example on an
-	// Ethernet-only fabric or when the nvlink layer is unavailable, the graph
-	// simply has no domains; only a canceled request fails.
+	// Ethernet-only fabric or when the nvlink layer fails or times out, the
+	// graph simply has no domains; only a canceled request fails.
 	domains, err := p.getDomains(ctx, pageSize, instances)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -125,21 +135,8 @@ func (p *Provider) GenerateTopologyConfig(ctx context.Context, pageSize *int, in
 	}, nil
 }
 
-// Instances2NodeMap implements slurm.instanceMapper
-func (p *Provider) Instances2NodeMap(ctx context.Context, nodes []string) (map[string]string, error) {
-	i2n := make(map[string]string)
-	for _, node := range nodes {
-		i2n[node] = node
-	}
-
-	return i2n, nil
-}
-
-// GetInstancesRegions implements slurm.instanceMapper
-func (p *Provider) GetInstancesRegions(ctx context.Context, nodes []string) (map[string]string, error) {
-	res := make(map[string]string)
-	for _, node := range nodes {
-		res[node] = regionLocal
-	}
-	return res, nil
+// GetNodeInstances implements slurm.instanceMapper. Minerva identifies compute
+// nodes by name, so each node is its own instance.
+func (p *Provider) GetNodeInstances(_ context.Context, nodes []string) ([]topology.ComputeInstances, error) {
+	return providers.SelfNamedInstances(nodes, regionLocal), nil
 }
