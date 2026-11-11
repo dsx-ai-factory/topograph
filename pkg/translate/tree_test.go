@@ -165,3 +165,23 @@ func TestToTreeTopologySkeletonOnlyDeepTree(t *testing.T) {
 	require.Nil(t, httpErr)
 	require.Equal(t, "SwitchName=T1 Switches=T2\nSwitchName=T2 Switches=T3\nSwitchName=T3 Nodes=Node001\n", buf.String())
 }
+
+// TestToTreeTopologyNodeNameEqualsPrefix verifies that a node whose name has
+// no numeric suffix is kept when its siblings are named with the same prefix
+// followed by a number, instead of the two groups overwriting each other.
+func TestToTreeTopologyNodeNameEqualsPrefix(t *testing.T) {
+	n0 := &topology.Vertex{ID: "I0", Name: "gpu"}
+	n1 := &topology.Vertex{ID: "I1", Name: "gpu1"}
+	n2 := &topology.Vertex{ID: "I2", Name: "gpu2"}
+	sw := &topology.Vertex{ID: "S1", Vertices: map[string]*topology.Vertex{"I0": n0, "I1": n1, "I2": n2}}
+	treeRoot := &topology.Vertex{Vertices: map[string]*topology.Vertex{"S1": sw}}
+
+	cfg := &Config{Plugin: topology.TopologyTree}
+	nt, err := NewNetworkTopology(&topology.Graph{Tiers: treeRoot}, cfg)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	_, httpErr := nt.GenerateTopologyConfig(buf, false)
+	require.Nil(t, httpErr)
+	require.Equal(t, "SwitchName=S1 Nodes=gpu,gpu[1-2]\n", buf.String())
+}

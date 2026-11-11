@@ -51,6 +51,11 @@ func TestCompactExpand(t *testing.T) {
 			expanded:  []string{"abc0507", "abc0509", "abc0508", "abc0482", "xyz8", "xyz9", "xyz10"},
 			compacted: []string{"abc[0482,0507-0509]", "xyz[8-10]"},
 		},
+		{
+			name:      "Case 6: name equal to the prefix of numbered names",
+			expanded:  []string{"gpu1", "gpu", "gpu2", "login", "login1"},
+			compacted: []string{"gpu", "gpu[1-2]", "login", "login1"},
+		},
 	}
 
 	for _, tc := range testCases {
