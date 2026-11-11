@@ -233,6 +233,14 @@ func TestParsePartitionNodes(t *testing.T) {
 `,
 			out: []string{"dgx[0001-0010,0021-0030]"},
 		},
+		{
+			name: "Case 3: node numbers with different zero padding",
+			in: `PartitionName=my_partition
+   Nodes=node8,node[09-10]
+   State=UP TotalCPUs=384 TotalNodes=3 SelectTypeParameters=NONE
+`,
+			out: []string{"node[8,09-10]"},
+		},
 	}
 
 	for _, tc := range testCases {
