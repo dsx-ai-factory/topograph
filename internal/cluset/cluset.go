@@ -166,7 +166,10 @@ func compressRange(numbers []string) string {
 		start, end := numbers[0], numbers[0]
 
 		for i := 1; i < len(numbers); i++ {
-			if atoi(numbers[i]) == atoi(end)+1 {
+			// a range is expanded with the width of its first number, so a
+			// number joins it only if it keeps its text at that width:
+			// [8-10] means 8,9,10 and cannot hold 09
+			if n := atoi(numbers[i]); n == atoi(end)+1 && numbers[i] == fmt.Sprintf("%0*d", len(start), n) {
 				end = numbers[i]
 			} else {
 				parts = append(parts, formatRange(start, end))

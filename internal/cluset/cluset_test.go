@@ -147,3 +147,66 @@ func TestExpandWithLimit(t *testing.T) {
 		require.Len(t, result, 1)
 	})
 }
+
+// TestCompactPaddingWidth verifies that numbers are joined into a range only
+// when they keep their text at the width of the range's first number, which
+// is the width Expand (and Slurm's hostlist) pads the whole range to.
+func TestCompactPaddingWidth(t *testing.T) {
+	testCases := []struct {
+		name                string
+		expanded, compacted []string
+	}{
+		{
+			name:      "unpadded then padded",
+			expanded:  []string{"node8", "node09", "node10"},
+			compacted: []string{"node[8,09-10]"},
+		},
+		{
+			name:      "unpadded across a digit boundary",
+			expanded:  []string{"n9", "n10"},
+			compacted: []string{"n[9-10]"},
+		},
+		{
+			name:      "padded to the wider width",
+			expanded:  []string{"n09", "n10"},
+			compacted: []string{"n[09-10]"},
+		},
+		{
+			name:      "padded number after unpadded number",
+			expanded:  []string{"n8", "n09"},
+			compacted: []string{"n[8,09]"},
+		},
+		{
+			name:      "padded range reaching an unpadded number",
+			expanded:  []string{"x098", "x099", "x100"},
+			compacted: []string{"x[098-100]"},
+		},
+		{
+			name:      "unpadded number after wider padded number",
+			expanded:  []string{"n0099", "n100"},
+			compacted: []string{"n[0099,100]"},
+		},
+		{
+			name:      "padded number after narrower unpadded number",
+			expanded:  []string{"n9", "n010"},
+			compacted: []string{"n[9,010]"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.compacted, Compact(tc.expanded))
+			require.ElementsMatch(t, tc.expanded, Expand(tc.compacted))
+		})
+	}
+
+	// the same value written with two widths sorts in no fixed order, so only
+	// the round trip is checked
+	for _, nodes := range [][]string{
+		{"n8", "n9", "n09", "n10"},
+		{"n1", "n01", "n001", "n2", "n02", "n002"},
+		{"a7", "a08", "a9", "a010", "a11", "b99", "b100", "b0101"},
+	} {
+		require.ElementsMatch(t, nodes, Expand(Compact(nodes)), "%v", nodes)
+	}
+}
