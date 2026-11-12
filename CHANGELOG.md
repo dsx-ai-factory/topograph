@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `make image-build` and `make docker-buildx` pass `GIT_REF` to the Dockerfile as a build argument, so the binaries in the image report the version resolved on the host. Before, `GIT_REF=...` changed only the image tag, and builds from a git worktree stamped no usable version. See [#606](https://github.com/dsx-ai-factory/topograph/issues/606).
+
 - Updated `github.com/klauspost/compress` from **v1.20.1** to **v1.20.2** to include the upstream fix for CVE-2026-116591.
 
 - The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.

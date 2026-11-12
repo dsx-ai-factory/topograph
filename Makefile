@@ -171,7 +171,7 @@ coverage: test
 
 .PHONY: image-build
 image-build:
-	$(DOCKER_BIN) build --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile .
+	$(DOCKER_BIN) build --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH) --build-arg GIT_REF=$(GIT_REF) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile .
 
 # The guard runs before the build, so image-build is invoked as a sub-make
 # (with the resolved repository and tag) rather than listed as a prerequisite.
@@ -186,7 +186,7 @@ docker-buildx:
 	$(guard-release-image-tag)
 	- $(DOCKER_BIN) buildx create --name=topograph-builder
 	$(DOCKER_BIN) buildx use topograph-builder
-	$(DOCKER_BIN) buildx build --platform $(PLATFORMS) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile --push .
+	$(DOCKER_BIN) buildx build --platform $(PLATFORMS) --build-arg GIT_REF=$(GIT_REF) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile --push .
 	- $(DOCKER_BIN) buildx rm topograph-builder
 
 .PHONY: ssl
