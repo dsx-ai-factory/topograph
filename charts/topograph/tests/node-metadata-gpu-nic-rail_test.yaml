@@ -1,0 +1,266 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+suite: gpu-nic-rail-mapping node-metadata plugin
+release:
+  name: chart-ci
+  namespace: topograph
+templates:
+  - templates/nodeDataBroker/configmap.yaml
+  - templates/nodeDataBroker/daemonset.yaml
+  - templates/nodeDataBroker/gpunicrail-rbac.yaml
+  - templates/nodeObserver/configmap.yml
+  - templates/nodeObserver/gpunicrail-rbac.yaml
+  - templates/nodeObserver/rbac.yaml
+  - templates/deployment.yaml
+  - templates/configmap.yml
+  - templates/nodeDataBroker/rbac.yaml
+tests:
+  - it: is off by default and adds no broker wiring
+    template: templates/nodeDataBroker/daemonset.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: host-sys
+            hostPath:
+              path: /sys
+              type: Directory
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /healthz
+
+  - it: renders no broker RBAC while disabled
+    template: templates/nodeDataBroker/gpunicrail-rbac.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: keeps the observer cleanup config and RBAC while disabled
+    templates:
+      - templates/nodeObserver/configmap.yml
+    asserts:
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: "gpuNicRailMapping:\n +enabled: false\n +namespace: topograph\n +releaseName: chart-ci"
+
+  - it: grants the observer namespaced cleanup access only on mapping resources
+    template: templates/nodeObserver/gpunicrail-rbac.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: topograph
+      - contains:
+          path: rules
+          content:
+            apiGroups: [topograph.run]
+            resources: [nodegpunicrailmappings]
+            verbs: [get, list, watch, delete]
+
+  - it: configures the broker, mounts and observer when enabled
+    set: &enabled
+      nodeMetadata.plugins.gpuNicRailMapping:
+        enabled: true
+        railSource:
+          name: host-lldp
+          hostLLDP:
+            interfaceRegex: '^roce_vf_r([0-9]+)$'
+            railIDFormat: 'rail-$1'
+            socket: /var/run/lldpd.socket
+        gpuSource:
+          gpuOperatorNamespace: gpu-operator
+          daemonSet: nvidia-device-plugin-daemonset
+    asserts:
+      - matchRegex:
+          path: data["node-data-broker-config.yaml"]
+          pattern: "interfaceRegex: \\^roce_vf_r\\(\\[0-9\\]\\+\\)\\$"
+        template: templates/nodeDataBroker/configmap.yaml
+      - matchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: "gpuNicRailMapping:\n +enabled: true"
+        template: templates/nodeObserver/configmap.yml
+      - notMatchRegex:
+          path: data["node-observer-config.yaml"]
+          pattern: "interfaceRegex"
+        template: templates/nodeObserver/configmap.yml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: host-sys
+            hostPath:
+              path: /sys
+              type: Directory
+        template: templates/nodeDataBroker/daemonset.yaml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: host-lldpd-socket
+            hostPath:
+              path: /var/run
+              type: DirectoryOrCreate
+        template: templates/nodeDataBroker/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: host-sys
+            mountPath: /host/sys
+            readOnly: true
+        template: templates/nodeDataBroker/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: host-lldpd-socket
+            mountPath: /host/lldpd
+            readOnly: true
+        template: templates/nodeDataBroker/daemonset.yaml
+      - matchRegex:
+          path: data["node-data-broker-config.yaml"]
+          pattern: "socket: /host/lldpd/lldpd.socket"
+        template: templates/nodeDataBroker/configmap.yaml
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /healthz
+        template: templates/nodeDataBroker/daemonset.yaml
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+        template: templates/nodeDataBroker/daemonset.yaml
+      - exists:
+          path: spec.template.metadata.annotations["checksum/config"]
+        template: templates/nodeDataBroker/daemonset.yaml
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [nodes]
+            verbs: [list]
+        template: templates/nodeObserver/rbac.yaml
+        documentIndex: 0
+
+  - it: resolves a custom host socket through its directory mount
+    values:
+      - ../values.k8s.gpu-nic-rail-example.yaml
+    set:
+      nodeMetadata.plugins.gpuNicRailMapping.railSource.hostLLDP.socket: /run/custom-lldpd/control.sock
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: host-lldpd-socket
+            hostPath:
+              path: /run/custom-lldpd
+              type: DirectoryOrCreate
+        template: templates/nodeDataBroker/daemonset.yaml
+      - matchRegex:
+          path: data["node-data-broker-config.yaml"]
+          pattern: "socket: /host/lldpd/control\\.sock"
+        template: templates/nodeDataBroker/configmap.yaml
+
+  - it: grants pod exec only through a Role in the GPU Operator namespace
+    set: *enabled
+    template: templates/nodeDataBroker/gpunicrail-rbac.yaml
+    asserts:
+      - hasDocuments:
+          count: 4
+      - isKind:
+          of: Role
+        documentIndex: 2
+      - equal:
+          path: metadata.namespace
+          value: gpu-operator
+        documentIndex: 2
+      - contains:
+          path: rules
+          content:
+            apiGroups: [apps]
+            resources: [daemonsets]
+            resourceNames: [nvidia-device-plugin-daemonset]
+            verbs: [get]
+        documentIndex: 2
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [pods/exec]
+            verbs: [create]
+        documentIndex: 2
+      # The binding lives in the GPU Operator namespace and names the broker's
+      # ServiceAccount in the Topograph namespace.
+      - isKind:
+          of: RoleBinding
+        documentIndex: 3
+      - equal:
+          path: metadata.namespace
+          value: gpu-operator
+        documentIndex: 3
+      - equal:
+          path: subjects[0].namespace
+          value: topograph
+        documentIndex: 3
+      - contains:
+          path: rules
+          content:
+            apiGroups: [topograph.run]
+            resources: [nodegpunicrailmappings]
+            verbs: [get, create, delete]
+        documentIndex: 0
+      - contains:
+          path: rules
+          content:
+            apiGroups: [topograph.run]
+            resources: [nodegpunicrailmappings/status]
+            verbs: [get, update, patch]
+        documentIndex: 0
+
+  - it: never grants pod or exec access in a ClusterRole
+    set: *enabled
+    template: templates/nodeDataBroker/rbac.yaml
+    documentIndex: 0
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [pods/exec]
+            verbs: [create]
+
+  - it: rejects the plugin without a broker
+    set:
+      nodeDataBroker.enabled: false
+      nodeMetadata.plugins.gpuNicRailMapping:
+        enabled: true
+    template: templates/deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "nodeMetadata.plugins.gpuNicRailMapping requires nodeDataBroker.enabled=true: the broker collects and publishes the mapping"
+
+  - it: rejects a missing interface regex
+    set:
+      nodeMetadata.plugins.gpuNicRailMapping.enabled: true
+    template: templates/deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "nodeMetadata.plugins.gpuNicRailMapping.railSource.hostLLDP requires interfaceRegex, railIDFormat and socket"
+
+  - it: rejects an invalid refresh interval
+    set:
+      nodeMetadata.plugins.gpuNicRailMapping:
+        enabled: true
+        refreshInterval: soon
+    template: templates/deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "nodeMetadata.plugins.gpuNicRailMapping.refreshInterval must be a duration such as 10m"

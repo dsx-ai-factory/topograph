@@ -129,3 +129,29 @@ Create the volume name for a generated ConfigMap mount.
 {{- $name := required "nodeDataBroker.configMapMounts[].name is required" .name | lower | replace "_" "-" -}}
 {{- printf "config-map-%s" $name | trunc 63 | trimSuffix "-" }}
 {{- end }}
+
+{{/*
+Whether the gpu-nic-rail-mapping node-metadata plugin is enabled. Renders
+"true" or nothing.
+*/}}
+{{- define "nodeMetadata.gpuNicRailMapping.enabled" -}}
+{{- $plugins := default dict (default dict .Values.nodeMetadata).plugins -}}
+{{- if (default dict (get $plugins "gpuNicRailMapping")).enabled -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Plugin configuration shared by the broker and the observer. The observer gets
+only the enabled state and the release identity (full=false), which is all it
+needs to clean up.
+*/}}
+{{- define "nodeMetadata.gpuNicRailMapping.config" -}}
+{{- $plugin := deepCopy (default dict (get (default dict (default dict .root.Values.nodeMetadata).plugins) "gpuNicRailMapping")) -}}
+{{- $cfg := dict "enabled" (ternary true false (eq (include "nodeMetadata.gpuNicRailMapping.enabled" .root) "true")) "releaseName" .root.Release.Name "namespace" .root.Release.Namespace -}}
+{{- if and .full $cfg.enabled -}}
+{{- $_ := set $cfg "refreshInterval" (default "10m" $plugin.refreshInterval) -}}
+{{- $_ := set $plugin.railSource.hostLLDP "socket" (printf "/host/lldpd/%s" (base $plugin.railSource.hostLLDP.socket)) -}}
+{{- $_ := set $cfg "railSource" $plugin.railSource -}}
+{{- $_ := set $cfg "gpuSource" $plugin.gpuSource -}}
+{{- end -}}
+{{- toYaml (dict "plugins" (dict "gpuNicRailMapping" $cfg)) -}}
+{{- end }}
