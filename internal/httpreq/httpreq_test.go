@@ -21,8 +21,10 @@ import (
 	"flag"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -428,8 +430,138 @@ func TestDoRequestLogCannotForgeLines(t *testing.T) {
 	_, _, _ = DoRequest(f, false)
 	klog.Flush()
 
-	require.Contains(t, buf.String(), "FORGED", "the URL is still logged")
+	// The query, which may carry secrets or forged text, is not logged at all.
+	require.Contains(t, buf.String(), "http://127.0.0.1:1/topology", "the URL is still logged")
+	require.NotContains(t, buf.String(), "FORGED")
 	for _, line := range strings.Split(buf.String(), "\n") {
 		require.False(t, strings.HasPrefix(line, "E1027"), "the URL started a log line: %q", line)
+	}
+}
+
+// TestDoRequestLogEscapesOpaqueURL checks that a line break in URL.Opaque, which
+// logURL keeps, is escaped by the %q formatting and cannot start a log line.
+func TestDoRequestLogEscapesOpaqueURL(t *testing.T) {
+	var buf bytes.Buffer
+	flags := flag.NewFlagSet("klog", flag.ContinueOnError)
+	klog.InitFlags(flags)
+	require.NoError(t, flags.Set("v", "4"))
+	klog.LogToStderr(false)
+	klog.SetOutput(&buf)
+	t.Cleanup(func() {
+		require.NoError(t, flags.Set("v", "0"))
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	})
+
+	f := func() (*http.Request, *httperr.Error) {
+		req, e := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:1/topology", nil)
+		if e != nil {
+			return nil, httperr.NewError(http.StatusInternalServerError, e.Error())
+		}
+		req.URL.Opaque = "//127.0.0.1:1/x\nE1027 00:00:00.000000 1 forged.go:1] FORGED"
+		return req, nil
+	}
+	_, _, _ = DoRequest(f, false)
+	klog.Flush()
+
+	require.Contains(t, buf.String(), `\n`, "the line break is logged escaped")
+	for _, line := range strings.Split(buf.String(), "\n") {
+		require.False(t, strings.HasPrefix(line, "E1027"), "the URL started a log line: %q", line)
+	}
+}
+
+func TestLogURLOmitsSecrets(t *testing.T) {
+	u, err := url.Parse("https://user:pw@host.example/p?token=abc#frag")
+	require.NoError(t, err)
+	require.Equal(t, "https://host.example/p", logURL(u))
+	require.Equal(t, "https://user:pw@host.example/p?token=abc#frag", u.String(), "original is unchanged")
+	require.Equal(t, "https://host.example/p", logURLString("https://user:pw@host.example/p?token=abc"))
+	// A URL that does not parse (here, a control character) is replaced by a
+	// placeholder instead of being logged, since it may still carry secrets.
+	require.Equal(t, "<unparsable URL>", logURLString("https://user:pw@host.example/p\x7f?token=abc"))
+}
+
+func TestRefuseDowngrade(t *testing.T) {
+	mk := func(u string) *http.Request {
+		r, _ := http.NewRequest(http.MethodGet, u, nil)
+		return r
+	}
+	via := []*http.Request{mk("https://api.example.com/a")}
+	if err := refuseDowngrade(mk("https://api.example.com/b"), via); err != nil {
+		t.Errorf("https to https refused: %v", err)
+	}
+	if err := refuseDowngrade(mk("http://api.example.com/b"), via); err == nil {
+		t.Error("https to http must be refused")
+	}
+	if err := refuseDowngrade(mk("http://api.example.com/b"), []*http.Request{mk("http://api.example.com/a")}); err != nil {
+		t.Errorf("http to http refused: %v", err)
+	}
+	// The chain holds real requests, so the test stays valid if refuseDowngrade
+	// inspects its entries: nine prior requests are allowed, ten are refused.
+	chain := func(n int) []*http.Request {
+		via := make([]*http.Request, n)
+		for i := range via {
+			via[i] = mk("https://api.example.com/a")
+		}
+		return via
+	}
+	if err := refuseDowngrade(mk("https://api.example.com/b"), chain(9)); err != nil {
+		t.Errorf("nine prior requests refused: %v", err)
+	}
+	if err := refuseDowngrade(mk("https://api.example.com/b"), chain(10)); err == nil {
+		t.Error("redirect limit not enforced")
+	}
+}
+
+// TestDowngradeRedirect checks the guarded variant end to end and pins that the
+// existing DoRequestWithRetries still follows an https to http redirect.
+func TestDowngradeRedirect(t *testing.T) {
+	var plainHits atomic.Int32
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainHits.Add(1)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer plain.Close()
+
+	tlsSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL, http.StatusTemporaryRedirect)
+	}))
+	defer tlsSrv.Close()
+
+	// Trust the test server's certificate for requests that use the default transport.
+	old := http.DefaultTransport
+	http.DefaultTransport = tlsSrv.Client().Transport
+	defer func() { http.DefaultTransport = old }()
+
+	newReq := func() (*http.Request, *httperr.Error) {
+		req, err := http.NewRequest(http.MethodGet, tlsSrv.URL, nil)
+		if err != nil {
+			return nil, httperr.NewError(http.StatusInternalServerError, err.Error())
+		}
+		req.Header.Set("Authorization", "Bearer secret")
+		return req, nil
+	}
+
+	_, err := DoRequestWithRetriesNoDowngrade(newReq)
+	if err == nil {
+		t.Fatal("guarded request must fail on an https to http redirect")
+	}
+	if !strings.Contains(err.Error(), "refusing redirect from https to http") {
+		t.Errorf("error does not report the refused downgrade: %v", err)
+	}
+	// The redirect response is the one returned with the error, so its status is reported.
+	if err.Code() != http.StatusTemporaryRedirect {
+		t.Errorf("error code = %d, want %d", err.Code(), http.StatusTemporaryRedirect)
+	}
+	if plainHits.Load() != 0 {
+		t.Errorf("redirect target was contacted %d times; the Authorization header would have leaked", plainHits.Load())
+	}
+
+	body, err := DoRequestWithRetries(newReq, false)
+	if err != nil || string(body) != "ok" {
+		t.Errorf("existing behavior changed: body=%q err=%v", body, err)
+	}
+	if plainHits.Load() != 1 {
+		t.Errorf("existing function should follow the redirect once, hits=%d", plainHits.Load())
 	}
 }
