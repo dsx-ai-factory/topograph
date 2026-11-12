@@ -17,7 +17,8 @@ label selected by `acceleratorDomainSourceLabel` for `topology/block`.
 Topograph publishes a variable-depth fabric label family and a two-level
 accelerator label hierarchy. Fabric tier `0` is closest to the compute node, and
 tier numbers increase outwards. Only entries present in the discovered topology
-are written.
+are written. A node the provider returned no topology for gets no fabric labels,
+and any it carried before are removed.
 
 | Label key | Topology type | Semantics |
 |---|---|---|
