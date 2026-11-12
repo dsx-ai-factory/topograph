@@ -30,7 +30,7 @@ ARG GIT_REF
 RUN if [ -n "${GIT_REF}" ] && [ "${GIT_REF}" != unknown ]; then \
       make GIT_REF="${GIT_REF}" build-${TARGETOS}-${TARGETARCH}; \
     else \
-      make build-${TARGETOS}-${TARGETARCH}; \
+      unset GIT_REF; make build-${TARGETOS}-${TARGETARCH}; \
     fi
 
 FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
