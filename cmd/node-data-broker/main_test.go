@@ -17,17 +17,22 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/dsx-ai-factory/topograph/pkg/providers/akamai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nscale"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
@@ -231,6 +236,61 @@ func TestGetAnnotationsNscaleDispatch(t *testing.T) {
 	}, annotations)
 }
 
+type imdsRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f imdsRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestApplyAkamaiAnnotations(t *testing.T) {
+	for _, valid := range []bool{true, false} {
+		t.Run(map[bool]string{true: "complete metadata", false: "incomplete metadata"}[valid], func(t *testing.T) {
+			// Akamai IMDS uses fixed endpoints; intercept requests without network access.
+			originalTransport := http.DefaultTransport
+			calls := 0
+			http.DefaultTransport = imdsRoundTripper(func(r *http.Request) (*http.Response, error) {
+				calls++
+				var body string
+				if calls == 1 {
+					assert.Equal(t, akamai.IMDSTokenURL, r.URL.String())
+					assert.Equal(t, http.MethodPut, r.Method)
+					body = "fake-local-token"
+				} else {
+					assert.Equal(t, akamai.IMDSInstanceURL, r.URL.String())
+					assert.Equal(t, http.MethodGet, r.Method)
+					assert.Equal(t, "fake-local-token", r.Header.Get("Metadata-Token"))
+					assert.Equal(t, "application/json", r.Header.Get("Accept"))
+					if valid {
+						body = `{"host_uuid":"fake-host-uuid","region":"us-iad","id":12345}`
+					} else {
+						body = `{"host_uuid":"fake-host-uuid","id":12345}`
+					}
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}, Request: r}, nil
+			})
+			t.Cleanup(func() { http.DefaultTransport = originalTransport })
+			client := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+				Name:        "worker",
+				Annotations: map[string]string{"existing": "keep", topology.KeyNodeInstance: "stale-host", topology.KeyNodeRegion: "stale-region"},
+				Labels:      map[string]string{"existing": "keep"},
+			}})
+			broker := &nodeBroker{clientset: client, nodeName: "worker", config: nodeDataBrokerConfig{Provider: topology.Provider{
+				Name: akamai.NAME,
+			}}}
+			err := broker.apply(context.Background())
+			require.Equal(t, 2, calls)
+			if !valid {
+				require.ErrorContains(t, err, "region")
+				require.Empty(t, client.Actions(), "incomplete metadata must not update the node")
+				return
+			}
+			require.NoError(t, err)
+			node, err := client.CoreV1().Nodes().Get(context.Background(), "worker", metav1.GetOptions{})
+			require.NoError(t, err)
+			require.Equal(t, map[string]string{"existing": "keep", topology.KeyNodeInstance: "fake-host-uuid", topology.KeyNodeRegion: "us-iad"}, node.Annotations)
+			require.Equal(t, map[string]string{"existing": "keep"}, node.Labels)
+		})
+	}
+}
+
 // TestGetAnnotationsNscaleDispatchCanceledContext verifies that a canceled
 // context passed into broker.getAnnotations propagates through the nscale
 // dispatch to the underlying IMDS request, returning promptly with an error
@@ -277,4 +337,24 @@ func TestGetAnnotationsNscaleDispatchCanceledContext(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("getAnnotations did not return after context cancellation")
 	}
+}
+
+func TestApplyAkamaiAnnotationsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	originalTransport := http.DefaultTransport
+	calls := 0
+	http.DefaultTransport = imdsRoundTripper(func(r *http.Request) (*http.Response, error) {
+		calls++
+		assert.Equal(t, akamai.IMDSTokenURL, r.URL.String())
+		cancel()
+		return nil, r.Context().Err()
+	})
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	client := fake.NewClientset()
+	broker := &nodeBroker{clientset: client, nodeName: "worker", config: nodeDataBrokerConfig{Provider: topology.Provider{Name: akamai.NAME}}}
+	err := broker.apply(ctx)
+	require.ErrorContains(t, err, "context canceled")
+	require.Equal(t, 1, calls)
+	require.Empty(t, client.Actions(), "canceled metadata discovery must not update the node")
 }
