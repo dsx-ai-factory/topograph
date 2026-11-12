@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Slurm `topology.conf` output (tree and block, plain and per-partition YAML) and partition node discovery no longer drop node or switch names when one name has no numeric suffix and others are that name followed by a number. Nodes `gpu`, `gpu1` and `gpu2` were written as either `gpu` or `gpu[1-2]`; they are now written as `gpu,gpu[1-2]`.
+
 - Updated `github.com/klauspost/compress` from **v1.20.1** to **v1.20.2** to include the upstream fix for CVE-2026-116591.
 
 - The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.

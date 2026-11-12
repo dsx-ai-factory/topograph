@@ -33,6 +33,9 @@ func init() {
 // Compact compresses a list of nodes into a compact range format
 func Compact(nodes []string) []string {
 	groups := make(map[string][]string)
+	// names without a numeric suffix; kept apart from groups, because such a
+	// name can also be the prefix of numbered names ("gpu" next to "gpu1")
+	plain := make(map[string]bool)
 
 	// Parse node names into groups
 	for _, node := range nodes {
@@ -41,21 +44,32 @@ func Compact(nodes []string) []string {
 			prefix, numStr := matches[1], matches[2]
 			groups[prefix] = append(groups[prefix], numStr)
 		} else {
-			groups[node] = nil
+			plain[node] = true
 		}
 	}
 
 	// Sort prefixes for consistent output
-	prefixes := make([]string, 0, len(groups))
+	prefixes := make([]string, 0, len(groups)+len(plain))
 	for prefix := range groups {
 		prefixes = append(prefixes, prefix)
+	}
+	for name := range plain {
+		if _, ok := groups[name]; !ok {
+			prefixes = append(prefixes, name)
+		}
 	}
 	sort.Strings(prefixes)
 
 	// Format compressed ranges
 	var result []string
 	for _, prefix := range prefixes {
-		numbers := groups[prefix]
+		if plain[prefix] {
+			result = append(result, prefix)
+		}
+		numbers, ok := groups[prefix]
+		if !ok {
+			continue
+		}
 		sort.Slice(numbers, func(i, j int) bool {
 			return atoi(numbers[i]) < atoi(numbers[j])
 		})
