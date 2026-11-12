@@ -45,3 +45,11 @@
 - name: needs-rebase
   color: "e11d21"
   description: "Conflicts with main; the author needs to rebase or merge main"
+
+- name: lifecycle/stale
+  color: "ededed"
+  description: "No activity for a while; see Following up in CONTRIBUTING.md"
+
+- name: lifecycle/frozen
+  color: "0e8a16"
+  description: "Exempt from the stale label, idle reminders and closing"
