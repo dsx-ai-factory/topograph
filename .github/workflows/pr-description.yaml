@@ -1,0 +1,198 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Checks that the pull request description fills in the parts of
+# .github/PULL_REQUEST_TEMPLATE.md that a reviewer reads before the diff:
+#   - Summary is not empty;
+#   - Linked issue has "Fixes: #N" or "Related: #N" (also as
+#     dsx-ai-factory/topograph#N or the issue URL), or a ticked "Trivial fix"
+#     box for a change CONTRIBUTING.md "Open an issue first" exempts;
+#   - at least one Type of change box is ticked;
+#   - Testing is not empty.
+# HTML comments are removed first, and the template's guidance is all in HTML
+# comments, so a section left as the template has it counts as empty. Each
+# missing part becomes one error annotation and one line in the job summary;
+# the job posts no comment. Pull requests opened by a bot account are skipped,
+# because Dependabot cannot fill in a template. `user.type` comes from the
+# account that opened the pull request, not from commit metadata, so a person
+# cannot set it to "Bot".
+#
+# It reports; it does not yet gate. Maintainers make it required by adding
+# `PR description` (this job's name) to the required status checks of the
+# `main-enforced` ruleset. The ruleset matches checks by name, so renaming the
+# job would silently drop it from there. A pull request opened with
+# GITHUB_TOKEN, such as the release pull request publish-fern-docs.yml opens,
+# starts no workflow run, because GitHub starts no workflow for events that
+# token causes, so this check never reports on it and the bot skip never
+# runs. Once the check is required, such a pull request is blocked until a
+# maintainer closes and reopens it, or until the workflow that opens it uses
+# a GitHub App token.
+#
+# The trigger is pull_request_target, not pull_request, so that a pull request
+# from a fork is checked without a maintainer approving the run. This
+# repository holds every outside contributor's pull_request runs for approval,
+# and each edit to the description would start a new run that waits again.
+# pull_request_target runs in the base repository's context instead, so the
+# job is limited to what that context cannot misuse:
+#   - `permissions: {}` on the workflow and on the job, so the token can do
+#     nothing (pinned by pr-description.test.mjs);
+#   - no actions/checkout and no actions/cache, so no code or cache from the
+#     pull request reaches the runner;
+#   - no reference to the secrets context anywhere in this file;
+#   - the body reaches the script only through the BODY environment variable,
+#     never through an expression inside the script, and the script never
+#     prints it;
+#   - no pattern in the script has two quantifiers that can match the same
+#     characters, so a crafted body cannot hold the runner until
+#     timeout-minutes (pinned by pr-description.test.mjs "adversarial
+#     heading line finishes fast").
+# .github/tests/security-invariants.test.mjs enforces, for every
+# pull_request_target workflow, no checkout or cache, no reference to secrets,
+# and no untrusted context such as the body in an expression inside a run: or
+# script: block. pr-description.test.mjs pins the BODY env entry, and its
+# fixture tests compare everything the script reports through core with fixed
+# text, so a body printed through core fails them. Its injection fixture
+# shows that $(...), backticks, expressions and workflow commands in the body
+# are read as plain text. GitHub blocks pull_request_target in public
+# repositories by default from December 2, 2026, unless an Actions policy
+# allows it, so this workflow needs that policy to keep running after then.
+#
+# pull_request_target runs the workflow file from the base branch, so a pull
+# request that edits this file is checked by the version on main, not by its
+# own copy. A change here takes effect only once it merges.
+#
+# `edited` re-runs the check when the description changes, which does not
+# move the head commit. `synchronize` re-runs it on a push, although a push
+# does not change the description, because a required check is reported per
+# head commit and a new head with no run would have no result. `edited` also
+# fires on title and base changes. Every run does the full check rather than
+# skipping when the description did not change: a skipped job reports success
+# under this check's name, which would replace a failing result with a pass.
+#
+# Runner: GitHub-hosted ubuntu-latest. Any
+# GitHub user can start this job by opening a pull request, and it only reads
+# the event payload, so it has no reason to run on, or queue for, the
+# project's own machines. The repository guard keeps copies of this workflow
+# in forks from running there.
+
+name: PR Description
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-description:
+    name: PR description
+    if: github.repository == 'dsx-ai-factory/topograph'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The check reads only the event payload and calls no API.
+    permissions: {}
+
+    steps:
+      - name: Check the description follows the template
+        id: check
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        with:
+          script: |
+            if (context.payload.pull_request.user.type === 'Bot') {
+              core.notice('Skipped: pull request opened by a bot account.');
+              return;
+            }
+
+            // GitHub sends a null body for an empty description, which BODY
+            // receives as an empty string. Descriptions edited on github.com
+            // arrive with CRLF line endings. The template's guidance is in
+            // HTML comments, which do not render, so they count as empty.
+            const body = (process.env.BODY ?? '')
+              .replace(/\r\n/g, '\n')
+              .replace(/<!--[\s\S]*?-->/g, '');
+
+            // A section runs from its "## " heading to the next one; a "###"
+            // line, or a "##" line with no name, is text inside it. Headings
+            // compare case-insensitively and may come in any order; a section
+            // with another name is ignored, a repeated heading adds to the
+            // same section, and text before the first heading belongs to
+            // none.
+            // The heading name is cut with slice and trim rather than a
+            // capturing pattern: quantifiers that can share a run of spaces
+            // make a crafted line take minutes to reject, and anyone can
+            // start this job.
+            const sections = new Map();
+            let current = null;
+            for (const line of body.split('\n')) {
+              const name = /^##[ \t]/.test(line) ? line.slice(2).trim() : '';
+              if (name) {
+                current = name.toLowerCase();
+              } else if (current !== null) {
+                sections.set(current, `${sections.get(current) ?? ''}${line}\n`);
+              }
+            }
+            // `text` keeps each line's indentation, which decides whether
+            // GitHub renders a line as a task list item.
+            const text = (name) => sections.get(name) ?? '';
+            const section = (name) => text(name).trim();
+
+            const issueLink =
+              /^(fixes|related):\s*(#\d+|dsx-ai-factory\/topograph#\d+|https:\/\/github\.com\/dsx-ai-factory\/topograph\/issues\/\d+)\b/im;
+            // A ticked task list item as GitHub renders one: up to three
+            // spaces of indentation, a -, * or + marker or 1 to 9 digits and
+            // . or ), one to four spaces or tabs, [x] or [X], then a space or
+            // a tab. More indentation makes a code block or paragraph text.
+            const trivialFix = /^ {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]{1,4}\[[xX]\][ \t]+Trivial fix/m;
+            const ticked = /^ {0,3}(?:[-*+]|\d{1,9}[.)])[ \t]{1,4}\[[xX]\][ \t]/m;
+
+            const failures = [];
+            if (!section('summary')) {
+              failures.push('Summary is empty or missing.');
+            }
+            if (!issueLink.test(section('linked issue')) && !trivialFix.test(text('linked issue'))) {
+              failures.push(
+                'Linked issue: add "Fixes: #N" or "Related: #N", or tick "Trivial fix" when CONTRIBUTING.md exempts the change.',
+              );
+            }
+            if (!ticked.test(text('type of change'))) {
+              failures.push('Type of change: tick at least one box.');
+            }
+            if (!section('testing')) {
+              failures.push('Testing is empty or missing.');
+            }
+
+            if (failures.length === 0) {
+              core.info('The pull request description has every required part.');
+              return;
+            }
+            for (const failure of failures) {
+              core.error(failure, { title: 'PR description' });
+            }
+            await core.summary
+              .addHeading('The pull request description is incomplete', 3)
+              .addList(failures)
+              .addRaw(
+                '<p>Edit the pull request description to fill in each part listed above. Saving the edit re-runs this check.</p>',
+                true,
+              )
+              .write();
+            core.setFailed('The pull request description is incomplete; see the job summary.');
