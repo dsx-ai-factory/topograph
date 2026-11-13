@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -117,7 +118,9 @@ func TestBuildDevices(t *testing.T) {
 
 	// 12 east-west devices: the nvlink-switch belongs to the nvlink layer
 	require.Len(t, devices, 12)
-	require.Equal(t, RoleServer, devices["srv-01"].Role)
+	// Minerva exports no device record for a server: it is only a link end, and
+	// parseResponse gives a requested one the server role
+	require.Empty(t, devices["srv-01"].Role)
 	require.Equal(t, "unknown", devices["p1-leaf-09"].Role)
 
 	// links are unordered: both ends know each other whichever end was reported
@@ -191,7 +194,7 @@ func TestParseResponse(t *testing.T) {
 	devices := buildDevices(fixtureRecords(t, fixtureEastWest, LayerEastWest))
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-01", "srv-02", "srv-03")))
+	parseResponse(treeRoot, devices, names("srv-01", "srv-02", "srv-03"))
 
 	srv01 := &topology.Vertex{ID: "srv-01", Name: "srv-01"}
 	srv02 := &topology.Vertex{ID: "srv-02", Name: "srv-02"}
@@ -216,7 +219,7 @@ func TestParseResponse(t *testing.T) {
 	// only a subset of nodes requested: p1-leaf-01 (whose servers are not
 	// requested) must not appear, and the super-spine must remain the root.
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-03")))
+	parseResponse(treeRoot, devices, names("srv-03"))
 	require.Equal(t, &topology.Vertex{Vertices: map[string]*topology.Vertex{
 		"super-01": {ID: "super-01", Name: "super-01", Vertices: map[string]*topology.Vertex{
 			"p1-spine-01": {ID: "p1-spine-01", Name: "p1-spine-01", Vertices: map[string]*topology.Vertex{
@@ -229,14 +232,14 @@ func TestParseResponse(t *testing.T) {
 
 	// an empty set of requested nodes yields an empty tree, not an error
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names()))
+	parseResponse(treeRoot, devices, names())
 	require.Empty(t, treeRoot.Vertices)
 
 	// a link to a device without a record is not a switch: the requested
 	// server has no parent and is grouped under no-topology
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, fabric(deviceRec("node-a", RoleServer), linkRec("node-a", "sw-undeclared")),
-		names("node-a")))
+	parseResponse(treeRoot, fabric(deviceRec("node-a", RoleServer), linkRec("node-a", "sw-undeclared")),
+		names("node-a"))
 	require.Equal(t, map[string]*topology.Vertex{
 		topology.NoTopology: {ID: topology.NoTopology, Vertices: map[string]*topology.Vertex{
 			"node-a": {ID: "node-a", Name: "node-a"},
@@ -245,10 +248,10 @@ func TestParseResponse(t *testing.T) {
 
 	// a mixed request keeps the resolved tree intact and groups the other server separately
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, fabric(
+	parseResponse(treeRoot, fabric(
 		deviceRec("leaf-01", RoleLeaf), deviceRec("node-ok", RoleServer), deviceRec("node-orphan", RoleServer),
 		linkRec("leaf-01", "node-ok"),
-	), names("node-ok", "node-orphan")))
+	), names("node-ok", "node-orphan"))
 	require.Equal(t, map[string]*topology.Vertex{
 		"leaf-01": {ID: "leaf-01", Name: "leaf-01", Vertices: map[string]*topology.Vertex{
 			"node-ok": {ID: "node-ok", Name: "node-ok"},
@@ -266,7 +269,7 @@ func TestParseResponseUsesInstanceIDs(t *testing.T) {
 	devices := buildDevices(fixtureRecords(t, fixtureEastWest, LayerEastWest))
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, map[string]string{"srv-03": "i-03", "srv-missing": "i-99"}))
+	parseResponse(treeRoot, devices, map[string]string{"srv-03": "i-03", "srv-missing": "i-99"})
 
 	leaf02 := treeRoot.Vertices["super-01"].Vertices["p1-spine-01"].Vertices["p1-leaf-02"]
 	require.Equal(t, map[string]*topology.Vertex{"i-03": {ID: "i-03", Name: "srv-03"}}, leaf02.Vertices)
@@ -276,7 +279,7 @@ func TestParseResponseUsesInstanceIDs(t *testing.T) {
 	// a server with no switch parent keeps its instance ID too
 	devices = fabric(deviceRec("leaf-01", RoleLeaf), deviceRec("srv-orphan", RoleServer))
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, map[string]string{"srv-orphan": "i-orphan"}))
+	parseResponse(treeRoot, devices, map[string]string{"srv-orphan": "i-orphan"})
 	require.Equal(t, map[string]*topology.Vertex{"i-orphan": {ID: "i-orphan", Name: "srv-orphan"}},
 		treeRoot.Vertices[topology.NoTopology].Vertices)
 }
@@ -292,7 +295,7 @@ func TestParseResponseInstanceIDsDoNotCollideWithSwitches(t *testing.T) {
 	)
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, map[string]string{"srv-a": "leaf-b", "srv-b": "i-b"}))
+	parseResponse(treeRoot, devices, map[string]string{"srv-a": "leaf-b", "srv-b": "i-b"})
 	require.Equal(t, map[string]*topology.Vertex{
 		"leaf-a": {ID: "leaf-a", Name: "leaf-a", Vertices: map[string]*topology.Vertex{
 			"leaf-b": {ID: "leaf-b", Name: "srv-a"},
@@ -312,7 +315,7 @@ func TestParseResponseReservesNoTopology(t *testing.T) {
 	)
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-a", "srv-orphan")))
+	parseResponse(treeRoot, devices, names("srv-a", "srv-orphan"))
 	require.Equal(t, map[string]*topology.Vertex{
 		"switch-" + topology.NoTopology: {ID: "switch-" + topology.NoTopology, Name: topology.NoTopology,
 			Vertices: map[string]*topology.Vertex{"srv-a": {ID: "srv-a", Name: "srv-a"}}},
@@ -331,7 +334,7 @@ func TestParseResponseFallbackIDDoesNotReplaceSwitch(t *testing.T) {
 	)
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, map[string]string{"srv-a": "i-a", "srv-missing": topology.NoTopology}))
+	parseResponse(treeRoot, devices, map[string]string{"srv-a": "i-a", "srv-missing": topology.NoTopology})
 	require.Equal(t, map[string]*topology.Vertex{
 		"switch-no-topology-group": {ID: "switch-no-topology-group", Name: "no-topology-group",
 			Vertices: map[string]*topology.Vertex{"i-a": {ID: "i-a", Name: "srv-a"}}},
@@ -352,7 +355,7 @@ func TestParseResponseRenamedIDsAreLabelValues(t *testing.T) {
 	)
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, map[string]string{"srv-a": "leaf-b", "srv-b": "i-b"}))
+	parseResponse(treeRoot, devices, map[string]string{"srv-a": "leaf-b", "srv-b": "i-b"})
 	require.Len(t, treeRoot.Vertices, 2)
 	for id := range vertexCounts(treeRoot) {
 		require.Empty(t, validation.IsValidLabelValue(id), "vertex ID %q", id)
@@ -366,7 +369,7 @@ func TestParseResponseInstanceIDNoTopology(t *testing.T) {
 	devices := fabric(deviceRec("srv-orphan", RoleServer))
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, map[string]string{"srv-orphan": topology.NoTopology}))
+	parseResponse(treeRoot, devices, map[string]string{"srv-orphan": topology.NoTopology})
 	require.Equal(t, map[string]*topology.Vertex{
 		"no-topology-group": {ID: "no-topology-group", Vertices: map[string]*topology.Vertex{
 			topology.NoTopology: {ID: topology.NoTopology, Name: "srv-orphan"},
@@ -375,7 +378,7 @@ func TestParseResponseInstanceIDNoTopology(t *testing.T) {
 
 	// without the collision the group keeps the name engines recognize
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, map[string]string{"srv-orphan": "i-orphan"}))
+	parseResponse(treeRoot, devices, map[string]string{"srv-orphan": "i-orphan"})
 	require.Contains(t, treeRoot.Vertices, topology.NoTopology)
 }
 
@@ -392,7 +395,7 @@ func TestParseResponseRoleHierarchy(t *testing.T) {
 			linkRec("spine-01", "leaf-01"), linkRec("spine-01", "server-a"),
 		)
 		treeRoot := newTreeRoot()
-		require.Nil(t, parseResponse(treeRoot, devices, names("server-a")))
+		parseResponse(treeRoot, devices, names("server-a"))
 		require.Equal(t, map[string]*topology.Vertex{
 			"spine-01": {ID: "spine-01", Name: "spine-01", Vertices: map[string]*topology.Vertex{
 				"server-a": {ID: "server-a", Name: "server-a"},
@@ -407,7 +410,7 @@ func TestParseResponseRoleHierarchy(t *testing.T) {
 			linkRec("super-01", "spine-01"), linkRec("spine-01", "leaf-01"), linkRec("leaf-01", "node-x"),
 		)
 		treeRoot := newTreeRoot()
-		require.Nil(t, parseResponse(treeRoot, devices, names("node-x")))
+		parseResponse(treeRoot, devices, names("node-x"))
 		require.Equal(t, map[string]*topology.Vertex{
 			"super-01": {ID: "super-01", Name: "super-01", Vertices: map[string]*topology.Vertex{
 				"spine-01": {ID: "spine-01", Name: "spine-01", Vertices: map[string]*topology.Vertex{
@@ -422,7 +425,7 @@ func TestParseResponseRoleHierarchy(t *testing.T) {
 	t.Run("unrecognized role is excluded and its server falls under no-topology", func(t *testing.T) {
 		devices := fabric(deviceRec("custom-tor", "custom-tor"), deviceRec("node-z", RoleServer), linkRec("custom-tor", "node-z"))
 		treeRoot := newTreeRoot()
-		require.Nil(t, parseResponse(treeRoot, devices, names("node-z")))
+		parseResponse(treeRoot, devices, names("node-z"))
 		require.Equal(t, map[string]*topology.Vertex{
 			topology.NoTopology: {ID: topology.NoTopology, Vertices: map[string]*topology.Vertex{
 				"node-z": {ID: "node-z", Name: "node-z"},
@@ -664,6 +667,38 @@ func TestGetNetworkTreeErrors(t *testing.T) {
 		require.False(t, called, "the request, and the API key with it, must not reach an untrusted server")
 	})
 
+	t.Run("untrusted certificate is accepted when insecureSkipVerify is set", func(t *testing.T) {
+		var key string
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key = r.Header.Get("X-Api-Key")
+			_, _ = w.Write([]byte(`{"complete": true, "eastWest": {"records": []}}`))
+		}))
+		defer srv.Close()
+
+		p := newProvider(srv)
+		p.creds.InsecureSkipVerify = true
+		_, httpErr := p.post(context.Background(), map[string]string{headerXApiKey: "test-key"}, []byte(`{}`))
+		require.Nil(t, httpErr)
+		require.Equal(t, "test-key", key)
+	})
+
+	t.Run("insecureSkipVerify does not make redirects followed", func(t *testing.T) {
+		var targetCalled bool
+		target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { targetCalled = true }))
+		defer target.Close()
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+		}))
+		defer srv.Close()
+
+		p := newProvider(srv)
+		p.creds.InsecureSkipVerify = true
+		_, httpErr := p.post(context.Background(), map[string]string{headerXApiKey: "test-key"}, []byte(`{}`))
+		require.NotNil(t, httpErr)
+		require.Contains(t, httpErr.Error(), "refusing to follow a redirect")
+		require.False(t, targetCalled)
+	})
+
 	t.Run("redirect is refused", func(t *testing.T) {
 		for _, status := range []int{
 			http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
@@ -773,7 +808,7 @@ func TestParseResponseMissingServers(t *testing.T) {
 	devices := buildDevices(fixtureRecords(t, fixtureEastWest, LayerEastWest))
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-03", "srv-missing")))
+	parseResponse(treeRoot, devices, names("srv-03", "srv-missing"))
 	require.Contains(t, treeRoot.Vertices, "super-01")
 	require.Equal(t, &topology.Vertex{
 		ID: topology.NoTopology,
@@ -785,7 +820,7 @@ func TestParseResponseMissingServers(t *testing.T) {
 	// a requested name that Minerva reports as a switch, not a server, is not
 	// a node to place in the tree either
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-03", "p1-leaf-01")))
+	parseResponse(treeRoot, devices, names("srv-03", "p1-leaf-01"))
 	require.Contains(t, treeRoot.Vertices[topology.NoTopology].Vertices, "p1-leaf-01")
 	require.Equal(t, 1, vertexCounts(treeRoot)["p1-leaf-02"])
 	// it appears only as the childless placeholder, not as the switch
@@ -795,7 +830,7 @@ func TestParseResponseMissingServers(t *testing.T) {
 	// when none of the requested nodes are known, they all land under
 	// no-topology rather than failing the request
 	treeRoot = newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-missing")))
+	parseResponse(treeRoot, devices, names("srv-missing"))
 	require.Len(t, treeRoot.Vertices, 1)
 	require.Contains(t, treeRoot.Vertices, topology.NoTopology)
 }
@@ -814,7 +849,7 @@ func TestParseResponseSharedSwitches(t *testing.T) {
 	)
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-x", "srv-y", "srv-z")))
+	parseResponse(treeRoot, devices, names("srv-x", "srv-y", "srv-z"))
 
 	seen := vertexCounts(treeRoot)
 	for id, n := range seen {
@@ -837,7 +872,7 @@ func TestParseResponseKeepsRequestedServers(t *testing.T) {
 	)
 
 	treeRoot := newTreeRoot()
-	require.Nil(t, parseResponse(treeRoot, devices, names("srv-a", "srv-b")))
+	parseResponse(treeRoot, devices, names("srv-a", "srv-b"))
 	counts := vertexCounts(treeRoot)
 	require.Equal(t, 1, counts["srv-a"])
 	require.Equal(t, 1, counts["srv-b"])
@@ -911,4 +946,258 @@ func TestSingleParent(t *testing.T) {
 		tree := singleParent([]*topology.Vertex{inner, a})
 		require.Equal(t, []*topology.Vertex{a}, tree)
 	})
+}
+
+// placedIDs returns the ID of every vertex under v, including v.
+func placedIDs(v *topology.Vertex) map[string]bool {
+	ids := map[string]bool{}
+	var walk func(v *topology.Vertex)
+	walk = func(v *topology.Vertex) {
+		ids[v.ID] = true
+		for _, c := range v.Vertices {
+			walk(c)
+		}
+	}
+	walk(v)
+	return ids
+}
+
+// Minerva exports a device record only for the devices it selected as hierarchy
+// anchors; a compute node can be reported solely as the far end of its leaf's
+// links. The caller names the compute nodes, so a requested node with no
+// reported role is a server and is placed under its leaf.
+func TestParseResponseRequestedNodesWithoutDeviceRecords(t *testing.T) {
+	devices := fabric(
+		deviceRec("leaf-1", RoleLeaf),
+		deviceRec("leaf-2", RoleLeaf),
+		deviceRec("spine-1", RoleSpine),
+		linkRec("leaf-1", "srv-1"),
+		linkRec("srv-2", "leaf-1"),
+		linkRec("leaf-2", "srv-3"),
+		linkRec("leaf-1", "spine-1"),
+		linkRec("spine-1", "leaf-2"),
+	)
+	require.Empty(t, devices["srv-1"].Role)
+
+	root := newTreeRoot()
+	parseResponse(root, devices, names("srv-1", "srv-2", "srv-3"))
+	require.NotContains(t, root.Vertices, topology.NoTopology)
+	ids := placedIDs(root)
+	for _, n := range []string{"srv-1", "srv-2", "srv-3", "leaf-1", "leaf-2", "spine-1"} {
+		require.True(t, ids[n], n)
+	}
+	require.Equal(t, RoleServer, devices["srv-1"].Role)
+}
+
+// Only a requested node is a server: a link end that nobody requested stays out
+// of the tree, and a role that Minerva reports is never overridden.
+func TestParseResponseRequestedRoleRules(t *testing.T) {
+	devices := fabric(
+		deviceRec("leaf-1", RoleLeaf),
+		deviceRec("srv-unmodeled", roleUnknown), // a role that is not modeled
+		deviceRec("custom-1", "custom-role"),    // a deployment-specific role
+		linkRec("leaf-1", "srv-unmodeled"),
+		linkRec("leaf-1", "custom-1"),
+		linkRec("leaf-1", "other-host"), // a link end nobody requested
+	)
+
+	root := newTreeRoot()
+	parseResponse(root, devices, names("srv-unmodeled", "custom-1"))
+
+	require.Equal(t, RoleServer, devices["srv-unmodeled"].Role)
+	require.Equal(t, "custom-role", devices["custom-1"].Role)
+	require.Empty(t, devices["other-host"].Role)
+
+	ids := placedIDs(root)
+	require.True(t, ids["srv-unmodeled"])
+	require.False(t, ids["other-host"])
+	// the custom role is kept, so that node has no tier and no place in the tree
+	require.Contains(t, root.Vertices[topology.NoTopology].Vertices, "custom-1")
+}
+
+// The east-west layer also carries north-south devices, which are not part of
+// the compute fabric.
+func TestBuildDevicesIgnoresNorthSouthRoles(t *testing.T) {
+	devices := buildDevices([]Record{
+		deviceRec("leaf-1", RoleLeaf),
+		{Type: recordTypeDevice, Name: "border-1", Role: RoleSpine, FabricType: "north-south"},
+		linkRec("leaf-1", "border-1"),
+	})
+	require.Equal(t, RoleLeaf, devices["leaf-1"].Role)
+	require.Empty(t, devices["border-1"].Role)
+}
+
+// Minerva scopes a group by its ancestry, so two racks may share a name.
+func TestBuildDomainsRacksSharingAName(t *testing.T) {
+	rack := func(parent, name string, devices ...string) Record {
+		r := Record{Type: recordTypeRack, Name: name, Parent: parent}
+		for _, d := range devices {
+			r.Children = append(r.Children, Child{Type: recordTypeDevice, Name: d})
+		}
+		return r
+	}
+	dev := func(name, parent string) Record {
+		return Record{Type: recordTypeDevice, Name: name, Role: RoleServer, Parent: parent}
+	}
+
+	t.Run("a shared name is qualified by the parent", func(t *testing.T) {
+		domains := buildDomains([]Record{
+			rack("SU-1", "Rack-1", "a"),
+			rack("SU-2", "Rack-1", "b"),
+			dev("a", "Rack-1"), dev("b", "Rack-1"),
+			// the hierarchy context repeats across pages
+			rack("SU-1", "Rack-1", "a"),
+		}, names("a", "b"))
+		require.Len(t, domains, 2)
+		require.Contains(t, domains, "SU-1.Rack-1")
+		require.Contains(t, domains, "SU-2.Rack-1")
+	})
+
+	t.Run("a qualified ID never collides with another rack's name", func(t *testing.T) {
+		// "a"/"r1" qualifies to "a.r1", which is also the literal name of a rack
+		records := []Record{
+			rack("a", "r1", "x"),
+			rack("b", "r1", "y"),
+			rack("p", "a.r1", "z"),
+			dev("x", "r1"), dev("y", "r1"), dev("z", "a.r1"),
+		}
+		domains := buildDomains(records, names("x", "y", "z"))
+		require.Len(t, domains, 3, "each rack is its own domain")
+		require.Contains(t, domains, "a.r1") // the rack literally named so keeps its name
+		require.Len(t, domains["a.r1"], 1)
+		require.Contains(t, domains["a.r1"], "z")
+		require.Contains(t, domains, "b.r1")
+		require.Contains(t, domains, "a.r1-2")
+		require.Contains(t, domains["a.r1-2"], "x")
+
+		// the IDs do not depend on the order of the records
+		slices.Reverse(records)
+		require.Equal(t, domains, buildDomains(records, names("x", "y", "z")))
+	})
+
+	t.Run("a unique name is kept as is", func(t *testing.T) {
+		domains := buildDomains([]Record{rack("SU-1", "Rack-1", "a"), dev("a", "Rack-1")}, names("a"))
+		require.Len(t, domains, 1)
+		require.Contains(t, domains, "Rack-1")
+	})
+
+	t.Run("a device that no rack claims gets no domain", func(t *testing.T) {
+		domains := buildDomains([]Record{
+			rack("SU-1", "Rack-1", "a"),
+			rack("SU-2", "Rack-1", "b"),
+			dev("c", "Rack-1"),
+		}, names("c"))
+		require.Empty(t, domains)
+	})
+
+	t.Run("the rack field names a rack without a group record", func(t *testing.T) {
+		domains := buildDomains([]Record{{Type: recordTypeDevice, Name: "a", Rack: "Rack-9"}}, names("a"))
+		require.Contains(t, domains, "Rack-9")
+	})
+}
+
+// Switches that are renamed because a requested instance ID takes their name
+// must not be given the same ID: one would replace the other in the tree and its
+// servers would fall back to no-topology despite having a known path.
+func TestParseResponseRenamedSwitchIDsAreUnique(t *testing.T) {
+	devices := fabric(
+		deviceRec("leaf", RoleLeaf), deviceRec("switch-leaf", RoleLeaf),
+		deviceRec("srv-a", RoleServer), deviceRec("srv-b", RoleServer),
+		linkRec("leaf", "srv-a"), linkRec("switch-leaf", "srv-b"),
+	)
+
+	for range 20 { // the devices are visited in map order
+		root := newTreeRoot()
+		// both switch names are also requested instance IDs, so both are renamed
+		parseResponse(root, devices, map[string]string{"srv-a": "leaf", "srv-b": "switch-leaf"})
+
+		require.NotContains(t, root.Vertices, topology.NoTopology)
+		require.Len(t, root.Vertices, 2)
+		for id, n := range vertexCounts(root) {
+			require.Equal(t, 1, n, "vertex %q", id)
+		}
+		ids := placedIDs(root)
+		require.True(t, ids["leaf"] && ids["switch-leaf"], "both requested servers stay in the tree")
+	}
+}
+
+// A north-south device is not a compute node even when it is requested and its
+// role is not modeled or is a recognized switch role: it stays out of the tree.
+func TestParseResponseNorthSouthDeviceStaysExcluded(t *testing.T) {
+	ns := func(name, role string) Record {
+		return Record{Type: recordTypeDevice, Name: name, Role: role, FabricType: fabricNorthSouth}
+	}
+
+	for _, role := range []string{"", roleUnknown, RoleLeaf, RoleServer} {
+		t.Run("role "+role, func(t *testing.T) {
+			devices := buildDevices([]Record{
+				deviceRec("leaf-1", RoleLeaf), deviceRec("srv-1", RoleServer),
+				ns("border-1", role),
+				linkRec("leaf-1", "srv-1"), linkRec("leaf-1", "border-1"),
+			})
+
+			root := newTreeRoot()
+			parseResponse(root, devices, names("srv-1", "border-1"))
+
+			require.True(t, devices["border-1"].Excluded)
+			require.Empty(t, devices["border-1"].Role, "never promoted to a server")
+			leaf := root.Vertices["leaf-1"]
+			require.NotNil(t, leaf)
+			require.Contains(t, leaf.Vertices, "srv-1")
+			require.NotContains(t, leaf.Vertices, "border-1", "not placed under the switch it is linked to")
+			// it is reported like any requested node that is not a compute server
+			require.Contains(t, root.Vertices[topology.NoTopology].Vertices, "border-1")
+		})
+	}
+
+	t.Run("the exclusion does not depend on the order of the records", func(t *testing.T) {
+		for _, records := range [][]Record{
+			{ns("border-1", RoleLeaf), deviceRec("border-1", RoleLeaf)},
+			{deviceRec("border-1", RoleLeaf), ns("border-1", RoleLeaf)},
+		} {
+			devices := buildDevices(records)
+			require.True(t, devices["border-1"].Excluded)
+			require.Empty(t, devices["border-1"].Role)
+		}
+	})
+}
+
+// A device's rack field can name a rack that has no group record. Its name must
+// not be taken by a qualified ID of two racks that share a name.
+func TestBuildDomainsReservesUngroupedRackNames(t *testing.T) {
+	rack := func(parent, name string, devices ...string) Record {
+		r := Record{Type: recordTypeRack, Name: name, Parent: parent}
+		for _, d := range devices {
+			r.Children = append(r.Children, Child{Type: recordTypeDevice, Name: d})
+		}
+		return r
+	}
+	records := []Record{
+		rack("a", "r1", "x"),
+		rack("b", "r1", "y"),
+		{Type: recordTypeDevice, Name: "x", Parent: "r1"},
+		{Type: recordTypeDevice, Name: "y", Parent: "r1"},
+		// no group record names a.r1, which is also the qualified ID of rack a/r1
+		{Type: recordTypeDevice, Name: "z", Rack: "a.r1"},
+	}
+
+	domains := buildDomains(records, names("x", "y", "z"))
+	require.Len(t, domains, 3, "three racks, three domains")
+	require.Equal(t, []string{"z"}, hostNames(domains["a.r1"]), "the ungrouped rack keeps the name it was given")
+	require.Equal(t, []string{"x"}, hostNames(domains["a.r1-2"]))
+	require.Equal(t, []string{"y"}, hostNames(domains["b.r1"]))
+
+	// the IDs do not depend on the order of the records
+	slices.Reverse(records)
+	require.Equal(t, domains, buildDomains(records, names("x", "y", "z")))
+}
+
+// hostNames returns the sorted host names of a domain.
+func hostNames(domain map[string]*topology.HostInfo) []string {
+	var hosts []string
+	for host := range domain {
+		hosts = append(hosts, host)
+	}
+	slices.Sort(hosts)
+	return hosts
 }

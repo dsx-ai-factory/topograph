@@ -43,9 +43,10 @@ func TestLoader(t *testing.T) {
 	ctx := context.TODO()
 
 	testCases := []struct {
-		name   string
-		config providers.Config
-		err    string
+		name       string
+		config     providers.Config
+		err        string
+		skipVerify bool // the InsecureSkipVerify the loaded provider must carry
 	}{
 		{
 			name:   "Case 1: missing apiUrl",
@@ -106,7 +107,38 @@ func TestLoader(t *testing.T) {
 			err: "apiUrl must be an https URL",
 		},
 		{
-			name: "Case 3: valid input",
+			name: "Case 2g: insecureSkipVerify of the wrong type",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": "https://minerva.example.com/minerva/api"},
+				Creds:  map[string]any{"apiKey": "key", "insecureSkipVerify": []any{"yes"}},
+			},
+			err: "failed to decode creds",
+		},
+		{
+			name: "Case 2h: insecureSkipVerify does not relax the https requirement",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": "http://minerva.example.com/minerva/api"},
+				Creds:  map[string]any{"apiKey": "key", "insecureSkipVerify": true},
+			},
+			err: "apiUrl must be an https URL",
+		},
+		{
+			name: "Case 3a: insecureSkipVerify enabled",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": "https://minerva.example.com/minerva/api"},
+				Creds:  map[string]any{"apiKey": "key", "insecureSkipVerify": true},
+			},
+			skipVerify: true,
+		},
+		{
+			name: "Case 3b: insecureSkipVerify disabled explicitly",
+			config: providers.Config{
+				Params: map[string]any{"apiUrl": "https://minerva.example.com/minerva/api"},
+				Creds:  map[string]any{"apiKey": "key", "insecureSkipVerify": false},
+			},
+		},
+		{
+			name: "Case 3: valid input, certificates are verified by default",
 			config: providers.Config{
 				Params: map[string]any{
 					"apiUrl": "https://minerva.example.com/minerva/api",
@@ -120,13 +152,16 @@ func TestLoader(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := Loader(ctx, tc.config)
+			p, err := Loader(ctx, tc.config)
 			if len(tc.err) != 0 {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(), tc.err)
-			} else {
-				require.Nil(t, err)
+				return
 			}
+			require.Nil(t, err)
+			provider, ok := p.(*Provider)
+			require.True(t, ok)
+			require.Equal(t, tc.skipVerify, provider.creds.InsecureSkipVerify)
 		})
 	}
 }
