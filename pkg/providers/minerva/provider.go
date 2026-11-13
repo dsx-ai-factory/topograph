@@ -36,8 +36,9 @@ const (
 	// paramKeyApiURL and credKeyApiKey are the provider's params/creds map
 	// keys. Struct tags below must repeat these values verbatim — Go struct
 	// tags are compile-time string literals and can't reference a constant.
-	paramKeyApiURL = "apiUrl"
-	credKeyApiKey  = "apiKey"
+	paramKeyApiURL            = "apiUrl"
+	credKeyApiKey             = "apiKey"
+	credKeyInsecureSkipVerify = "insecureSkipVerify"
 
 	// regionLocal is the placeholder region reported for every node: Minerva
 	// has no concept of region, so there is nothing meaningful to report.
@@ -55,6 +56,11 @@ type ProviderParams struct {
 
 type Credentials struct {
 	ApiKey string `mapstructure:"apiKey"`
+
+	// InsecureSkipVerify turns off verification of Minerva's TLS certificate. It
+	// is a convenience for quickly validating against an instance in a trusted
+	// environment, and is off by default.
+	InsecureSkipVerify bool `mapstructure:"insecureSkipVerify"`
 }
 
 func NamedLoader() (string, providers.Loader) {
@@ -70,6 +76,10 @@ func Loader(ctx context.Context, config providers.Config) (providers.Provider, *
 	creds, err := getCreds(config.Creds)
 	if err != nil {
 		return nil, httperr.NewError(http.StatusBadRequest, err.Error())
+	}
+
+	if creds.InsecureSkipVerify {
+		klog.Warningf("Minerva TLS certificate verification is disabled by %s: the server is not authenticated", credKeyInsecureSkipVerify)
 	}
 
 	return &Provider{

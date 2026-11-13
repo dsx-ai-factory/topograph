@@ -23,6 +23,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,6 +37,11 @@ import (
 
 const (
 	ExportTopologyURL = "v2/export-topology"
+
+	fabricNorthSouth = "north-south"
+
+	// roleUnknown is the role of a device whose role is not modeled.
+	roleUnknown = "unknown"
 
 	RoleServer     = "server"
 	RoleLeaf       = "leaf"
@@ -76,12 +82,13 @@ var (
 	maxPages       = 10000
 )
 
-// roleTier gives the authoritative hierarchy tier for Minerva's standard
-// device roles, per Minerva's documented standard interface-role pairs
-// (Superspine-Spine, Spine-Leaf, Leaf-NIC/server).
-// Minerva also supports deployment-specific "Custom" roles; devices
-// with any role outside this map are excluded from the switch tree (see
-// computeTiers).
+// roleTier gives the hierarchy tier of the standard device roles a Minerva
+// fabric reports: a server, a leaf, a spine and a super spine. The export API
+// does not enumerate device roles, so this is the set of standard roles that
+// Minerva deployments report, not a documented contract. Minerva also supports
+// deployment-specific "Custom" roles, and a role is "unknown" when it is not
+// modeled; devices with any role outside this map are excluded from the switch
+// tree (see computeTiers).
 var roleTier = map[string]int{
 	RoleServer:     -1,
 	RoleLeaf:       0,
@@ -119,12 +126,20 @@ type Record struct {
 	Role         string   `json:"role"`
 	Parent       string   `json:"parent"`
 	Rack         string   `json:"rack"`
+	FabricType   string   `json:"fabricType"`
+	Children     []Child  `json:"children"`
 	NeighborType string   `json:"neighborType"`
 	From         Endpoint `json:"from"`
 	To           Endpoint `json:"to"`
 }
 
-// Endpoint is one end of a neighbor record: the device that owns it.
+// Child is a direct child listed in a hierarchy group record.
+type Child struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+// Endpoint is one end of a neighbor record: the device that owns it, when known.
 type Endpoint struct {
 	Device string `json:"device"`
 }
@@ -134,6 +149,10 @@ type Device struct {
 	Name  string
 	Role  string
 	Peers map[string]bool // names of directly linked devices
+
+	// Excluded marks a north-south device. It is not part of the compute fabric,
+	// whatever role Minerva reports for it and whether or not it is requested.
+	Excluded bool
 }
 
 // records returns the records of layer, and false when the response does not
@@ -221,13 +240,15 @@ func (p *Provider) exportLayer(ctx context.Context, layer string, limit int) ([]
 		fmt.Sprintf("minerva export-topology (%s): more than %d pages", layer, maxPages))
 }
 
-// post sends one export request, giving up after requestTimeout.
+// post sends one export request, giving up after requestTimeout. The server
+// certificate is verified unless the insecureSkipVerify credential is set;
+// redirects are never followed.
 func (p *Provider) post(ctx context.Context, headers map[string]string, payload []byte) ([]byte, *httperr.Error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
 	f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, ExportTopologyURL)
-	_, data, httpErr := httpreq.DoRequestWithRedirects(f, false, false)
+	_, data, httpErr := httpreq.DoRequestWithRedirects(f, p.creds.InsecureSkipVerify, false)
 	return data, httpErr
 }
 
@@ -251,9 +272,7 @@ func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topo
 	}
 
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	if httpErr := parseResponse(treeRoot, buildDevices(records), nodeInstances(cis)); httpErr != nil {
-		return nil, httpErr
-	}
+	parseResponse(treeRoot, buildDevices(records), nodeInstances(cis))
 
 	if len(treeRoot.Vertices) == 0 {
 		return nil, httperr.NewError(http.StatusBadGateway, "no topology available from Minerva")
@@ -292,8 +311,10 @@ func nodeInstances(cis []topology.ComputeInstances) map[string]string {
 // links between them. Links are physical and unordered, so each one is
 // recorded on both ends no matter which end Minerva reported it from; BGP
 // sessions are not part of the physical switch tree and are ignored. A
-// device that only appears as a link end has no role and takes no part in the
-// tree.
+// device that only appears as a link end has no role. Minerva exports a device
+// record only for the devices it selected as hierarchy anchors, so a compute
+// node can be reported solely as the far end of its leaf's links; parseResponse
+// gives such a requested node the server role.
 func buildDevices(records []Record) map[string]*Device {
 	devices := make(map[string]*Device)
 	get := func(name string) *Device {
@@ -309,9 +330,18 @@ func buildDevices(records []Record) map[string]*Device {
 		switch r.Type {
 		case recordTypeDevice:
 			// A device can be reported more than once; a record without a role
-			// must not erase the role an earlier one gave it.
+			// must not erase the role an earlier one gave it. The east-west
+			// layer also carries north-south devices, which are not part of the
+			// compute fabric: such a device is marked excluded and gets no role,
+			// so it takes no part in the switch tree, and stays excluded
+			// whatever another record says.
 			if len(r.Name) != 0 {
-				if d := get(r.Name); len(r.Role) != 0 {
+				d := get(r.Name)
+				switch {
+				case r.FabricType == fabricNorthSouth:
+					d.Excluded = true
+					d.Role = ""
+				case len(r.Role) != 0 && !d.Excluded:
 					d.Role = r.Role
 				}
 			}
@@ -334,11 +364,115 @@ func buildDevices(records []Record) map[string]*Device {
 // Racks are collected first, so the result does not depend on whether a group
 // record arrives before or after the devices it contains.
 func buildDomains(records []Record, instances map[string]string) topology.DomainMap {
-	racks := make(map[string]bool)
+	// Group names are not unique: Minerva scopes a group by its ancestry, and a
+	// record names only its primary parent. Two racks with one name under
+	// different parents are different racks, so when a name is shared the domain
+	// ID is qualified with the parent's name.
+	//
+	// That is as far as the export allows. A group record carries only names (its
+	// own, its parent's and its children's), with no field for the full ancestry,
+	// so two racks with the same name under same-named parents in different pods
+	// cannot be told apart and are one domain here. The only path in the API is
+	// the pagination cursor, which is API-owned and must not be interpreted.
+	type rackKey struct{ parent, name string }
+	byName := make(map[string][]rackKey)
+	members := make(map[rackKey]map[string]bool) // devices a rack record lists as children
 	for _, r := range records {
-		if r.Type == recordTypeRack {
-			racks[r.Name] = true
+		if r.Type != recordTypeRack {
+			continue
 		}
+		key := rackKey{r.Parent, r.Name}
+		if members[key] == nil {
+			members[key] = make(map[string]bool)
+			byName[r.Name] = append(byName[r.Name], key)
+		}
+		for _, c := range r.Children {
+			if c.Type == recordTypeDevice {
+				members[key][c.Name] = true
+			}
+		}
+	}
+
+	// Domain IDs must be unique. A rack with a unique name keeps its name. Racks
+	// that share a name are qualified with the parent's name, and an ID that is
+	// already taken, for example by a rack literally named "SU-1.Rack-1", gets a
+	// numeric suffix. Keys are visited in sorted order, so the IDs do not depend
+	// on the order of the records.
+	keys := make([]rackKey, 0, len(members))
+	for key := range members {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].name != keys[j].name {
+			return keys[i].name < keys[j].name
+		}
+		return keys[i].parent < keys[j].parent
+	})
+	ids := make(map[rackKey]string, len(keys))
+	used := make(map[string]bool, len(keys))
+	// A device's rack field can name a rack that has no group record. Such a
+	// rack is a domain under its own name (see resolve), so the name is reserved
+	// before any qualified ID is allocated, or a qualified ID could equal it and
+	// merge two racks.
+	for _, r := range records {
+		if r.Type != recordTypeDevice || len(r.Rack) == 0 {
+			continue
+		}
+		if _, grouped := byName[r.Rack]; !grouped {
+			used[r.Rack] = true
+		}
+	}
+	for _, key := range keys {
+		if len(byName[key.name]) == 1 {
+			ids[key] = key.name
+			used[key.name] = true
+		}
+	}
+	for _, key := range keys {
+		if _, ok := ids[key]; ok {
+			continue
+		}
+		id := key.name
+		if len(key.parent) != 0 {
+			id = key.parent + "." + key.name
+		}
+		for base, n := id, 2; used[id]; n++ {
+			id = fmt.Sprintf("%s-%d", base, n)
+		}
+		ids[key] = id
+		used[id] = true
+	}
+	domainID := func(key rackKey) string { return ids[key] }
+
+	// resolve names the rack of a device record: the rack it names, or its primary
+	// parent when that is a rack. When several racks share the name, the rack that
+	// lists the device as a child is the one.
+	resolve := func(r Record) (string, bool) {
+		name := r.Rack
+		if len(name) == 0 {
+			if _, ok := byName[r.Parent]; !ok {
+				return "", false
+			}
+			name = r.Parent
+		}
+		candidates := byName[name]
+		switch len(candidates) {
+		case 0:
+			return name, true // a rack field that names no rack group
+		case 1:
+			return domainID(candidates[0]), true
+		}
+		var found []rackKey
+		for _, key := range candidates {
+			if members[key][r.Name] {
+				found = append(found, key)
+			}
+		}
+		if len(found) != 1 {
+			klog.Warningf("Minerva device %q is in rack %q, which is the name of %d racks, and no single one lists it; it gets no NVLink domain", r.Name, name, len(candidates))
+			return "", false
+		}
+		return domainID(found[0]), true
 	}
 
 	domains := topology.NewDomainMap()
@@ -347,11 +481,7 @@ func buildDomains(records []Record, instances map[string]string) topology.Domain
 		if r.Type != recordTypeDevice || !ok {
 			continue
 		}
-		rack := r.Rack
-		if len(rack) == 0 && racks[r.Parent] {
-			rack = r.Parent
-		}
-		if len(rack) != 0 {
+		if rack, ok := resolve(r); ok {
 			domains.AddHost(rack, instanceID, r.Name)
 		}
 	}
@@ -365,12 +495,25 @@ func buildDomains(records []Record, instances map[string]string) topology.Domain
 // derived from each device's role (see roleTier); devices with an
 // unrecognized role take no part in the tree. A switch's vertex ID is its name,
 // unless that name is a requested instance ID or the ID of the fallback group,
-// in which case it is prefixed with "switch-". The prefix uses only characters
+// in which case it is prefixed with "switch-" until the ID is unique. The prefix uses only characters
 // valid in a Kubernetes label value, since engines publish switch IDs as labels.
 // A compute node's vertex ID is the instance ID it was requested with, and its
 // name is the node name. inputNodes maps each requested node name to its
 // instance ID.
-func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputNodes map[string]string) *httperr.Error {
+func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputNodes map[string]string) {
+	// Minerva exports a device record only for the devices it selected as
+	// hierarchy anchors: a neighbor reference does not add the far-end device,
+	// so a compute node can be reported solely as the far end of its leaf's
+	// links, with no role. A role is also "unknown" when it is not modeled. The
+	// caller names the compute nodes, so a requested node whose role Minerva
+	// does not report is a server. A role that Minerva reports is kept, and a
+	// north-south device is never a compute node.
+	for name := range inputNodes {
+		if d, ok := devices[name]; ok && !d.Excluded && (len(d.Role) == 0 || d.Role == roleUnknown) {
+			d.Role = RoleServer
+		}
+	}
+
 	tiers := computeTiers(devices)
 	parents := parentLinks(devices, tiers)
 
@@ -385,20 +528,58 @@ func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputN
 
 	// The fallback group is called no-topology, which engines recognize. Only if
 	// a requested instance ID is itself no-topology does the group need another
-	// ID, since a group cannot contain a node with its own ID. It is chosen
-	// before the switch IDs so that they can avoid it.
+	// ID, since a group cannot contain a node with its own ID: the Slurm engine
+	// rejects it with a self-edge error. It is chosen before the switch IDs so
+	// that they can avoid it.
+	//
+	// This is a deliberate trade-off, not an oversight. The graph engine skips
+	// only the exact ID no-topology as the "no network layer" marker, so in that
+	// one collision it reports the renamed group as a layer of those nodes. No
+	// group ID works for both engines: keeping no-topology fails Slurm outright,
+	// and a layer that is only cosmetic is the lesser failure. Removing it needs
+	// an engine change, not a different ID here. The documented behavior is in
+	// docs/providers/minerva.md.
 	groupID := topology.NoTopology
 	for instanceIDs[groupID] {
 		groupID += "-group"
+	}
+
+	// Every switch needs an ID of its own, since a vertex replaces another with
+	// the same ID. A switch keeps its name unless that is a requested instance ID
+	// or the fallback group's ID. The others are renamed, in name order so that
+	// the result does not depend on map order, to an ID that no other vertex has:
+	// not a switch that kept its name, not an ID given to an earlier renamed
+	// switch, and not the name of any device.
+	taken := make(map[string]bool)
+	var renamed []string
+	for name, dev := range devices {
+		if dev.Role == RoleServer {
+			continue
+		}
+		if instanceIDs[name] || name == groupID {
+			renamed = append(renamed, name)
+		} else {
+			taken[name] = true
+		}
+	}
+	slices.Sort(renamed)
+	switchIDs := make(map[string]string, len(renamed))
+	for _, name := range renamed {
+		id := name
+		for instanceIDs[id] || id == groupID || taken[id] || (id != name && devices[id] != nil) {
+			id = "switch-" + id
+		}
+		taken[id] = true
+		switchIDs[name] = id
 	}
 
 	switches := make(map[string]*topology.Vertex)  // every switch, regardless of whether it's reachable from a requested node
 	requested := make(map[string]*topology.Vertex) // requested servers: the starting point for growing the tree upward
 	for name, dev := range devices {
 		if dev.Role != RoleServer {
-			id := name
-			for instanceIDs[id] || id == groupID || (id != name && devices[id] != nil) {
-				id = "switch-" + id
+			id, ok := switchIDs[name]
+			if !ok {
+				id = name
 			}
 			switches[name] = &topology.Vertex{ID: id, Name: name, Vertices: make(map[string]*topology.Vertex)}
 		} else if instanceID, ok := inputNodes[name]; ok {
@@ -490,8 +671,6 @@ func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputN
 	if len(noTopology.Vertices) != 0 {
 		treeRoot.Vertices[groupID] = noTopology
 	}
-
-	return nil
 }
 
 // singleParent makes the merged forest a tree. Merging collapses switches
@@ -545,7 +724,7 @@ func computeTiers(devices map[string]*Device) map[string]int {
 	tier := make(map[string]int, len(devices))
 	for name, dev := range devices {
 		t, ok := roleTier[dev.Role]
-		if !ok {
+		if dev.Excluded || !ok {
 			klog.V(2).InfoS("Minerva device has unrecognized role; excluded from switch tree", "role", dev.Role, "name", name)
 			continue
 		}
