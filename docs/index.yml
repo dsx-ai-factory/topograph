@@ -62,6 +62,8 @@ navigation:
         path: providers/netq.md
       - page: Kubernetes Node Labels
         path: providers/k8s-node-labels.md
+      - page: Minerva
+        path: providers/minerva.md
       - page: DRA
         path: providers/dra.md
       - page: Test
