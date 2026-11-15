@@ -63,8 +63,7 @@ Response from `GET /v1/topology?uid=<request-id>`:
       "id": "b07-p1-dgx-07-c01",
       "network_layers": [
         "S-2c5eab0300c26140",
-        "S-2c5eab0300c25f00",
-        "S-2c5eab0300b879c0"
+        "S-2c5eab0300c25f00"
       ]
     }
   ]
