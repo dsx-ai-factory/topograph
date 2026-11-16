@@ -1,0 +1,293 @@
+{
+  "region": "fake1",
+  "data": [
+    {
+      "fabric": "fabric",
+      "name": "r01.border01.fake1.fab",
+      "serial": "BORDER001",
+      "uplink": null,
+      "connections": [
+        {
+          "device": "r01.stem01.fake1.fab",
+          "local_port": "et-0/0/1",
+          "remote_port": "eth-1/1/1"
+        }
+      ],
+      "hosts": []
+    },
+    {
+      "fabric": "fabric",
+      "name": "r01.leaf01.fake1.fab",
+      "serial": "LEAF001",
+      "uplink": {
+        "device": "r01.spine01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "eth-1/1/48"
+      },
+      "connections": [
+        {
+          "device": "r07a.tor01.fake1.fab",
+          "local_port": "eth-1/1/1",
+          "remote_port": "eth-1/1/1"
+        },
+        {
+          "device": "r08a.tor02.fake1.fab",
+          "local_port": "eth-1/1/2",
+          "remote_port": "eth-1/1/1"
+        }
+      ],
+      "hosts": []
+    },
+    {
+      "fabric": "fabric",
+      "name": "r01.spine01.fake1.fab",
+      "serial": "SPINE001",
+      "uplink": {
+        "device": "r01.stem01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "eth-1/1/24"
+      },
+      "connections": [
+        {
+          "device": "r01.leaf01.fake1.fab",
+          "local_port": "eth-1/1/48",
+          "remote_port": "eth-1/1/1"
+        }
+      ],
+      "hosts": []
+    },
+    {
+      "fabric": "fabric",
+      "name": "r01.stem01.fake1.fab",
+      "serial": "STEM001",
+      "uplink": {
+        "device": "r01.border01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "et-0/0/1"
+      },
+      "connections": [
+        {
+          "device": "r01.spine01.fake1.fab",
+          "local_port": "eth-1/1/24",
+          "remote_port": "eth-1/1/1"
+        }
+      ],
+      "hosts": []
+    },
+    {
+      "fabric": "fabric",
+      "name": "r07a.tor01.fake1.fab",
+      "serial": "MT2618600TO1",
+      "uplink": {
+        "device": "r01.leaf01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "eth-1/1/1"
+      },
+      "connections": [],
+      "hosts": [
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/49"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/51"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/55"
+        }
+      ]
+    },
+    {
+      "fabric": "fabric",
+      "name": "r08a.tor02.fake1.fab",
+      "serial": "MT2618600TO2",
+      "uplink": {
+        "device": "r01.leaf01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "eth-1/1/2"
+      },
+      "connections": [],
+      "hosts": [
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/50"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/52"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/55"
+        }
+      ]
+    },
+    {
+      "fabric": "gpu_fabric",
+      "name": "r01.gspine01.fake1.fab",
+      "serial": "GSPINE-SERIAL-001",
+      "uplink": null,
+      "connections": [
+        {
+          "device": "r07a.gtor01.fake1.gpu",
+          "local_port": "eth-1/1/1",
+          "remote_port": "eth-1/1/1"
+        },
+        {
+          "device": "r08a.gtor02.fake1.gpu",
+          "local_port": "eth-1/1/2",
+          "remote_port": "eth-1/1/1"
+        },
+        {
+          "device": "r07b.gtor02.fake1.gpu",
+          "local_port": "eth-1/1/3",
+          "remote_port": "eth-1/1/1"
+        }
+      ],
+      "hosts": []
+    },
+    {
+      "fabric": "gpu_fabric",
+      "name": "r07a.gtor01.fake1.gpu",
+      "serial": "MT2618600ML1",
+      "is_healthy": true,
+      "uplink": {
+        "device": "r01.gspine01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "eth-1/1/1"
+      },
+      "connections": [],
+      "hosts": [
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/49"
+        },
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/50"
+        },
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/51"
+        },
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/52"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/53"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/54"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/55"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/56"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/57"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/58"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/59"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/60"
+        }
+      ]
+    },
+    {
+      "fabric": "gpu_fabric",
+      "name": "r07b.gtor02.fake1.gpu",
+      "serial": "MT2618600ML3",
+      "is_healthy": false,
+      "uplink": {
+        "device": "r01.gspine01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "eth-1/1/3"
+      },
+      "connections": [],
+      "hosts": [
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/49"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/50"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/51"
+        },
+        {
+          "host_uuid": "a40c40c4722c29f0cad2727167059e142edd8df4",
+          "port": "eth-1/1/52"
+        }
+      ]
+    },
+    {
+      "fabric": "gpu_fabric",
+      "name": "r08a.gtor02.fake1.gpu",
+      "serial": "MT2618600ML2",
+      "is_healthy": true,
+      "uplink": {
+        "device": "r01.gspine01.fake1.fab",
+        "local_port": "eth-1/1/1",
+        "remote_port": "eth-1/1/2"
+      },
+      "connections": [],
+      "hosts": [
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/49"
+        },
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/50"
+        },
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/51"
+        },
+        {
+          "host_uuid": "4313b268435e3109c57fddbcee843e385ef31276",
+          "port": "eth-1/1/52"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/53"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/54"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/55"
+        },
+        {
+          "host_uuid": "fb79beeb1f70a553e87548819ead3c661ae64b14",
+          "port": "eth-1/1/56"
+        }
+      ]
+    }
+  ],
+  "page": 1,
+  "pages": 1,
+  "results": 10
+}
