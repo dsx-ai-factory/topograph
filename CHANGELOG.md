@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - The InfiniBand providers no longer place a leaf switch above the spines when none of its hosts are cluster nodes, such as a storage leaf or the leaves of nodes left out of the request. Such a leaf showed up as an extra top-level switch, turned the switch tree upside down when the cluster nodes sat under only some of the spines, and in a three-tier fabric failed the request with `vertex ... is reachable more than once; topology must be a tree`. These leaf switches are now left out of the tree; a spine with such a host attached directly stays a spine.
 
+- Slurm `topology.conf` output (tree and block, plain and per-partition YAML) and partition node discovery no longer drop node or switch names when one name has no numeric suffix and others are that name followed by a number. Nodes `gpu`, `gpu1` and `gpu2` were written as either `gpu` or `gpu[1-2]`; they are now written as `gpu,gpu[1-2]`.
+
 - Updated `github.com/klauspost/compress` from **v1.20.1** to **v1.20.2** to include the upstream fix for CVE-2026-116591.
 
 - The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.
