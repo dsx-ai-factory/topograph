@@ -50,7 +50,7 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 | [Kubernetes fabric topology from existing Node labels](./providers/k8s-node-labels.md) | `k8s-node-labels` | — |
 | [NVIDIA NVLink partitions from Kubernetes Node labels](./providers/dra.md) | `dra` | — |
 | [InfiniBand](./providers/infiniband.md) | `infiniband-bm` (bare metal), `infiniband-k8s` (Kubernetes) | [`infiniband-sim`](./providers/infiniband.md#infiniband-sim-offline-simulation) |
-| [DSX topology model](./modeling.md#provider-simulations) | — | `dsx-sim` |
+| [DSX](./providers/dsx.md) | `dsx` | `dsx-sim` |
 | [Topograph API lifecycle testing](./providers/test.md) | `test` | — (the provider itself simulates success, pending, and error responses) |
 
 An em dash (—) indicates that no corresponding provider variant is registered.

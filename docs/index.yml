@@ -42,6 +42,8 @@ navigation:
         path: providers/aws.md
       - page: Crusoe
         path: providers/crusoe.md
+      - page: DSX
+        path: providers/dsx.md
       - page: Firebird
         path: providers/firebird.md
       - page: GCP

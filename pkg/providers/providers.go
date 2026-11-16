@@ -39,6 +39,14 @@ type Provider interface {
 type Config struct {
 	Creds  map[string]any
 	Params map[string]any
+
+	// ServerCreds is true when the request carried no credentials and Creds are
+	// the server's own. A provider that sends them to a request-supplied
+	// endpoint can use it, with ServerParams, to refuse an endpoint override.
+	ServerCreds bool
+	// ServerParams are the provider parameters of the server configuration,
+	// before the request's parameters were merged over them.
+	ServerParams map[string]any
 }
 type NamedLoader = component.NamedLoader[Provider, Config]
 type Loader = component.Loader[Provider, Config]

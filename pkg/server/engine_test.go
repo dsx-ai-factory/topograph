@@ -376,3 +376,50 @@ SwitchName=S3 Nodes=I[34-36]
 		})
 	}
 }
+
+// TestProcessTopologyRequestPassesCredentialSource checks what the provider
+// loader is told about where its credentials came from.
+func TestProcessTopologyRequestPassesCredentialSource(t *testing.T) {
+	var got providers.Config
+	oldSrv, oldProvider, oldEngine := srv, registry.Providers["cred-source"], registry.Engines["cred-source"]
+	t.Cleanup(func() {
+		srv = oldSrv
+		if oldProvider == nil {
+			delete(registry.Providers, "cred-source")
+		}
+		if oldEngine == nil {
+			delete(registry.Engines, "cred-source")
+		}
+	})
+	registry.Providers["cred-source"] = func(_ context.Context, cfg providers.Config) (providers.Provider, *httperr.Error) {
+		got = cfg
+		return nil, httperr.NewError(http.StatusTeapot, "stop")
+	}
+	registry.Engines["cred-source"] = func(context.Context, engines.Config) (engines.Engine, *httperr.Error) {
+		return &resolvingEngine{}, nil
+	}
+
+	serverParams := map[string]any{"base_url": "https://server.example"}
+	for _, tc := range []struct {
+		name         string
+		serverCreds  map[string]any
+		payloadCreds map[string]any
+		want         bool
+	}{
+		{"server creds fill in for a request without any", map[string]any{"token": "s"}, nil, true},
+		{"request creds replace the server's", map[string]any{"token": "s"}, map[string]any{"token": "p"}, false},
+		{"no credentials anywhere", nil, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv = &HttpServer{cfg: &config.Config{Credentials: tc.serverCreds, ProviderParams: serverParams}}
+			_, herr := processTopologyRequest(&topology.Request{
+				Provider: topology.Provider{Name: "cred-source", Creds: tc.payloadCreds, Params: map[string]any{"base_url": "https://other.example"}},
+				Engine:   topology.Engine{Name: "cred-source"},
+			})
+			require.NotNil(t, herr)
+			require.Equal(t, tc.want, got.ServerCreds)
+			require.Equal(t, serverParams, got.ServerParams)
+			require.Equal(t, "https://other.example", got.Params["base_url"])
+		})
+	}
+}

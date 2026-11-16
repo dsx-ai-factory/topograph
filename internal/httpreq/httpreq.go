@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -93,16 +94,35 @@ func ParseRetryAfter(resp *http.Response) (time.Duration, bool) {
 
 type RequestFunc func() (*http.Request, *httperr.Error)
 
+// refuseDowngrade stops a redirect from https to http, which would make Go
+// forward the Authorization header in cleartext. It otherwise keeps the default
+// limit of 10 redirects.
+func refuseDowngrade(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("refusing redirect from https to %s", req.URL.Scheme)
+	}
+	return nil
+}
+
 // DoRequest sends HTTP requests and returns HTTP response
 func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, *httperr.Error) {
+	return doRequest(f, insecureSkipVerify, nil)
+}
+
+// doRequest is DoRequest with an optional redirect policy; a nil checkRedirect
+// keeps the net/http default.
+func doRequest(f RequestFunc, insecureSkipVerify bool, checkRedirect func(*http.Request, []*http.Request) error) (*http.Response, []byte, *httperr.Error) {
 	req, httpErr := f()
 	if httpErr != nil {
 		return nil, nil, httpErr
 	}
 	// URL.String() keeps RawQuery as is; %q escapes any line break in it so
 	// the URL cannot forge log lines.
-	klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
-	client := &http.Client{}
+	klog.V(4).Infof("Sending HTTP request %q", logURL(req.URL))
+	client := &http.Client{CheckRedirect: checkRedirect}
 	if insecureSkipVerify {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -132,18 +152,29 @@ func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, 
 
 // DoRequestWithRetries sends HTTP requests and returns HTTP response; retries if needed
 func DoRequestWithRetries(f RequestFunc, insecureSkipVerify bool) ([]byte, *httperr.Error) {
+	return doRequestWithRetries(f, insecureSkipVerify, nil)
+}
+
+// DoRequestWithRetriesNoDowngrade is DoRequestWithRetries for requests that carry
+// credentials. It verifies TLS and refuses a redirect from https to http, which
+// would make Go forward the Authorization header in cleartext.
+func DoRequestWithRetriesNoDowngrade(f RequestFunc) ([]byte, *httperr.Error) {
+	return doRequestWithRetries(f, false, refuseDowngrade)
+}
+
+func doRequestWithRetries(f RequestFunc, insecureSkipVerify bool, checkRedirect func(*http.Request, []*http.Request) error) ([]byte, *httperr.Error) {
 	klog.V(4).Infof("Sending HTTP request with retries")
 	attempt := 0
 	for {
 		attempt++
 		var requestCtx context.Context
-		resp, body, err := DoRequest(func() (*http.Request, *httperr.Error) {
+		resp, body, err := doRequest(func() (*http.Request, *httperr.Error) {
 			req, httpErr := f()
 			if req != nil {
 				requestCtx = req.Context()
 			}
 			return req, httpErr
-		}, insecureSkipVerify)
+		}, insecureSkipVerify, checkRedirect)
 		if requestCtx != nil && requestCtx.Err() != nil {
 			return body, err
 		}
@@ -151,7 +182,8 @@ func DoRequestWithRetries(f RequestFunc, insecureSkipVerify bool) ([]byte, *http
 			return body, err
 		}
 		wait := GetNextBackoff(resp, backOff, attempt-1)
-		klog.Infof("Attempt %d failed with error: %v. Retrying in %s", attempt, err, wait.String())
+		// Only the status code is logged: the error text may quote the request URL.
+		klog.Infof("Attempt %d failed with status %d. Retrying in %s", attempt, err.Code(), wait.String())
 		if !waitForRetry(requestCtx, wait) {
 			return body, err
 		}
@@ -195,13 +227,33 @@ func GetURL(baseURL string, query map[string]string, paths ...string) (string, *
 	return u.String(), nil
 }
 
+// logURL returns u without userinfo, query and fragment, which may carry
+// secrets. The request itself keeps the original URL.
+func logURL(u *url.URL) string {
+	c := *u
+	c.User, c.RawQuery, c.Fragment, c.RawFragment = nil, "", "", ""
+	return c.String()
+}
+
+// logURLString is logURL for a URL held as a string; it never logs an
+// unparsable URL, which could still carry secrets.
+func logURLString(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<unparsable URL>"
+	}
+	return logURL(u)
+}
+
+// GetRequestFunc returns a RequestFunc that builds a request for method with
+// the given headers, query, payload and URL (baseUrl joined with paths).
 func GetRequestFunc(ctx context.Context, method string, headers, query map[string]string, payload []byte, baseUrl string, paths ...string) RequestFunc {
 	return func() (*http.Request, *httperr.Error) {
 		u, httpErr := GetURL(baseUrl, query, paths...)
 		if httpErr != nil {
 			return nil, httpErr
 		}
-		klog.V(4).Infof("Fetching %s", u)
+		klog.V(4).Infof("Fetching %q", logURLString(u))
 		req, err := http.NewRequestWithContext(ctx, method, u, bytes.NewBuffer(payload))
 		if err != nil {
 			return nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to create HTTP request: %v", err))

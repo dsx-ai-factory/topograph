@@ -378,14 +378,12 @@ func TestProviderSimWithNVLink(t *testing.T) {
 }
 
 func TestResponseToClusterTopologyOmitsEmptyAccelerator(t *testing.T) {
-	response := &TopologyResponse{Switches: map[string]SwitchInfo{
-		"leaf": {Nodes: []NodeInfo{{NodeID: "n1"}}},
-	}}
-	instances := []topology.ComputeInstances{{
-		Instances: map[string]string{"n1": "node1"},
-	}}
+	switches := []map[string]SwitchAdjacency{
+		{"leaf": {Nodes: []NodeInfo{{NodeID: "n1"}}}},
+	}
+	want := map[string]struct{}{"n1": {}}
 
-	topo := responseToClusterTopology(response, instances)
+	topo := buildClusterTopology(switches, want)
 
 	require.Len(t, topo.Instances, 1)
 	require.Empty(t, topo.Instances[0].XclrDomainID)

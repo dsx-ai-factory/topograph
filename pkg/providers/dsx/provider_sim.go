@@ -34,60 +34,45 @@ const (
 	errAPIError
 )
 
+// simClient serves a simulation model through the Client interface.
 type simClient struct {
 	model  *models.Model
 	apiErr int
 }
 
-func (client *simClient) GetTopology(ctx context.Context, _ string, nodeIDs []string, pageSize int, pageToken string) (*TopologyResponse, error) {
+// GetTopology returns the whole simulated topology as a single page.
+func (client *simClient) GetTopology(ctx context.Context, _ string, pageSize int, pageToken string) (*TopologyResponse, error) {
 	if client.apiErr == errAPIError {
 		return nil, providers.ErrAPIError
 	}
 
-	// For simulation, generate topology from model
-	response := &TopologyResponse{
-		Switches: make(map[string]SwitchInfo),
-	}
-
-	want := make(map[string]struct{})
-	for _, nodeID := range nodeIDs {
-		want[nodeID] = struct{}{}
-	}
-
-	//Iterate over the switches from the model and add them to the switch map
+	// Build the ordered list of single-key entries matching the API wire format.
+	var switches []map[string]SwitchAdjacency
 	for _, sw := range client.model.Switches {
-		swInfo := SwitchInfo{
-			Switches: make([]string, 0),
-			Nodes:    make([]NodeInfo, 0),
-		}
-
-		if len(sw.Nodes) > 0 {
-			//If it is a leaf switch, add the nodes to the switch info
-			for _, nodeName := range sw.Nodes {
-				if _, exists := want[nodeName]; !exists {
-					continue
-				}
-				node, exists := client.model.Nodes[nodeName]
-				if !exists {
-					continue
-				}
-				swInfo.Nodes = append(swInfo.Nodes, NodeInfo{NodeID: nodeName, AcceleratedNetworkID: node.AcceleratorDomain()})
+		adj := SwitchAdjacency{}
+		for _, nodeName := range sw.Nodes {
+			node, exists := client.model.Nodes[nodeName]
+			if !exists {
+				continue
 			}
-		} else {
-			//If it is not a leaf switch, add the child switches to the switch info
-			swInfo.Switches = append(swInfo.Switches, sw.Switches...)
+			adj.Nodes = append(adj.Nodes, NodeInfo{NodeID: nodeName, AcceleratedNetworkID: node.AcceleratorDomain()})
 		}
-		response.Switches[sw.Name] = swInfo
+		adj.Switches = append(adj.Switches, sw.Switches...)
+		if len(adj.Nodes) == 0 && len(adj.Switches) == 0 {
+			continue
+		}
+		switches = append(switches, map[string]SwitchAdjacency{sw.Name: adj})
 	}
 
-	//Return the response
-	return response, nil
+	return &TopologyResponse{Switches: switches}, nil
 }
 
+// NamedLoaderSim returns the simulation provider name and its loader.
 func NamedLoaderSim() (string, providers.Loader) {
 	return NAME_SIM, LoaderSim
 }
 
+// LoaderSim loads the simulation model and returns the dsx-sim provider.
 func LoaderSim(ctx context.Context, cfg providers.Config) (providers.Provider, *httperr.Error) {
 	p, err := providers.GetSimulationParams(cfg.Params)
 	if err != nil {
@@ -114,11 +99,13 @@ func LoaderSim(ctx context.Context, cfg providers.Config) (providers.Provider, *
 	return NewSim(clientFactory, p.TrimTiers, model), nil
 }
 
+// simProvider is the simulated DSX provider.
 type simProvider struct {
 	baseProvider
 	*providers.BaseSimProvider
 }
 
+// NewSim returns a simulated provider that obtains its client from clientFactory.
 func NewSim(clientFactory ClientFactory, trimTiers int, model *models.Model) *simProvider {
 	return &simProvider{
 		baseProvider: baseProvider{
