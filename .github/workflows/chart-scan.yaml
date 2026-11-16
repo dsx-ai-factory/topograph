@@ -72,7 +72,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           # Keep in step with chart-test.yaml.
           version: v4.1.1
@@ -149,7 +149,7 @@ jobs:
       - name: Scan rendered manifests
         # The action SHA also pins the Checkov version (by image tag): its
         # action.yml runs docker://ghcr.io/bridgecrewio/checkov:3.3.30.
-        uses: bridgecrewio/checkov-action@45edc9d8856b664db2ec251f5f8632361f0a67aa # v12.3139.0
+        uses: bridgecrewio/checkov-action@3f0caf0c3aa9f56ade6b49f6e60b63aaeafb75a3 # v12.3141.0
         with:
           # Absolute path inside the action container, where the workspace is
           # mounted. A relative path makes Checkov prefix the SARIF file paths
