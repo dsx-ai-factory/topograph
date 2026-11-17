@@ -36,17 +36,22 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
+// ResolveComputeInstances lists Nodes matching the engine selector. Empty input
+// derives instances from those Nodes with resolvable identity and region metadata;
+// explicit input is returned unchanged. Only resulting instance names enter the
+// output cache. Entries returned by the selector-filtered list contain the Node;
+// other explicitly requested names are cached as nil for deferred lookup and are
+// excluded from cleanup of omitted Nodes.
 func (eng *K8sEngine) ResolveComputeInstances(ctx context.Context, instances []topology.ComputeInstances, _ any) ([]topology.ComputeInstances, *httperr.Error) {
 	nodes, err := k8s.GetNodes(ctx, eng.client, eng.params.nodeListOpt)
 	if err != nil {
 		return nil, httperr.NewError(http.StatusBadGateway, err.Error())
 	}
-	if len(instances) != 0 {
-		eng.cacheRequestedNodes(instances, nodes)
-		return instances, nil
+	if len(instances) == 0 {
+		instances = k8s.GetComputeInstances(nodes)
 	}
-	eng.cacheNodes(nodes)
-	return k8s.GetComputeInstances(nodes), nil
+	eng.cacheRequestedNodes(instances, nodes)
+	return instances, nil
 }
 
 func (eng *K8sEngine) AddNodeLabels(ctx context.Context, nodeName string, labels map[string]string) error {

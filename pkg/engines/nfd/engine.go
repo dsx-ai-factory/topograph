@@ -156,7 +156,8 @@ func (eng *NfdEngine) GenerateOutput(ctx context.Context, graph *topology.Graph,
 	if err != nil {
 		return nil, httperr.NewError(http.StatusBadRequest, err.Error())
 	}
-	if eng.params.Cleanup && len(nodeFeatures) == 0 && len(nodeFeatureGroups) == 0 {
+	// Every topology value yields a group, so no groups means no topology at all.
+	if eng.params.Cleanup && len(nodeFeatureGroups) == 0 {
 		return nil, httperr.NewError(http.StatusBadGateway,
 			"generated no NFD topology objects; keeping the existing topology")
 	}

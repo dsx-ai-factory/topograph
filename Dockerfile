@@ -15,7 +15,7 @@
 
 # Base images are pinned by digest; Dependabot's docker ecosystem
 # (.github/dependabot.yml) keeps the tag and digest pairs current.
-FROM golang:1.27.3@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS builder
+FROM golang:1.27.4@sha256:5e8afd493a7124a8586e134d9b532731161d4b9becf9dee5a5956b107426f93d AS builder
 
 WORKDIR /go/src/github.com/dsx-ai-factory/topograph
 COPY . .
@@ -25,7 +25,7 @@ ARG TARGETARCH
 
 RUN make build-${TARGETOS}-${TARGETARCH}
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 RUN apk add --no-cache rdma-core
 
