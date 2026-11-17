@@ -202,7 +202,9 @@ func (l *topologyLabeler) getTierLabels(v *topology.Vertex, nodeMap NodeLabelMap
 			}
 			for i, sw := range layers[1:] {
 				labelKey := l.keys.FabricKey(i)
-				if len(sw) == 0 || labelKey == "" {
+				// The no-topology placeholder is not a switch. A node under it keeps
+				// an entry with no fabric keys, so stale tier labels get removed.
+				if len(sw) == 0 || sw == topology.NoTopology || labelKey == "" {
 					break
 				}
 				labels[labelKey] = l.checkLabel(sw)
