@@ -132,10 +132,9 @@ func buildNFDObjects(
 			}
 			groupValues[kind][acceleratorDomainSourceValue] = acceleratorDomainSourceLabel
 		}
-		if len(elements) == 0 {
-			continue
-		}
 
+		// A node without topology elements still gets a NodeFeature, so values it
+		// published before are replaced rather than left behind.
 		nodeFeature, err := makeNodeFeature(nodeName, elements)
 		if err != nil {
 			return nil, nil, err

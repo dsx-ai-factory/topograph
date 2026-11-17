@@ -34,6 +34,12 @@ import (
 )
 
 func TestGetAnnotations(t *testing.T) {
+	t.Run("kubernetes node identity", func(t *testing.T) {
+		broker := &nodeBroker{nodeName: "worker-a", config: nodeDataBrokerConfig{Provider: topology.Provider{Name: "k8s-node-labels"}}}
+		annotations, err := broker.getAnnotations(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{topology.KeyNodeInstance: "worker-a", topology.KeyNodeRegion: "local"}, annotations)
+	})
 	ctx := context.TODO()
 	tests := []struct {
 		name     string
