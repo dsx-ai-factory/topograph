@@ -75,7 +75,16 @@ jobs:
           [ "$MISSING" -eq 0 ]
 
       - name: Fern check
-        run: fern check
+        run: |
+          # Frozen version content dirs only exist at publish time. Strip the
+          # versions block from docs.yml so fern check doesn't chase missing
+          # paths, then restore the original file afterward.
+          cp fern/docs.yml fern/docs.yml.bak
+          sed -i '/^    versions:/,/^[^ ]/{ /^    versions:/d; /^      /d; }' fern/docs.yml
+          rc=0
+          fern check || rc=$?
+          mv fern/docs.yml.bak fern/docs.yml
+          exit $rc
 
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0

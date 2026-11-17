@@ -7,7 +7,8 @@ custom resources instead of writing Kubernetes node labels directly.
 It creates:
 
 - one `NodeFeature` per topology node, carrying Topograph topology as
-  `spec.features.attributes.topograph.network.elements`
+  `spec.features.attributes.topograph.network.elements` (empty for a node the
+  provider returned no topology for)
 - one `NodeFeatureGroup` per distinct fabric tier, accelerator domain, or
   accelerator sub-domain value
 
@@ -81,7 +82,7 @@ Parameters:
 | Parameter | Required | Default | Description |
 |---|---:|---|---|
 | `nodeSelector` | No | all nodes | Limits the Kubernetes nodes used as provider input. Same meaning as the `k8s` engine selector. |
-| `cleanup` | No | `true` | Deletes stale Topograph-managed `NodeFeature` and `NodeFeatureGroup` objects that are no longer present in the generated topology. If generation produces no objects, the engine returns an error and preserves the existing topology. |
+| `cleanup` | No | `true` | Deletes stale Topograph-managed `NodeFeature` and `NodeFeatureGroup` objects that are no longer present in the generated topology. If generation produces no topology values, the engine returns an error and preserves the existing topology. |
 | `acceleratorDomainSourceLabel` | No | none | Existing Kubernetes Node label used as the authoritative accelerator-domain source. Values replace the provider domain and suppress the provider sub-domain for matching nodes. |
 
 `nfdNamespace` is a deployment-level Helm value, not an engine request
