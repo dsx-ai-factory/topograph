@@ -124,7 +124,7 @@ func TestAuthFailures(t *testing.T) {
 			graph, err := p.GenerateTopologyConfig(context.Background(), nil, []topology.ComputeInstances{{Instances: map[string]string{"n1": "worker"}}})
 			require.Nil(t, graph)
 			require.Equal(t, status, err.Code())
-			require.Equal(t, "HTTP request failed", err.Error())
+			require.Equal(t, "authentication failed: HTTP request failed", err.Error())
 			expectedCalls := 1
 			if status == http.StatusServiceUnavailable {
 				expectedCalls = 5
@@ -144,7 +144,7 @@ func TestInvalidTokenResponses(t *testing.T) {
 			require.Nil(t, err)
 			_, err = p.(*Provider).accessToken(context.Background())
 			require.Equal(t, http.StatusBadGateway, err.Code())
-			require.Equal(t, "invalid bearer token response", err.Error())
+			require.Equal(t, "authentication failed: invalid bearer token response", err.Error())
 		})
 	}
 }

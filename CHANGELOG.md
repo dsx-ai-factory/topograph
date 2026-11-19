@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Firebird and NetQ login now use the shared bearer helper. Login errors carry the upstream HTTP status with a redacted message instead of the upstream error body or Firebird error envelope. A canceled Firebird login returns HTTP 408 instead of 502, and a timeout returns 504. Firebird no longer checks the login response's `tokenType` or `expiresIn`. NetQ login and OpID requests are retried on HTTP 408, 429, and 5xx, limited to 1 MiB, and an empty login response returns HTTP 502 instead of 401. Login redirects are no longer followed and return HTTP 502.
+- Firebird and NetQ login now use the shared bearer helper. Login errors carry the upstream HTTP status with a redacted message prefixed with `authentication failed:` instead of the upstream error body or Firebird error envelope. A canceled Firebird login returns HTTP 408 instead of 502, and a timeout returns 504. Firebird no longer checks the login response's `tokenType` or `expiresIn`. NetQ login and OpID requests are retried on HTTP 408, 429, and 5xx, limited to 1 MiB, and an empty login response returns HTTP 502 instead of 401. Login redirects are no longer followed and return HTTP 502.
 
 - Go toolchain upgraded from **1.27.3** to **1.27.4** across the module, container build, and CI.
 

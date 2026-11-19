@@ -16,6 +16,7 @@
 package httpauth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -46,7 +47,7 @@ func TestAcquireTokenFromConfig(t *testing.T) {
 		_, _ = io.WriteString(w, `{"access_token":"fake-token","expires_in":3600}`)
 	}))
 	defer server.Close()
-	input := []byte(fmt.Sprintf(`{"type":"oauth2","oauth2":{"tokenUrl":%q,"scopes":["api.read"]}}`, server.URL))
+	input := fmt.Appendf(nil, `{"type":"oauth2","oauth2":{"tokenUrl":%q,"scopes":["api.read"]}}`, server.URL)
 	decoders := []struct {
 		name   string
 		decode func([]byte, any) error
@@ -132,12 +133,53 @@ func TestAcquireTokenFailure(t *testing.T) {
 }
 
 func TestStrictDecodingRejectsFieldInWrongBlock(t *testing.T) {
-	values := map[string]any{
-		"type":   "oauth2",
-		"oauth2": map[string]any{"tokenUrl": "https://example.invalid/token", "url": "https://example.invalid/login"},
+	strict := map[string]func([]byte, any) error{
+		"json": func(data []byte, output any) error {
+			decoder := json.NewDecoder(bytes.NewReader(data))
+			decoder.DisallowUnknownFields()
+			return decoder.Decode(output)
+		},
+		"yaml": func(data []byte, output any) error {
+			decoder := yaml.NewDecoder(bytes.NewReader(data))
+			decoder.KnownFields(true)
+			return decoder.Decode(output)
+		},
+		"mapstructure": func(data []byte, output any) error {
+			var values map[string]any
+			if err := json.Unmarshal(data, &values); err != nil {
+				return err
+			}
+			decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{Result: output, ErrorUnused: true})
+			if err != nil {
+				return err
+			}
+			return decoder.Decode(values)
+		},
 	}
-	var auth AuthConfig
-	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{Result: &auth, ErrorUnused: true})
-	require.NoError(t, err)
-	require.Error(t, decoder.Decode(values))
+	valid := []string{
+		`{"type":"oauth2","oauth2":{"tokenUrl":"https://example.invalid/token","scopes":["api.read"],"authStyle":"form"}}`,
+		`{"type":"bearer","bearer":{"url":"https://example.invalid/login","method":"PUT","encoding":"form","tokenPointer":"/token"}}`,
+	}
+	invalid := []string{
+		// Bearer field in the OAuth2 block and the reverse.
+		`{"type":"oauth2","oauth2":{"tokenUrl":"https://example.invalid/token","url":"https://example.invalid/login"}}`,
+		`{"type":"bearer","bearer":{"url":"https://example.invalid/login","tokenPointer":"/token","tokenUrl":"https://example.invalid/token"}}`,
+		// Credentials misplaced in either block.
+		`{"type":"oauth2","oauth2":{"tokenUrl":"https://example.invalid/token","clientSecret":"fake-secret"}}`,
+		`{"type":"bearer","bearer":{"url":"https://example.invalid/login","tokenPointer":"/token","password":"fake-password"}}`,
+		// The removed shared block.
+		`{"type":"oauth2","tokenRequest":{"tokenUrl":"https://example.invalid/token"}}`,
+	}
+	for name, decode := range strict {
+		t.Run(name, func(t *testing.T) {
+			for _, input := range valid {
+				var auth AuthConfig
+				require.NoError(t, decode([]byte(input), &auth), input)
+			}
+			for _, input := range invalid {
+				var auth AuthConfig
+				require.Error(t, decode([]byte(input), &auth), input)
+			}
+		})
+	}
 }

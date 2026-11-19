@@ -88,7 +88,7 @@ func TestAuthenticationErrorStatusPreserved(t *testing.T) {
 	p := &Provider{params: &ProviderParams{ApiURL: server.URL}, creds: &Credentials{Username: "fake-user", Password: "fake-password"}}
 	_, err := p.getNetworkTree(context.Background(), nil)
 	require.Equal(t, http.StatusUnauthorized, err.Code())
-	require.EqualError(t, err, "HTTP request failed")
+	require.EqualError(t, err, "authentication failed: HTTP request failed")
 	require.Equal(t, 1, calls)
 }
 

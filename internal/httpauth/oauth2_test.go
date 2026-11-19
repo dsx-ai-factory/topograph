@@ -164,6 +164,7 @@ func TestTokenErrorsAreRedactedAndNotRetried(t *testing.T) {
 		{"invalid type", 200, `{"access_token":"fake-token","token_type":"Basic"}`},
 		{"header injection", 200, `{"access_token":"fake-token\r\n"}`},
 		{"expired", 200, `{"access_token":"fake-token","expires_in":-10}`},
+		{"explicit zero expiry", 200, `{"access_token":"fake-token","expires_in":0}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -301,4 +302,56 @@ func TestClientTimeoutReturnsHTTPError(t *testing.T) {
 	require.NotNil(t, err)
 	require.Equal(t, http.StatusGatewayTimeout, err.Code())
 	require.EqualError(t, err, "OAuth2 token request timed out")
+}
+
+func TestClientTimeoutDuringBodyReadReturns504(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+	client := server.Client()
+	client.Timeout = 100 * time.Millisecond
+	source, err := NewClientCredentialsSource(AuthConfig{Type: "oauth2", OAuth2: &OAuth2Config{TokenURL: server.URL}}, fakeCredentials(), client)
+	require.Nil(t, err)
+	token, err := source.Token(context.Background())
+	require.Nil(t, token)
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusGatewayTimeout, err.Code())
+	require.EqualError(t, err, "OAuth2 token request timed out")
+}
+
+func TestFormEncodedTokenResponseExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		ok         bool
+	}{
+		{"omitted expiry", "access_token=fake-token&token_type=Bearer", true},
+		{"positive expiry", "access_token=fake-token&token_type=Bearer&expires_in=3600", true},
+		{"explicit zero expiry", "access_token=fake-token&token_type=Bearer&expires_in=0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+			token, err := newTestSource(t, server, "basic").Token(context.Background())
+			if tc.ok {
+				require.Nil(t, err)
+				require.Equal(t, "fake-token", token.AccessToken)
+				return
+			}
+			require.NotNil(t, err)
+			require.Equal(t, http.StatusBadGateway, err.Code())
+		})
+	}
 }

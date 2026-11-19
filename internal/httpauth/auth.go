@@ -44,7 +44,7 @@ func AcquireToken(ctx context.Context, auth AuthConfig, creds Credentials, clien
 		}
 		return token.AccessToken, nil
 	case "bearer":
-		return acquireBearerToken(ctx, auth, creds, client)
+		return acquireConfiguredBearerToken(ctx, auth, creds, client)
 	default:
 		return "", httperr.NewError(http.StatusBadRequest, "token acquisition requires auth type oauth2 or bearer")
 	}

@@ -116,15 +116,32 @@ func (s *TokenSource) Token(ctx context.Context) (*oauth2.Token, *httperr.Error)
 		token := *s.token
 		return &token, nil
 	}
-	token, err := s.config.Token(context.WithValue(ctx, oauth2.HTTPClient, s.client))
+	// The OAuth2 library formats response-body read errors, which hides a client
+	// timeout. Enforce the same timeout on the context so it stays identifiable.
+	acquireCtx := ctx
+	if s.client.Timeout > 0 {
+		var cancel context.CancelFunc
+		acquireCtx, cancel = context.WithTimeout(ctx, s.client.Timeout)
+		defer cancel()
+	}
+	token, err := s.config.Token(context.WithValue(acquireCtx, oauth2.HTTPClient, s.client))
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, tokenRequestError(ctx.Err(), "OAuth2")
+		if ctxErr := acquireCtx.Err(); ctxErr != nil {
+			return nil, tokenRequestError(ctxErr, "OAuth2")
+		}
+		// The context timer can lag the client's own timer by a moment.
+		if deadline, ok := acquireCtx.Deadline(); ok && !time.Now().Before(deadline) {
+			return nil, tokenRequestError(context.DeadlineExceeded, "OAuth2")
 		}
 		// oauth2 errors can contain response bodies, URLs, and credentials.
 		return nil, tokenRequestError(err, "OAuth2")
 	}
-	if err := ValidateBearerToken(token.AccessToken, token.TokenType); err != nil ||
+	// An omitted expires_in means a non-expiring token, but an explicit zero
+	// (which the library also reports as a zero Expiry) means already expired.
+	// Form-encoded responses report an absent expires_in as "", not nil.
+	expiresIn := token.Extra("expires_in")
+	explicitZeroExpiry := token.Expiry.IsZero() && expiresIn != nil && expiresIn != ""
+	if err := ValidateBearerToken(token.AccessToken, token.TokenType); err != nil || explicitZeroExpiry ||
 		(!token.Expiry.IsZero() && !token.Expiry.After(time.Now())) {
 		return nil, httperr.NewError(http.StatusBadGateway, "invalid OAuth2 token response")
 	}
