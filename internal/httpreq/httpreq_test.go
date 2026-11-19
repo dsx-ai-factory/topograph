@@ -727,3 +727,15 @@ func TestRequestOptionsRedactFactoryErrors(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, err.Code())
 	require.EqualError(t, err, "HTTP request construction failed")
 }
+
+func TestCancellationStatus(t *testing.T) {
+	code, ok := CancellationStatus(context.Canceled)
+	require.True(t, ok)
+	require.Equal(t, http.StatusRequestTimeout, code)
+	code, ok = CancellationStatus(context.DeadlineExceeded)
+	require.True(t, ok)
+	require.Equal(t, http.StatusGatewayTimeout, code)
+	code, ok = CancellationStatus(io.ErrUnexpectedEOF)
+	require.False(t, ok)
+	require.Zero(t, code)
+}

@@ -18,11 +18,11 @@ package httpauth
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
 	"net/url"
 
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/internal/httpreq"
 	"golang.org/x/oauth2"
 )
 
@@ -64,12 +64,11 @@ func tokenHTTPClient(client *http.Client) *http.Client {
 // tokenRequestError translates library failures without retaining their bodies,
 // URLs, or credential-bearing messages. RetrieveError stays inside this helper.
 func tokenRequestError(err error, kind string) *httperr.Error {
-	if errors.Is(err, context.Canceled) {
-		return httperr.NewError(http.StatusRequestTimeout, kind+" token request canceled")
-	}
-	var timeout net.Error
-	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
-		return httperr.NewError(http.StatusGatewayTimeout, kind+" token request timed out")
+	switch code, _ := httpreq.CancellationStatus(err); code {
+	case http.StatusRequestTimeout:
+		return httperr.NewError(code, kind+" token request canceled")
+	case http.StatusGatewayTimeout:
+		return httperr.NewError(code, kind+" token request timed out")
 	}
 	code := http.StatusBadGateway
 	var retrieve *oauth2.RetrieveError

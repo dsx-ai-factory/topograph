@@ -32,13 +32,10 @@ import (
 const maxTokenResponseBytes = 1 << 20
 
 func acquireBearerToken(ctx context.Context, auth AuthConfig, creds Credentials, client *http.Client) (string, *httperr.Error) {
-	if auth.TokenRequest == nil {
-		return "", httperr.NewError(http.StatusBadRequest, "bearer authentication requires tokenRequest configuration")
+	if auth.Type != "bearer" || auth.Bearer == nil || auth.OAuth2 != nil {
+		return "", httperr.NewError(http.StatusBadRequest, "bearer authentication requires type bearer and only the bearer configuration block")
 	}
-	config := *auth.TokenRequest
-	if auth.HeaderName != "" || config.TokenURL != "" || len(config.Scopes) != 0 || config.AuthStyle != "" {
-		return "", httperr.NewError(http.StatusBadRequest, "bearer configuration contains fields for another authentication type")
-	}
+	config := *auth.Bearer
 	if !validTokenURL(config.URL) {
 		return "", httperr.NewError(http.StatusBadRequest, "bearer login URL must be an absolute HTTPS URL without user information or fragment")
 	}
@@ -55,21 +52,9 @@ func acquireBearerToken(ctx context.Context, auth AuthConfig, creds Credentials,
 	if client == nil {
 		return "", httperr.NewError(http.StatusBadRequest, "bearer authentication requires an explicit HTTP client")
 	}
-	var body []byte
-	contentType := "application/json"
-	switch config.Encoding {
-	case "", "json":
-		// Credentials is a string map, so it is always JSON-serializable.
-		body, _ = json.Marshal(creds)
-	case "form":
-		form := make(url.Values, len(creds))
-		for key, value := range creds {
-			form.Set(key, value)
-		}
-		body = []byte(form.Encode())
-		contentType = "application/x-www-form-urlencoded"
-	default:
-		return "", httperr.NewError(http.StatusBadRequest, "bearer login encoding must be json or form")
+	body, contentType, httpErr := loginBody(config.Encoding, creds)
+	if httpErr != nil {
+		return "", httpErr
 	}
 	if err := ctx.Err(); err != nil {
 		return "", tokenRequestError(err, "bearer")
@@ -86,6 +71,24 @@ func acquireBearerToken(ctx context.Context, auth AuthConfig, creds Credentials,
 	}
 	token, _, httpErr := AcquireBearerToken(factory, config.TokenPointer, client)
 	return token, httpErr
+}
+
+// loginBody encodes the complete credentials map as the login request body.
+func loginBody(encoding string, creds Credentials) ([]byte, string, *httperr.Error) {
+	switch encoding {
+	case "", "json":
+		// Credentials is a string map, so it is always JSON-serializable.
+		body, _ := json.Marshal(creds)
+		return body, "application/json", nil
+	case "form":
+		form := make(url.Values, len(creds))
+		for key, value := range creds {
+			form.Set(key, value)
+		}
+		return []byte(form.Encode()), "application/x-www-form-urlencoded", nil
+	default:
+		return nil, "", httperr.NewError(http.StatusBadRequest, "bearer login encoding must be json or form")
+	}
 }
 
 // AcquireBearerToken executes a provider-built request using the shared HTTP

@@ -46,7 +46,7 @@ func TestAcquireTokenFromConfig(t *testing.T) {
 		_, _ = io.WriteString(w, `{"access_token":"fake-token","expires_in":3600}`)
 	}))
 	defer server.Close()
-	input := []byte(fmt.Sprintf(`{"type":"oauth2","tokenRequest":{"tokenUrl":%q,"scopes":["api.read"]}}`, server.URL))
+	input := []byte(fmt.Sprintf(`{"type":"oauth2","oauth2":{"tokenUrl":%q,"scopes":["api.read"]}}`, server.URL))
 	decoders := []struct {
 		name   string
 		decode func([]byte, any) error
@@ -92,13 +92,14 @@ func TestAcquireTokenFromConfig(t *testing.T) {
 }
 
 func TestAcquireTokenInvalidAuth(t *testing.T) {
+	oauth2Block := &OAuth2Config{TokenURL: "https://example.invalid"}
+	bearerBlock := &BearerLoginConfig{URL: "https://example.invalid/login", TokenPointer: "/token"}
 	for _, auth := range []AuthConfig{
-		{}, {Type: "oauth2"}, {Type: "bearer", TokenRequest: &TokenRequestConfig{TokenURL: "https://example.invalid"}},
-		{Type: "oauth2", HeaderName: "X-API-Key", TokenRequest: &TokenRequestConfig{TokenURL: "https://example.invalid"}},
-		{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: "https://example.invalid", URL: "https://example.invalid/login"}},
-		{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: "https://example.invalid", Method: "POST"}},
-		{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: "https://example.invalid", Encoding: "json"}},
-		{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: "https://example.invalid", TokenPointer: "/token"}},
+		{}, {Type: "oauth2"}, {Type: "bearer"},
+		{Type: "bearer", OAuth2: oauth2Block},
+		{Type: "oauth2", Bearer: bearerBlock},
+		{Type: "oauth2", OAuth2: oauth2Block, Bearer: bearerBlock},
+		{Type: "bearer", Bearer: bearerBlock, OAuth2: oauth2Block},
 	} {
 		token, err := AcquireToken(context.Background(), auth, fakeCredentials(), &http.Client{})
 		require.NotNil(t, err)
@@ -115,7 +116,7 @@ func TestAcquireTokenFailure(t *testing.T) {
 		_, _ = io.WriteString(w, "fake-secret")
 	}))
 	defer server.Close()
-	auth := AuthConfig{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: server.URL}}
+	auth := AuthConfig{Type: "oauth2", OAuth2: &OAuth2Config{TokenURL: server.URL}}
 	token, err := AcquireToken(context.Background(), auth, fakeCredentials(), server.Client())
 	require.Empty(t, token)
 	require.EqualError(t, err, "OAuth2 token acquisition failed")
@@ -128,4 +129,15 @@ func TestAcquireTokenFailure(t *testing.T) {
 	require.Equal(t, http.StatusRequestTimeout, err.Code())
 	require.EqualError(t, err, "OAuth2 token request canceled")
 	require.Equal(t, 1, calls)
+}
+
+func TestStrictDecodingRejectsFieldInWrongBlock(t *testing.T) {
+	values := map[string]any{
+		"type":   "oauth2",
+		"oauth2": map[string]any{"tokenUrl": "https://example.invalid/token", "url": "https://example.invalid/login"},
+	}
+	var auth AuthConfig
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{Result: &auth, ErrorUnused: true})
+	require.NoError(t, err)
+	require.Error(t, decoder.Decode(values))
 }

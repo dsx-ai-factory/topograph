@@ -15,31 +15,36 @@
 
 package httpauth
 
-// AuthConfig describes provider.params.auth as proposed in the REST provider
-// design. Credentials are supplied separately. TokenRequest fields depend on
-// Type: OAuth2 uses TokenURL and Scopes; custom bearer login uses URL, Method,
-// Encoding and TokenPointer. AcquireToken supports types "oauth2" and "bearer";
-// none, basic and apiKey do not acquire tokens.
-// Configuration decoders should reject unknown fields to catch misplaced secrets.
+// AuthConfig describes provider.params.auth. Credentials are supplied
+// separately. Type selects the flow and its block: "oauth2" uses OAuth2 and
+// "bearer" uses Bearer. AcquireToken supports only these two types; none, basic
+// and apiKey do not acquire tokens. Each flow has its own struct, so decoders
+// that reject unknown fields also reject a field placed in the wrong block;
+// they should do so to catch misplaced secrets.
 type AuthConfig struct {
-	Type         string              `json:"type" yaml:"type" mapstructure:"type"`
-	TokenRequest *TokenRequestConfig `json:"tokenRequest,omitempty" yaml:"tokenRequest,omitempty" mapstructure:"tokenRequest"`
-	// HeaderName belongs to apiKey authentication; token acquisition rejects it.
-	HeaderName string `json:"headerName,omitempty" yaml:"headerName,omitempty" mapstructure:"headerName"`
+	Type   string             `json:"type" yaml:"type" mapstructure:"type"`
+	OAuth2 *OAuth2Config      `json:"oauth2,omitempty" yaml:"oauth2,omitempty" mapstructure:"oauth2"`
+	Bearer *BearerLoginConfig `json:"bearer,omitempty" yaml:"bearer,omitempty" mapstructure:"bearer"`
 }
 
-// TokenRequestConfig configures either OAuth2 or custom bearer-token acquisition.
-// AuthStyle is an optional OAuth2 extension: "basic" (default) authenticates with
-// HTTP Basic, and "form" sends client credentials in form fields. Automatic
-// authentication probing is unsupported because it can implicitly retry a login.
-type TokenRequestConfig struct {
-	TokenURL     string   `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty" mapstructure:"tokenUrl"`
-	Scopes       []string `json:"scopes,omitempty" yaml:"scopes,omitempty" mapstructure:"scopes"`
-	AuthStyle    string   `json:"authStyle,omitempty" yaml:"authStyle,omitempty" mapstructure:"authStyle"`
-	URL          string   `json:"url,omitempty" yaml:"url,omitempty" mapstructure:"url"`
-	Method       string   `json:"method,omitempty" yaml:"method,omitempty" mapstructure:"method"`
-	Encoding     string   `json:"encoding,omitempty" yaml:"encoding,omitempty" mapstructure:"encoding"`
-	TokenPointer string   `json:"tokenPointer,omitempty" yaml:"tokenPointer,omitempty" mapstructure:"tokenPointer"`
+// OAuth2Config configures the OAuth2 client-credentials grant. AuthStyle is an
+// optional extension: "basic" (default) authenticates with HTTP Basic, and
+// "form" sends client credentials in form fields. Automatic authentication
+// probing is unsupported because it can implicitly retry a login.
+type OAuth2Config struct {
+	TokenURL  string   `json:"tokenUrl" yaml:"tokenUrl" mapstructure:"tokenUrl"`
+	Scopes    []string `json:"scopes,omitempty" yaml:"scopes,omitempty" mapstructure:"scopes"`
+	AuthStyle string   `json:"authStyle,omitempty" yaml:"authStyle,omitempty" mapstructure:"authStyle"`
+}
+
+// BearerLoginConfig configures a custom login request that returns a token.
+// Method defaults to POST and Encoding to json. TokenPointer is an RFC 6901 JSON
+// Pointer to the token in the response.
+type BearerLoginConfig struct {
+	URL          string `json:"url" yaml:"url" mapstructure:"url"`
+	Method       string `json:"method,omitempty" yaml:"method,omitempty" mapstructure:"method"`
+	Encoding     string `json:"encoding,omitempty" yaml:"encoding,omitempty" mapstructure:"encoding"`
+	TokenPointer string `json:"tokenPointer" yaml:"tokenPointer" mapstructure:"tokenPointer"`
 }
 
 // Credentials contains arbitrary string-valued credentials supplied separately
