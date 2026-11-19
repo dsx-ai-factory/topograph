@@ -266,19 +266,25 @@ func upstreamError(layer string, httpErr *httperr.Error) *httperr.Error {
 // getNetworkTree exports the east-west layer and builds the switch tree for
 // the requested nodes.
 func (p *Provider) getNetworkTree(ctx context.Context, pageSize *int, cis []topology.ComputeInstances) (*topology.Vertex, *httperr.Error) {
+	root, _, err := p.buildNetworkTree(ctx, pageSize, cis)
+	return root, err
+}
+
+// buildNetworkTree is getNetworkTree that also reports whether any requested
+// node was placed in a real switch tree. When none was, for example because
+// the east-west layer has no records, every node sits under the no-topology
+// group and the east-west layer contributed nothing; the caller decides
+// whether that is an error.
+func (p *Provider) buildNetworkTree(ctx context.Context, pageSize *int, cis []topology.ComputeInstances) (*topology.Vertex, bool, *httperr.Error) {
 	records, httpErr := p.exportLayer(ctx, LayerEastWest, deviceLimit(pageSize))
 	if httpErr != nil {
-		return nil, httpErr
+		return nil, false, httpErr
 	}
 
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	parseResponse(treeRoot, buildDevices(records), nodeInstances(cis))
+	resolved := parseResponse(treeRoot, buildDevices(records), nodeInstances(cis))
 
-	if len(treeRoot.Vertices) == 0 {
-		return nil, httperr.NewError(http.StatusBadGateway, "no topology available from Minerva")
-	}
-
-	return treeRoot, nil
+	return treeRoot, resolved, nil
 }
 
 // getDomains exports the nvlink layer and maps each requested node to its
@@ -500,7 +506,7 @@ func buildDomains(records []Record, instances map[string]string) topology.Domain
 // A compute node's vertex ID is the instance ID it was requested with, and its
 // name is the node name. inputNodes maps each requested node name to its
 // instance ID.
-func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputNodes map[string]string) {
+func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputNodes map[string]string) (resolved bool) {
 	// Minerva exports a device record only for the devices it selected as
 	// hierarchy anchors: a neighbor reference does not add the far-end device,
 	// so a compute node can be reported solely as the far end of its leaf's
@@ -674,6 +680,7 @@ func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputN
 	if len(noTopology.Vertices) != 0 {
 		treeRoot.Vertices[groupID] = noTopology
 	}
+	return len(tree) != 0
 }
 
 // singleParent makes the merged forest a tree. Merging collapses switches

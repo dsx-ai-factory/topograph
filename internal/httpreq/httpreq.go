@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -134,14 +135,20 @@ func DoRequestWithRedirects(f RequestFunc, insecureSkipVerify, allowRedirects bo
 	if err != nil {
 		code := http.StatusBadGateway
 		msg := err.Error()
-		if errors.Is(err, errRedirectNotAllowed) {
+		var urlErr *url.Error
+		isURLErr := errors.As(err, &urlErr)
+		switch {
+		case errors.Is(err, errRedirectNotAllowed):
 			// The *url.Error wrapping the refusal repeats the raw Location; report
 			// only the sanitized refusal from CheckRedirect.
-			var urlErr *url.Error
-			if errors.As(err, &urlErr) {
+			if isURLErr {
 				msg = urlErr.Err.Error()
 			}
-		} else if resp != nil {
+		case isURLErr && strings.Contains(urlErr.Err.Error(), "Location header"):
+			// net/http rejects an unparsable Location before CheckRedirect runs and
+			// quotes it, userinfo and query included, in the error.
+			msg = fmt.Sprintf("%s %q: failed to parse the redirect Location header", urlErr.Op, urlErr.URL)
+		case resp != nil:
 			code = resp.StatusCode
 		}
 		return resp, nil, httperr.NewError(code, msg)

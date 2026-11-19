@@ -18,10 +18,12 @@ package minerva
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -171,14 +173,19 @@ func TestLoader(t *testing.T) {
 // the east-west layer becomes the switch tree and the nvlink layer the
 // accelerator domains.
 func TestGenerateTopologyConfig(t *testing.T) {
+	// The layers are exported concurrently, so the handler runs on several
+	// goroutines and the recorded requests have no fixed order.
+	var mu sync.Mutex
 	var limits []int
 	var layers []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// this runs on the server's goroutine, so it reports with assert, not require
 		var body ExportTopologyRequest
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		mu.Lock()
 		limits = append(limits, body.DeviceLimit)
 		layers = append(layers, body.Layers...)
+		mu.Unlock()
 
 		fixture := fixtureEastWest
 		if len(body.Layers) == 1 && body.Layers[0] == LayerNVLink {
@@ -206,7 +213,7 @@ func TestGenerateTopologyConfig(t *testing.T) {
 		"i-01": {ID: "i-01", Name: "srv-01"},
 		"i-02": {ID: "i-02", Name: "srv-02"},
 	}, leaf01.Vertices)
-	require.Equal(t, []string{LayerEastWest, LayerNVLink}, layers)
+	require.ElementsMatch(t, []string{LayerEastWest, LayerNVLink}, layers)
 	require.Equal(t, []int{50, 50}, limits)
 
 	require.Equal(t, topology.DomainMap{
@@ -236,20 +243,165 @@ func TestGenerateTopologyConfig(t *testing.T) {
 	require.NotNil(t, httpErr)
 }
 
-// TestGenerateTopologyConfigNVLinkUnavailable verifies that the switch tree
-// does not depend on the nvlink layer: when that layer fails, or is empty, the
-// graph has the tree and no domains. Only a canceled request still fails.
-func TestGenerateTopologyConfigNVLinkUnavailable(t *testing.T) {
-	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
-	eastWest, err := os.ReadFile(fixtureEastWest)
-	require.NoError(t, err)
+// layerState is what a test server answers for one layer.
+type layerState int
 
-	nvlink := func(handler http.HandlerFunc) *httptest.Server {
+const (
+	layerOK layerState = iota
+	layerEmpty
+	layerFailed
+)
+
+func (l layerState) String() string { return [...]string{"ok", "empty", "failed"}[l] }
+
+// layerStateServer answers each layer according to its state: the fixture, an
+// empty record collection, or a 503.
+func layerStateServer(t *testing.T, eastWest, nvlink layerState) *httptest.Server {
+	t.Helper()
+	fixtures := map[string][]byte{
+		LayerEastWest: readFixture(t, fixtureEastWest),
+		LayerNVLink:   readFixture(t, fixtureNVLink),
+	}
+	states := map[string]layerState{LayerEastWest: eastWest, LayerNVLink: nvlink}
+	keys := map[string]string{LayerEastWest: "eastWest", LayerNVLink: "nvlink"}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body ExportTopologyRequest
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		layer := body.Layers[0]
+		switch states[layer] {
+		case layerFailed:
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case layerEmpty:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null,"` + keys[layer] + `":{"records":[]}}`))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(fixtures[layer])
+		}
+	}))
+}
+
+// TestFailOnEmpty verifies the failOnEmpty policy against every combination
+// of a populated, empty or failed east-west and nvlink layer. A failed layer
+// counts as empty: the policy decides whether the request survives it, and the
+// graph then lacks that layer's part.
+func TestFailOnEmpty(t *testing.T) {
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
+	states := []layerState{layerOK, layerEmpty, layerFailed}
+	bad := func(l layerState) bool { return l != layerOK }
+
+	for _, mode := range []string{"", failOnEmptyBoth, failOnEmptyEastWest, failOnEmptyNVLink} {
+		for _, ew := range states {
+			for _, nv := range states {
+				t.Run(fmt.Sprintf("mode=%q eastWest=%s nvlink=%s", mode, ew, nv), func(t *testing.T) {
+					var wantErr bool
+					switch mode {
+					case failOnEmptyEastWest:
+						wantErr = bad(ew)
+					case failOnEmptyNVLink:
+						wantErr = bad(nv)
+					default:
+						wantErr = bad(ew) && bad(nv)
+					}
+
+					srv := layerStateServer(t, ew, nv)
+					defer srv.Close()
+					p := newProvider(srv)
+					p.params.FailOnEmpty = mode
+					graph, httpErr := p.GenerateTopologyConfig(context.Background(), nil, cis)
+					if wantErr {
+						require.NotNil(t, httpErr)
+						require.Equal(t, http.StatusBadGateway, httpErr.Code())
+						require.Nil(t, graph)
+						return
+					}
+					require.Nil(t, httpErr)
+					// A failed layer leaves no trace in the graph; an empty
+					// east-west layer still groups the node under no-topology.
+					require.Equal(t, ew == layerFailed, graph.Tiers == nil)
+					require.Equal(t, nv != layerOK, len(graph.Domains) == 0)
+				})
+			}
+		}
+	}
+}
+
+// TestFailOnEmptyErrors verifies which error a failing request reports: the
+// failed layer's own error when a layer failed, a policy message when it was
+// merely empty.
+func TestFailOnEmptyErrors(t *testing.T) {
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
+	for name, tc := range map[string]struct {
+		mode     string
+		ew, nv   layerState
+		contains string
+	}{
+		"nvlink failed":                 {failOnEmptyNVLink, layerOK, layerFailed, "(nvlink): status 503"},
+		"nvlink empty":                  {failOnEmptyNVLink, layerOK, layerEmpty, "no NVLink domains available from Minerva"},
+		"east-west failed":              {failOnEmptyEastWest, layerFailed, layerOK, "(east-west): status 503"},
+		"east-west empty":               {failOnEmptyEastWest, layerEmpty, layerOK, "no EastWest topology available from Minerva"},
+		"both failed reports east-west": {failOnEmptyBoth, layerFailed, layerFailed, "(east-west): status 503"},
+		"both empty":                    {failOnEmptyBoth, layerEmpty, layerEmpty, "no EastWest topology or NVLink domains available from Minerva"},
+		"east-west empty nvlink failed": {failOnEmptyBoth, layerEmpty, layerFailed, "(nvlink): status 503"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := layerStateServer(t, tc.ew, tc.nv)
+			defer srv.Close()
+			p := newProvider(srv)
+			p.params.FailOnEmpty = tc.mode
+			_, httpErr := p.GenerateTopologyConfig(context.Background(), nil, cis)
+			require.NotNil(t, httpErr)
+			require.Contains(t, httpErr.Error(), tc.contains)
+		})
+	}
+}
+
+// TestGenerateTopologyConfigConcurrent verifies that the two layers are
+// exported at the same time: each request waits for the other to arrive, so
+// sequential exports would time out.
+func TestGenerateTopologyConfigConcurrent(t *testing.T) {
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
+	fixtures := map[string][]byte{
+		LayerEastWest: readFixture(t, fixtureEastWest),
+		LayerNVLink:   readFixture(t, fixtureNVLink),
+	}
+	var arrived sync.WaitGroup
+	arrived.Add(2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body ExportTopologyRequest
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		arrived.Done()
+		done := make(chan struct{})
+		go func() { arrived.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			w.WriteHeader(http.StatusGatewayTimeout)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixtures[body.Layers[0]])
+	}))
+	defer srv.Close()
+
+	graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+	require.Nil(t, httpErr)
+	require.NotNil(t, graph.Tiers)
+	require.NotEmpty(t, graph.Domains)
+}
+
+// TestGenerateTopologyConfigTimeoutAndCancel verifies a layer that never
+// answers is tolerated like any other failure, and a canceled request fails
+// whatever the policy says.
+func TestGenerateTopologyConfigTimeoutAndCancel(t *testing.T) {
+	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
+	eastWest := readFixture(t, fixtureEastWest)
+	serve := func(nvlink http.HandlerFunc) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var body ExportTopologyRequest
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-			if len(body.Layers) == 1 && body.Layers[0] == LayerNVLink {
-				handler(w, r)
+			if body.Layers[0] == LayerNVLink {
+				nvlink(w, r)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -257,34 +409,9 @@ func TestGenerateTopologyConfigNVLinkUnavailable(t *testing.T) {
 		}))
 	}
 
-	for name, handler := range map[string]http.HandlerFunc{
-		"error status": func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) },
-		"malformed": func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`not json`))
-		},
-		"no nvlink records": func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null}`))
-		},
-		"empty": func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null,"nvlink":{"records":[]}}`))
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			srv := nvlink(handler)
-			defer srv.Close()
-
-			graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
-			require.Nil(t, httpErr)
-			require.Contains(t, graph.Tiers.Vertices, "super-01")
-			require.Nil(t, graph.Domains)
-		})
-	}
-
 	t.Run("nvlink request that never answers", func(t *testing.T) {
 		setTimeouts(t, 100*time.Millisecond, time.Minute)
-		srv := nvlink(func(w http.ResponseWriter, r *http.Request) {
-			<-r.Context().Done()
-		})
+		srv := serve(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
 		defer srv.Close()
 
 		start := time.Now()
@@ -295,28 +422,69 @@ func TestGenerateTopologyConfigNVLinkUnavailable(t *testing.T) {
 		require.Less(t, time.Since(start), 5*time.Second)
 	})
 
-	t.Run("canceled during the nvlink request", func(t *testing.T) {
+	t.Run("malformed nvlink response", func(t *testing.T) {
+		srv := serve(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`not json`)) })
+		defer srv.Close()
+
+		graph, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
+		require.Nil(t, httpErr)
+		require.Nil(t, graph.Domains)
+	})
+
+	t.Run("canceled after both layers answered", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		srv := nvlink(func(w http.ResponseWriter, r *http.Request) {
+		srv := serve(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"complete":true,"nextCursor":null,"nvlink":{"records":[]}}`))
 			cancel()
-			w.WriteHeader(http.StatusServiceUnavailable)
 		})
 		defer srv.Close()
 
 		_, httpErr := newProvider(srv).GenerateTopologyConfig(ctx, nil, cis)
 		require.NotNil(t, httpErr)
 	})
+
+	t.Run("canceled during the nvlink request", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		srv := serve(func(w http.ResponseWriter, r *http.Request) {
+			cancel()
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+		defer srv.Close()
+
+		// Even with the policy that would tolerate the failure.
+		_, httpErr := newProvider(srv).GenerateTopologyConfig(ctx, nil, cis)
+		require.NotNil(t, httpErr)
+	})
+}
+
+func TestFailOnEmptyParamValidation(t *testing.T) {
+	for _, v := range []string{"both", "east-west", "nvlink"} {
+		_, err := getParams(map[string]any{"apiUrl": "https://m.example.com", "failOnEmpty": v})
+		require.NoError(t, err)
+	}
+	_, err := getParams(map[string]any{"apiUrl": "https://m.example.com", "failOnEmpty": "tree"})
+	require.Error(t, err)
+	_, err = getParams(map[string]any{"apiUrl": "https://m.example.com", "failOnEmpty": []string{"both"}})
+	require.Error(t, err)
+	p, err := getParams(map[string]any{"apiUrl": "https://m.example.com", "failOnEmpty": " East-West "})
+	require.NoError(t, err)
+	require.Equal(t, failOnEmptyEastWest, p.FailOnEmpty)
 }
 
 // TestExportTopologyRequest verifies the request body: one layer, the largest
 // page without a page size, no cursor on the first page, and the JSON content
 // types.
 func TestExportTopologyRequest(t *testing.T) {
+	var mu sync.Mutex
 	var bodies []string
 	var contentTypes, accepts []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		defer mu.Unlock()
 		bodies = append(bodies, string(body))
 		contentTypes = append(contentTypes, r.Header.Get("Content-Type"))
 		accepts = append(accepts, r.Header.Get("Accept"))
@@ -326,9 +494,11 @@ func TestExportTopologyRequest(t *testing.T) {
 	defer srv.Close()
 
 	cis := []topology.ComputeInstances{{Instances: map[string]string{"i-01": "srv-01"}}}
+	// Both layers are empty, which the default failOnEmpty policy rejects; the
+	// request bodies are what this test checks.
 	_, httpErr := newProvider(srv).GenerateTopologyConfig(context.Background(), nil, cis)
-	require.Nil(t, httpErr)
-	require.Equal(t, []string{
+	require.NotNil(t, httpErr)
+	require.ElementsMatch(t, []string{
 		`{"layers":["east-west"],"deviceLimit":500}`,
 		`{"layers":["nvlink"],"deviceLimit":500}`,
 	}, bodies)

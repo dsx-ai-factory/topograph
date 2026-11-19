@@ -364,6 +364,22 @@ func TestDoRequestClosesInsecureConnections(t *testing.T) {
 		tracker.requireClosed(t)
 	})
 
+	t.Run("malformed redirect target", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Location", "http://u:pw@[bad/x?token=SECRET")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		})
+		for _, allow := range []bool{false, true} {
+			_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, allow)
+			require.NotNil(t, err)
+			require.Equal(t, http.StatusBadGateway, err.Code())
+			require.Contains(t, err.Error(), "failed to parse the redirect Location header")
+			require.NotContains(t, err.Error(), "SECRET")
+			require.NotContains(t, err.Error(), "pw")
+		}
+		tracker.requireClosed(t)
+	})
+
 	t.Run("truncated response", func(t *testing.T) {
 		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Length", "100")
@@ -427,23 +443,35 @@ func TestDoRequestClosesInsecureConnections(t *testing.T) {
 			body string
 			err  *httperr.Error
 		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		slow := make(chan result, 1)
 		go func() {
-			_, body, err := DoRequestWithRedirects(request(context.Background(), srv.URL+"/slow"), true, false)
+			_, body, err := DoRequestWithRedirects(request(ctx, srv.URL+"/slow"), true, false)
 			slow <- result{string(body), err}
 		}()
-		<-started
+		select {
+		case <-started:
+		case r := <-slow:
+			t.Fatalf("slow request ended before it was in flight: %+v", r)
+		case <-time.After(5 * time.Second):
+			t.Fatal("slow request never reached the server")
+		}
 
 		// A call that finishes, and closes its own transport, while the slow one is
 		// still in flight must not cut it short.
-		_, body, err := DoRequestWithRedirects(request(context.Background(), srv.URL+"/fast"), true, false)
+		_, body, err := DoRequestWithRedirects(request(ctx, srv.URL+"/fast"), true, false)
 		require.Nil(t, err)
 		require.Equal(t, "fast", string(body))
 
 		release()
-		r := <-slow
-		require.Nil(t, r.err)
-		require.Equal(t, "slow", r.body)
+		select {
+		case r := <-slow:
+			require.Nil(t, r.err)
+			require.Equal(t, "slow", r.body)
+		case <-time.After(5 * time.Second):
+			t.Fatal("slow request did not finish after release")
+		}
 		tracker.requireClosed(t)
 	})
 }

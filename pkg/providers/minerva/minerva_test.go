@@ -796,10 +796,9 @@ func TestGetNetworkTreeErrors(t *testing.T) {
 		srv := layerServer(t, map[string][]byte{LayerEastWest: readFixture(t, fixtureEastWest)})
 		defer srv.Close()
 
-		_, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, nil)
-		require.NotNil(t, httpErr)
-		require.Equal(t, http.StatusBadGateway, httpErr.Code())
-		require.Contains(t, httpErr.Error(), "no topology available from Minerva")
+		root, httpErr := newProvider(srv).getNetworkTree(context.Background(), nil, nil)
+		require.Nil(t, httpErr)
+		require.Empty(t, root.Vertices)
 	})
 }
 
@@ -1228,4 +1227,31 @@ func hostNames(domain map[string]*topology.HostInfo) []string {
 	}
 	slices.Sort(hosts)
 	return hosts
+}
+
+// TestParseResponseResolved verifies the return value that feeds the
+// failOnEmpty east-west check: true only when a requested node is placed in a
+// real switch tree, not when every node falls back to the no-topology group.
+func TestParseResponseResolved(t *testing.T) {
+	devices := fabric(
+		deviceRec("srv-01", RoleServer),
+		deviceRec("leaf-01", RoleLeaf),
+		linkRec("srv-01", "leaf-01"),
+	)
+
+	t.Run("requested node placed", func(t *testing.T) {
+		root := &topology.Vertex{Vertices: map[string]*topology.Vertex{}}
+		require.True(t, parseResponse(root, devices, names("srv-01")))
+	})
+
+	t.Run("requested node unknown to Minerva", func(t *testing.T) {
+		root := &topology.Vertex{Vertices: map[string]*topology.Vertex{}}
+		require.False(t, parseResponse(root, devices, names("srv-missing")))
+		require.Contains(t, root.Vertices, topology.NoTopology)
+	})
+
+	t.Run("no records", func(t *testing.T) {
+		root := &topology.Vertex{Vertices: map[string]*topology.Vertex{}}
+		require.False(t, parseResponse(root, nil, names("srv-01")))
+	})
 }
