@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -26,6 +27,7 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -93,8 +95,18 @@ func ParseRetryAfter(resp *http.Response) (time.Duration, bool) {
 
 type RequestFunc func() (*http.Request, *httperr.Error)
 
-// DoRequest sends HTTP requests and returns HTTP response
+var errRedirectNotAllowed = errors.New("redirects are not allowed")
+
+// DoRequest sends HTTP requests and returns HTTP response. Redirects are followed.
 func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, *httperr.Error) {
+	return DoRequestWithRedirects(f, insecureSkipVerify, true)
+}
+
+// DoRequestWithRedirects sends HTTP requests and returns HTTP response. When
+// allowRedirects is false, a redirect is not followed but reported as a 502
+// error, so request headers such as an API key are only ever sent to the
+// requested URL.
+func DoRequestWithRedirects(f RequestFunc, insecureSkipVerify, allowRedirects bool) (*http.Response, []byte, *httperr.Error) {
 	req, httpErr := f()
 	if httpErr != nil {
 		return nil, nil, httpErr
@@ -104,17 +116,42 @@ func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, 
 	klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
 	client := &http.Client{}
 	if insecureSkipVerify {
-		client.Transport = &http.Transport{
+		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client.Transport = transport
+		// The transport is private to this call, so its keep-alive connections
+		// could never be reused; close them rather than leave them open.
+		defer transport.CloseIdleConnections()
+	}
+	if !allowRedirects {
+		client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+			// Name only the scheme and host: the Location is server-controlled and its
+			// userinfo, path or query could carry secrets or control characters.
+			return fmt.Errorf("%w: refusing to follow a redirect to %s://%s", errRedirectNotAllowed, req.URL.Scheme, req.URL.Host)
 		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
 		code := http.StatusBadGateway
-		if resp != nil {
+		msg := err.Error()
+		var urlErr *url.Error
+		isURLErr := errors.As(err, &urlErr)
+		switch {
+		case errors.Is(err, errRedirectNotAllowed):
+			// The *url.Error wrapping the refusal repeats the raw Location; report
+			// only the sanitized refusal from CheckRedirect.
+			if isURLErr {
+				msg = urlErr.Err.Error()
+			}
+		case isURLErr && strings.Contains(urlErr.Err.Error(), "Location header"):
+			// net/http rejects an unparsable Location before CheckRedirect runs and
+			// quotes it, userinfo and query included, in the error.
+			msg = fmt.Sprintf("%s %q: failed to parse the redirect Location header", urlErr.Op, urlErr.URL)
+		case resp != nil:
 			code = resp.StatusCode
 		}
-		return resp, nil, httperr.NewError(code, err.Error())
+		return resp, nil, httperr.NewError(code, msg)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

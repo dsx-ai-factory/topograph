@@ -1,0 +1,489 @@
+{
+  "cursorScope": {
+    "id": "request:fixture",
+    "createdAt": "2026-10-05T18:00:00+00:00"
+  },
+  "layers": [
+    "east-west"
+  ],
+  "detail": "summary",
+  "devicesReturned": 9,
+  "nextCursor": null,
+  "complete": true,
+  "eastWest": {
+    "records": [
+      {
+        "type": "datacenter",
+        "name": "DC1",
+        "parent": null,
+        "children": [
+          {
+            "type": "pod",
+            "name": "Pod-1"
+          }
+        ]
+      },
+      {
+        "type": "pod",
+        "name": "Pod-1",
+        "parent": "DC1",
+        "children": [
+          {
+            "type": "device",
+            "name": "p1-leaf-01",
+            "role": "leaf",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "p1-leaf-09",
+            "role": "unknown",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "p1-spine-01",
+            "role": "spine",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "p2-leaf-01",
+            "role": "leaf",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "p2-leaf-09",
+            "role": "unknown",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "p2-spine-01",
+            "role": "spine",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "super-01",
+            "role": "super_spine",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "p1-leaf-02",
+            "role": "leaf",
+            "fabricType": "east-west"
+          },
+          {
+            "type": "device",
+            "name": "p2-leaf-02",
+            "role": "leaf",
+            "fabricType": "east-west"
+          }
+        ]
+      },
+      {
+        "type": "device",
+        "name": "p1-leaf-01",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.11"
+      },
+      {
+        "type": "device",
+        "name": "p1-leaf-09",
+        "role": "unknown",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.12"
+      },
+      {
+        "type": "device",
+        "name": "p1-spine-01",
+        "role": "spine",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.13"
+      },
+      {
+        "type": "device",
+        "name": "p2-leaf-01",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.14"
+      },
+      {
+        "type": "device",
+        "name": "p2-leaf-09",
+        "role": "unknown",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.15"
+      },
+      {
+        "type": "device",
+        "name": "p2-spine-01",
+        "role": "spine",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.16"
+      },
+      {
+        "type": "device",
+        "name": "super-01",
+        "role": "super_spine",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.17"
+      },
+      {
+        "type": "device",
+        "name": "p1-leaf-02",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.18"
+      },
+      {
+        "type": "device",
+        "name": "p2-leaf-02",
+        "role": "leaf",
+        "parent": "Pod-1",
+        "fabricType": "east-west",
+        "mgmt_ipv4": "192.0.2.19"
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-01",
+          "port": "eth_p0",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        },
+        "to": {
+          "device": "p1-leaf-01",
+          "port": "swp1",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-01",
+          "port": "eth_p1",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        },
+        "to": {
+          "device": "p2-leaf-01",
+          "port": "swp1",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-02",
+          "port": "eth_p0",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        },
+        "to": {
+          "device": "p1-leaf-01",
+          "port": "swp1",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-02",
+          "port": "eth_p1",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        },
+        "to": {
+          "device": "p2-leaf-01",
+          "port": "swp1",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-03",
+          "port": "eth_p0",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        },
+        "to": {
+          "device": "p1-leaf-02",
+          "port": "swp1",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "srv-03",
+          "port": "eth_p1",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        },
+        "to": {
+          "device": "p2-leaf-02",
+          "port": "swp1",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-leaf-01",
+          "port": "swp2",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "srv-02",
+          "port": "eth_p0",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-leaf-01",
+          "port": "swp33",
+          "interfaceRole": "Leaf to Spine",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "p1-spine-01",
+          "port": "swp1",
+          "interfaceRole": "Spine to Leaf",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-leaf-09",
+          "port": "swp33",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "p1-spine-01",
+          "port": "swp2",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-spine-01",
+          "port": "swp46",
+          "interfaceRole": "Spine to Superspine",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "super-01",
+          "port": "swp10",
+          "interfaceRole": "Superspine to Spine",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p1-spine-01",
+          "port": "swp3",
+          "interfaceRole": "Spine to Leaf",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "p1-leaf-02",
+          "port": "swp33",
+          "interfaceRole": "Leaf to Spine",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-01",
+          "port": "swp1",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "srv-01",
+          "port": "eth_p0",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-01",
+          "port": "swp2",
+          "interfaceRole": "Leaf to NIC",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "srv-02",
+          "port": "eth_p0",
+          "interfaceRole": "NIC to Leaf",
+          "portType": "downlink"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-01",
+          "port": "swp33",
+          "interfaceRole": "Leaf to Spine",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "p2-spine-01",
+          "port": "swp1",
+          "interfaceRole": "Spine to Leaf",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-leaf-09",
+          "port": "swp33",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "p2-spine-01",
+          "port": "swp2",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-spine-01",
+          "port": "swp46",
+          "interfaceRole": "Spine to Superspine",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "super-01",
+          "port": "swp10",
+          "interfaceRole": "Superspine to Spine",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "p2-spine-01",
+          "port": "swp3",
+          "interfaceRole": "Spine to Leaf",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "p2-leaf-02",
+          "port": "swp33",
+          "interfaceRole": "Leaf to Spine",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "layer2",
+        "from": {
+          "device": "super-01",
+          "port": "swp11",
+          "interfaceRole": "Superspine to Spine",
+          "portType": "downlink",
+          "fabricType": "east-west"
+        },
+        "to": {
+          "device": "p2-spine-01",
+          "port": "swp46",
+          "interfaceRole": "Spine to Superspine",
+          "portType": "uplink",
+          "fabricType": "east-west"
+        }
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "bgp",
+        "from": {
+          "device": "p1-leaf-01",
+          "vrf": "default",
+          "peerId": "192.0.2.2",
+          "fabricType": "east-west",
+          "localAddress": "192.0.2.1",
+          "port": "BGP Local Interface VRF default Address 192.0.2.1",
+          "portType": "bgp"
+        },
+        "to": {},
+        "resolved": false,
+        "peerType": "EBGP",
+        "peerState": "Active"
+      }
+    ]
+  }
+}

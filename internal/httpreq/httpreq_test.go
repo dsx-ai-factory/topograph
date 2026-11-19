@@ -19,10 +19,13 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -303,6 +306,176 @@ func TestDoRequest(t *testing.T) {
 	})
 }
 
+// connTracker counts the connections a test server has open.
+type connTracker struct{ open atomic.Int32 }
+
+func (c *connTracker) track(_ net.Conn, state http.ConnState) {
+	switch state {
+	case http.StateNew:
+		c.open.Add(1)
+	case http.StateClosed, http.StateHijacked:
+		c.open.Add(-1)
+	}
+}
+
+func (c *connTracker) requireClosed(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool { return c.open.Load() == 0 }, 5*time.Second, 10*time.Millisecond,
+		"connections left open: %d", c.open.Load())
+}
+
+func newTrackedTLSServer(t *testing.T, h http.HandlerFunc) (*httptest.Server, *connTracker) {
+	t.Helper()
+	tracker := &connTracker{}
+	srv := httptest.NewUnstartedServer(h)
+	srv.Config.ConnState = tracker.track
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv, tracker
+}
+
+// TestDoRequestClosesInsecureConnections verifies that the private transport
+// used with insecureSkipVerify does not leave its keep-alive connection open
+// once the request returns, however the request ends.
+func TestDoRequestClosesInsecureConnections(t *testing.T) {
+	request := func(ctx context.Context, url string) RequestFunc {
+		return GetRequestFunc(ctx, http.MethodGet, nil, nil, nil, url)
+	}
+
+	t.Run("success", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+		for range 3 {
+			_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, false)
+			require.Nil(t, err)
+		}
+		tracker.requireClosed(t)
+	})
+
+	t.Run("redirect refused", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "http://u:pw@evil.example/x?token=SECRET", http.StatusTemporaryRedirect)
+		})
+		_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, false)
+		require.NotNil(t, err)
+		require.Equal(t, http.StatusBadGateway, err.Code())
+		require.Contains(t, err.Error(), "refusing to follow a redirect to http://evil.example")
+		require.NotContains(t, err.Error(), "SECRET")
+		require.NotContains(t, err.Error(), "pw")
+		tracker.requireClosed(t)
+	})
+
+	t.Run("malformed redirect target", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Location", "http://u:pw@[bad/x?token=SECRET")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		})
+		for _, allow := range []bool{false, true} {
+			_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, allow)
+			require.NotNil(t, err)
+			require.Equal(t, http.StatusBadGateway, err.Code())
+			require.Contains(t, err.Error(), "failed to parse the redirect Location header")
+			require.NotContains(t, err.Error(), "SECRET")
+			require.NotContains(t, err.Error(), "pw")
+		}
+		tracker.requireClosed(t)
+	})
+
+	t.Run("truncated response", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "100")
+			_, _ = w.Write([]byte("short"))
+		})
+		_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, false)
+		require.NotNil(t, err)
+		require.Equal(t, http.StatusInternalServerError, err.Code())
+		require.Contains(t, err.Error(), "failed to read HTTP response")
+		tracker.requireClosed(t)
+	})
+
+	t.Run("canceled while reading the body", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		const chunks = 5
+		flushed := make(chan struct{})
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			// The status line, headers and then a trickle of the body: the client
+			// has its response and is reading the body once the last chunk is out.
+			w.Header().Set("Content-Length", "1000")
+			for i := 0; i < chunks; i++ {
+				_, _ = w.Write([]byte("chunk"))
+				w.(http.Flusher).Flush()
+				time.Sleep(10 * time.Millisecond)
+			}
+			close(flushed)
+			<-r.Context().Done() // withhold the rest until the client gives up
+		})
+		go func() {
+			<-flushed
+			cancel()
+		}()
+		_, _, err := DoRequestWithRedirects(request(ctx, srv.URL), true, false)
+		require.NotNil(t, err)
+		// Only a failed body read reports 500; a cancel during setup would be a 502.
+		require.Equal(t, http.StatusInternalServerError, err.Code(), err.Error())
+		require.Contains(t, err.Error(), "failed to read HTTP response")
+		tracker.requireClosed(t)
+	})
+
+	t.Run("overlapping calls do not interrupt each other", func(t *testing.T) {
+		releaseCh := make(chan struct{})
+		var releaseOnce sync.Once
+		release := func() { releaseOnce.Do(func() { close(releaseCh) }) }
+		// A failed assertion below must not leave the slow handler blocked, which
+		// would hang the server's Close.
+		defer release()
+		started := make(chan struct{}, 2)
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/slow" {
+				started <- struct{}{}
+				<-releaseCh
+				_, _ = w.Write([]byte("slow"))
+				return
+			}
+			_, _ = w.Write([]byte("fast"))
+		})
+
+		type result struct {
+			body string
+			err  *httperr.Error
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		slow := make(chan result, 1)
+		go func() {
+			_, body, err := DoRequestWithRedirects(request(ctx, srv.URL+"/slow"), true, false)
+			slow <- result{string(body), err}
+		}()
+		select {
+		case <-started:
+		case r := <-slow:
+			t.Fatalf("slow request ended before it was in flight: %+v", r)
+		case <-time.After(5 * time.Second):
+			t.Fatal("slow request never reached the server")
+		}
+
+		// A call that finishes, and closes its own transport, while the slow one is
+		// still in flight must not cut it short.
+		_, body, err := DoRequestWithRedirects(request(ctx, srv.URL+"/fast"), true, false)
+		require.Nil(t, err)
+		require.Equal(t, "fast", string(body))
+
+		release()
+		select {
+		case r := <-slow:
+			require.Nil(t, r.err)
+			require.Equal(t, "slow", r.body)
+		case <-time.After(5 * time.Second):
+			t.Fatal("slow request did not finish after release")
+		}
+		tracker.requireClosed(t)
+	})
+}
+
 func TestGetRequestFunc(t *testing.T) {
 	ctx := context.Background()
 	f := GetRequestFunc(ctx, http.MethodGet,
@@ -432,4 +605,69 @@ func TestDoRequestLogCannotForgeLines(t *testing.T) {
 	for _, line := range strings.Split(buf.String(), "\n") {
 		require.False(t, strings.HasPrefix(line, "E1027"), "the URL started a log line: %q", line)
 	}
+}
+
+func TestDoRequestWithRedirects(t *testing.T) {
+	newServers := func(t *testing.T, status int) (redirecting *httptest.Server, targetKey *string, targetCalled *bool) {
+		key, called := new(string), new(bool)
+		target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*called = true
+			*key = r.Header.Get("X-Api-Key")
+			_, _ = w.Write([]byte("target"))
+		}))
+		t.Cleanup(target.Close)
+
+		redirecting = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, target.URL, status)
+		}))
+		t.Cleanup(redirecting.Close)
+		return redirecting, key, called
+	}
+	request := func(url string) RequestFunc {
+		return GetRequestFunc(context.Background(), http.MethodPost, map[string]string{"X-Api-Key": "secret"}, nil, []byte(`{}`), url)
+	}
+
+	for _, status := range []int{
+		http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect,
+	} {
+		t.Run(http.StatusText(status)+" is refused when redirects are not allowed", func(t *testing.T) {
+			srv, targetKey, targetCalled := newServers(t, status)
+
+			_, body, httpErr := DoRequestWithRedirects(request(srv.URL), false, false)
+			require.Nil(t, body)
+			require.NotNil(t, httpErr)
+			require.Equal(t, http.StatusBadGateway, httpErr.Code())
+			require.Contains(t, httpErr.Error(), "refusing to follow a redirect")
+			require.False(t, *targetCalled, "the redirect target must not be contacted")
+			require.Empty(t, *targetKey)
+		})
+	}
+
+	t.Run("redirects are followed when allowed", func(t *testing.T) {
+		srv, targetKey, _ := newServers(t, http.StatusTemporaryRedirect)
+
+		_, body, httpErr := DoRequestWithRedirects(request(srv.URL), false, true)
+		require.Nil(t, httpErr)
+		require.Equal(t, "target", string(body))
+		require.Equal(t, "secret", *targetKey)
+	})
+
+	t.Run("DoRequest follows redirects", func(t *testing.T) {
+		srv, _, _ := newServers(t, http.StatusTemporaryRedirect)
+
+		_, body, httpErr := DoRequest(request(srv.URL), false)
+		require.Nil(t, httpErr)
+		require.Equal(t, "target", string(body))
+	})
+
+	t.Run("a direct answer is unaffected when redirects are not allowed", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("direct"))
+		}))
+		defer srv.Close()
+
+		_, body, httpErr := DoRequestWithRedirects(request(srv.URL), false, false)
+		require.Nil(t, httpErr)
+		require.Equal(t, "direct", string(body))
+	})
 }
