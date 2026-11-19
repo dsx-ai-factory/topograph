@@ -65,8 +65,8 @@ its adapter retains the multi-step sequencing and premises metadata. Both provid
 reuse the header helpers.
 
 OAuth2 callers pass an `httpauth.AuthConfig` matching the proposed REST auth
-structure: `type: oauth2` and `tokenRequest.tokenUrl` with optional
-`tokenRequest.scopes`. Credentials use a separate, reusable `httpauth.Credentials`
+structure: `type: oauth2` and `oauth2.tokenUrl` with optional
+`oauth2.scopes`. Credentials use a separate, reusable `httpauth.Credentials`
 map (`map[string]string`), preserving arbitrary credential names for custom APIs.
 Each authentication flow validates its own keys: OAuth2 requires nonempty
 `clientId` and `clientSecret` and sends only those credentials to its token endpoint.
@@ -74,8 +74,11 @@ Basic authentication uses `username` and `password`, and API-key authentication
 uses `apiKey`. Firebird and NetQ retain their typed credentials structs and use
 `Credentials.ToMap` to create fresh maps at the authentication boundary.
 The auth config and credential map support JSON, YAML, and mapstructure decoding.
-Decoders should reject unknown authentication configuration fields, including
-credentials misplaced in authentication parameters; credential keys are unrestricted.
+Each flow has its own configuration block (`oauth2` or `bearer`), so a decoder that
+rejects unknown fields also rejects a field placed in the wrong block. Decoders
+should reject unknown authentication configuration fields, including credentials
+misplaced in authentication parameters; credential keys are unrestricted. A config
+whose `type` does not match its block, or that sets both blocks, returns 400.
 
 `AcquireToken(ctx, auth, creds, client)` in `internal/httpauth/auth.go` dispatches
 on `auth.type` and returns `(string, *httperr.Error)`. It supports OAuth2 client
@@ -87,7 +90,7 @@ API uses `oauth2.Token` for expiry and caching; one-call acquisition returns the
 access-token string. Construction validates configuration without network I/O.
 
 An explicit HTTP client controls transport and timeouts. For OAuth2, HTTP Basic
-client authentication is the default; the optional `tokenRequest.authStyle: form`
+client authentication is the default; the optional `oauth2.authStyle: form`
 extension selects form parameters (`basic` explicitly selects the default).
 Automatic authentication probing is disabled to avoid implicit retries. The source
 reuses tokens until the OAuth2 expiry safety margin, obtains replacements using
@@ -101,7 +104,7 @@ options redact their messages. Other protocol failures use 502; cancellation use
 `RetrieveError` is translated internally and never returned to callers. The helper
 does not add authentication configuration options to existing providers.
 
-For `type: bearer`, `auth.tokenRequest` requires an HTTPS `url` and a nonempty
+For `type: bearer`, `auth.bearer` requires an HTTPS `url` and a nonempty
 `tokenPointer` (RFC 6901 JSON Pointer, including escaped object keys and array
 indices). `method` defaults to `POST` and also supports `PUT`; `encoding` defaults
 to `json` and also supports `form`. The request body contains exactly the complete

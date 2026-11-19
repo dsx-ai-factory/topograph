@@ -99,7 +99,7 @@ the provider keeps its typed `Credentials` struct and converts it to a fresh
 `httpauth.AcquireToken` constructs the JSON login request and extracts
 `/accessToken`. The helper applies the shared HTTP retry policy and validates the extracted
 token, without provider-specific response callbacks. Login responses
-are limited to 1 MiB and redirects are rejected. The token lifetime
+are limited to 1 MiB. Redirects are not followed and return HTTP 502. The token lifetime
 remains scoped to one topology generation request.
 
 HTTP 401 and HTTP 403 errors are returned to the caller without
@@ -126,18 +126,20 @@ Common statuses include:
 | 404 | `switchId` not found. |
 | 429 | Rate limit exceeded; try again later. |
 
-The provider parses the `error` envelope and includes its `code`, `message`,
-and string-valued `details` in the Topograph error message. It does not change
-Topograph's response schema to the Firebird error envelope. Unstructured error
-bodies are omitted. Connection failures, canceled requests, and malformed success
-responses return HTTP 502.
+For topology requests, the provider parses the `error` envelope and includes its
+`code`, `message`, and string-valued `details` in the Topograph error message. It
+does not change Topograph's response schema to the Firebird error envelope.
+Unstructured error bodies are omitted. Topology connection failures, canceled
+requests, and malformed success responses return HTTP 502. Authentication errors
+differ: they carry only the upstream status and a redacted message, as described
+above, and a canceled login returns HTTP 408.
 
 Requests use the shared HTTP retry policy, respect context cancellation, and
 verify TLS certificates. HTTP 408, 429, 500, 502, 503, and 504 receive up to five total
 attempts per HTTP request, honoring valid `Retry-After` values (capped at five
 minutes) or using exponential backoff starting at 500 ms. If rate limiting
-persists after retries, the provider returns HTTP 429 with the final Firebird
-error diagnostics. HTTP 400, 403, and 404 are not retried. HTTP 401 is not retried.
+persists after retries, a topology request returns HTTP 429 with the final Firebird
+error diagnostics, and a login returns HTTP 429 with a redacted message. HTTP 400, 403, and 404 are not retried. HTTP 401 is not retried.
 
 ## Verifying the Output
 

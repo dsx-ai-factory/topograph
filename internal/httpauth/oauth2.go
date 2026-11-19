@@ -45,13 +45,10 @@ type TokenSource struct {
 // No local retries are added; any custom transport must follow the caller's policy.
 // Invalid configuration returns an HTTP 400 error.
 func NewClientCredentialsSource(auth AuthConfig, creds Credentials, client *http.Client) (*TokenSource, *httperr.Error) {
-	if auth.Type != "oauth2" || auth.TokenRequest == nil {
-		return nil, httperr.NewError(http.StatusBadRequest, "OAuth2 requires type oauth2 and tokenRequest configuration")
+	if auth.Type != "oauth2" || auth.OAuth2 == nil || auth.Bearer != nil {
+		return nil, httperr.NewError(http.StatusBadRequest, "OAuth2 requires type oauth2 and only the oauth2 configuration block")
 	}
-	config := *auth.TokenRequest
-	if auth.HeaderName != "" || config.URL != "" || config.Method != "" || config.Encoding != "" || config.TokenPointer != "" {
-		return nil, httperr.NewError(http.StatusBadRequest, "OAuth2 configuration contains fields for another authentication type")
-	}
+	config := *auth.OAuth2
 	var authStyle oauth2.AuthStyle
 	switch config.AuthStyle {
 	case "", "basic":

@@ -33,7 +33,7 @@ import (
 )
 
 func bearerAuth(endpoint string) AuthConfig {
-	return AuthConfig{Type: "bearer", TokenRequest: &TokenRequestConfig{URL: endpoint, TokenPointer: "/data/access_token"}}
+	return AuthConfig{Type: "bearer", Bearer: &BearerLoginConfig{URL: endpoint, TokenPointer: "/data/access_token"}}
 }
 
 func TestAcquireBearerToken(t *testing.T) {
@@ -70,7 +70,7 @@ func TestAcquireBearerToken(t *testing.T) {
 				}))
 				defer server.Close()
 				auth := bearerAuth(server.URL)
-				auth.TokenRequest.Encoding, auth.TokenRequest.Method = encoding, method
+				auth.Bearer.Encoding, auth.Bearer.Method = encoding, method
 				token, err := AcquireToken(context.Background(), auth, creds, server.Client())
 				require.Nil(t, err)
 				require.Equal(t, "fake.jwt.token", token)
@@ -109,7 +109,7 @@ func TestBearerTokenPointers(t *testing.T) {
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, tc.body) }))
 			defer server.Close()
 			auth := bearerAuth(server.URL)
-			auth.TokenRequest.TokenPointer = tc.pointer
+			auth.Bearer.TokenPointer = tc.pointer
 			token, err := AcquireToken(context.Background(), auth, Credentials{"secret": "fake-secret"}, server.Client())
 			if tc.valid {
 				require.Nil(t, err)
@@ -130,20 +130,16 @@ func TestBearerConfigValidatedBeforeRequest(t *testing.T) {
 	defer server.Close()
 	for _, change := range []func(*AuthConfig){
 		func(a *AuthConfig) { a.Type = "unknown" },
-		func(a *AuthConfig) { a.TokenRequest = nil },
-		func(a *AuthConfig) { a.HeaderName = "X-API-Key" },
-		func(a *AuthConfig) { a.TokenRequest.TokenURL = server.URL },
-		func(a *AuthConfig) { a.TokenRequest.Scopes = []string{"api.read"} },
-		func(a *AuthConfig) { a.TokenRequest.AuthStyle = "basic" },
-		func(a *AuthConfig) { a.TokenRequest.Method = http.MethodGet },
-		func(a *AuthConfig) { a.TokenRequest.Encoding = "xml" },
-		func(a *AuthConfig) { a.TokenRequest.URL = "http://example.invalid" },
-		func(a *AuthConfig) { a.TokenRequest.URL = "https://fake-user:fake-secret@example.invalid" },
-		func(a *AuthConfig) { a.TokenRequest.URL = "://fake-secret" },
-		func(a *AuthConfig) { a.TokenRequest.TokenPointer = "" },
-		func(a *AuthConfig) { a.TokenRequest.TokenPointer = "token" },
-		func(a *AuthConfig) { a.TokenRequest.TokenPointer = "/bad~" },
-		func(a *AuthConfig) { a.TokenRequest.TokenPointer = "/bad~2" },
+		func(a *AuthConfig) { a.Bearer = nil },
+		func(a *AuthConfig) { a.Bearer.Method = http.MethodGet },
+		func(a *AuthConfig) { a.Bearer.Encoding = "xml" },
+		func(a *AuthConfig) { a.Bearer.URL = "http://example.invalid" },
+		func(a *AuthConfig) { a.Bearer.URL = "https://fake-user:fake-secret@example.invalid" },
+		func(a *AuthConfig) { a.Bearer.URL = "://fake-secret" },
+		func(a *AuthConfig) { a.Bearer.TokenPointer = "" },
+		func(a *AuthConfig) { a.Bearer.TokenPointer = "token" },
+		func(a *AuthConfig) { a.Bearer.TokenPointer = "/bad~" },
+		func(a *AuthConfig) { a.Bearer.TokenPointer = "/bad~2" },
 	} {
 		auth := bearerAuth(server.URL)
 		change(&auth)

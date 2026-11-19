@@ -40,7 +40,7 @@ func fakeCredentials() Credentials {
 
 func newTestSource(t *testing.T, server *httptest.Server, style string) *TokenSource {
 	t.Helper()
-	source, err := NewClientCredentialsSource(AuthConfig{Type: "oauth2", TokenRequest: &TokenRequestConfig{
+	source, err := NewClientCredentialsSource(AuthConfig{Type: "oauth2", OAuth2: &OAuth2Config{
 		TokenURL: server.URL, Scopes: []string{"api.read", "topology.read"}, AuthStyle: style,
 	}}, fakeCredentials(), server.Client())
 	require.Nil(t, err)
@@ -116,7 +116,7 @@ func TestTokenRenewalAndIsolation(t *testing.T) {
 	_, err = first.Token(context.Background())
 	require.Nil(t, err)
 	require.EqualValues(t, 2, calls.Load())
-	second, err := NewClientCredentialsSource(AuthConfig{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: server.URL}},
+	second, err := NewClientCredentialsSource(AuthConfig{Type: "oauth2", OAuth2: &OAuth2Config{TokenURL: server.URL}},
 		Credentials{"clientId": "other-fake-client", "clientSecret": "other-fake-secret"}, server.Client())
 	require.Nil(t, err)
 	token, err := second.Token(context.Background())
@@ -242,11 +242,11 @@ func TestTokenCancellation(t *testing.T) {
 }
 
 func TestClientCredentialsValidation(t *testing.T) {
-	valid := AuthConfig{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: "https://example.invalid/token"}}
+	valid := AuthConfig{Type: "oauth2", OAuth2: &OAuth2Config{TokenURL: "https://example.invalid/token"}}
 	for _, rawURL := range []string{"", "://fake-secret", "http://example.invalid", "/relative", "https://fake-client:fake-secret@example.invalid/token", "https://example.invalid/#fragment"} {
 		config := valid
-		request := *valid.TokenRequest
-		config.TokenRequest = &request
+		request := *valid.OAuth2
+		config.OAuth2 = &request
 		request.TokenURL = rawURL
 		_, err := NewClientCredentialsSource(config, fakeCredentials(), &http.Client{})
 		require.NotNil(t, err)
@@ -261,8 +261,8 @@ func TestClientCredentialsValidation(t *testing.T) {
 	}
 	for _, scope := range []string{"", "two scopes", "bad\nscope", `bad"scope`, `bad\scope`, "非ascii"} {
 		config := valid
-		request := *valid.TokenRequest
-		config.TokenRequest = &request
+		request := *valid.OAuth2
+		config.OAuth2 = &request
 		request.Scopes = []string{scope}
 		_, err := NewClientCredentialsSource(config, fakeCredentials(), &http.Client{})
 		require.NotNil(t, err)
@@ -273,8 +273,8 @@ func TestClientCredentialsValidation(t *testing.T) {
 	require.NotNil(t, err)
 	require.Equal(t, http.StatusBadRequest, err.Code())
 	config := valid
-	request := *valid.TokenRequest
-	config.TokenRequest = &request
+	request := *valid.OAuth2
+	config.OAuth2 = &request
 	request.AuthStyle = "invalid"
 	_, err = NewClientCredentialsSource(config, fakeCredentials(), &http.Client{})
 	require.NotNil(t, err)
@@ -294,7 +294,7 @@ func TestClientTimeoutReturnsHTTPError(t *testing.T) {
 	defer close(release)
 	client := server.Client()
 	client.Timeout = 30 * time.Millisecond
-	source, err := NewClientCredentialsSource(AuthConfig{Type: "oauth2", TokenRequest: &TokenRequestConfig{TokenURL: server.URL}}, fakeCredentials(), client)
+	source, err := NewClientCredentialsSource(AuthConfig{Type: "oauth2", OAuth2: &OAuth2Config{TokenURL: server.URL}}, fakeCredentials(), client)
 	require.Nil(t, err)
 	token, err := source.Token(context.Background())
 	require.Nil(t, token)

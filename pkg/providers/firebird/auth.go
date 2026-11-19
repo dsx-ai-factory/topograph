@@ -35,7 +35,7 @@ func (p *Provider) accessToken(ctx context.Context) (string, *httperr.Error) {
 	}
 	credentials := p.creds.ToMap()
 	credentials["grantType"] = "client_credentials"
-	auth := httpauth.AuthConfig{Type: "bearer", TokenRequest: &httpauth.TokenRequestConfig{
+	auth := httpauth.AuthConfig{Type: "bearer", Bearer: &httpauth.BearerLoginConfig{
 		URL:          endpoint,
 		TokenPointer: "/accessToken",
 	}}

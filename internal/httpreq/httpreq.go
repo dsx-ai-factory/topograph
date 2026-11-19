@@ -204,13 +204,25 @@ func doRequest(f RequestFunc, insecureSkipVerify, allowRedirects bool, opts Requ
 	return resp, body, httperr.NewError(resp.StatusCode, message)
 }
 
-func redactedRequestError(err error) *httperr.Error {
+// CancellationStatus maps a canceled request to 408 and a deadline or network
+// timeout to 504. The bool is false for any other error.
+func CancellationStatus(err error) (int, bool) {
 	if errors.Is(err, context.Canceled) {
-		return httperr.NewError(http.StatusRequestTimeout, "HTTP request canceled")
+		return http.StatusRequestTimeout, true
 	}
 	var timeout net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
-		return httperr.NewError(http.StatusGatewayTimeout, "HTTP request timed out")
+		return http.StatusGatewayTimeout, true
+	}
+	return 0, false
+}
+
+func redactedRequestError(err error) *httperr.Error {
+	switch code, _ := CancellationStatus(err); code {
+	case http.StatusRequestTimeout:
+		return httperr.NewError(code, "HTTP request canceled")
+	case http.StatusGatewayTimeout:
+		return httperr.NewError(code, "HTTP request timed out")
 	}
 	return httperr.NewError(http.StatusBadGateway, "HTTP request failed")
 }
