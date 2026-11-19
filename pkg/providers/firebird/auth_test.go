@@ -124,12 +124,8 @@ func TestAuthFailures(t *testing.T) {
 			graph, err := p.GenerateTopologyConfig(context.Background(), nil, []topology.ComputeInstances{{Instances: map[string]string{"n1": "worker"}}})
 			require.Nil(t, graph)
 			require.Equal(t, status, err.Code())
-			require.Equal(t, "HTTP request failed", err.Error())
-			expectedCalls := 1
-			if status == http.StatusServiceUnavailable {
-				expectedCalls = 5
-			}
-			require.Equal(t, expectedCalls, calls)
+			require.Equal(t, "authentication failed: HTTP request failed", err.Error())
+			require.Equal(t, 1, calls)
 		})
 	}
 }
@@ -144,7 +140,7 @@ func TestInvalidTokenResponses(t *testing.T) {
 			require.Nil(t, err)
 			_, err = p.(*Provider).accessToken(context.Background())
 			require.Equal(t, http.StatusBadGateway, err.Code())
-			require.Equal(t, "invalid bearer token response", err.Error())
+			require.Equal(t, "authentication failed: invalid bearer token response", err.Error())
 		})
 	}
 }
@@ -190,7 +186,7 @@ func TestAuthenticationCanCancel(t *testing.T) {
 	require.Zero(t, calls.Load())
 }
 
-func TestAuthenticationRetryReplaysCredentials(t *testing.T) {
+func TestAuthenticationDoesNotRetryTransientFailure(t *testing.T) {
 	calls := 0
 	server := newTrustedTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -209,9 +205,10 @@ func TestAuthenticationRetryReplaysCredentials(t *testing.T) {
 	p, err := Loader(context.Background(), providers.Config{Params: map[string]any{"apiUrl": server.URL}, Creds: fakeCredentials()})
 	require.Nil(t, err)
 	token, err := p.(*Provider).accessToken(context.Background())
-	require.Nil(t, err)
-	require.Equal(t, "fake-retried-token", token)
-	require.Equal(t, 2, calls)
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, err.Code())
+	require.Empty(t, token)
+	require.Equal(t, 1, calls)
 }
 
 func TestUnusedTokenMetadataIsIgnored(t *testing.T) {

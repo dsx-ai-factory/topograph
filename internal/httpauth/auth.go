@@ -29,8 +29,7 @@ import (
 // AcquireToken returns an access-token string using OAuth2 client credentials
 // (type oauth2) or a custom login request (type bearer). Configuration and
 // credentials are validated before network I/O. Each call is independent.
-// Bearer login uses the shared HTTP retry policy; OAuth2 uses its library's token
-// exchange. HTTP errors are returned directly and malformed tokens return 502.
+// HTTP errors are returned directly and malformed tokens return 502.
 func AcquireToken(ctx context.Context, auth AuthConfig, creds Credentials, client *http.Client) (string, *httperr.Error) {
 	switch auth.Type {
 	case "oauth2":
@@ -44,7 +43,7 @@ func AcquireToken(ctx context.Context, auth AuthConfig, creds Credentials, clien
 		}
 		return token.AccessToken, nil
 	case "bearer":
-		return acquireBearerToken(ctx, auth, creds, client)
+		return acquireConfiguredBearerToken(ctx, auth, creds, client)
 	default:
 		return "", httperr.NewError(http.StatusBadRequest, "token acquisition requires auth type oauth2 or bearer")
 	}

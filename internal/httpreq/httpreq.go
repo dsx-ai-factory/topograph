@@ -97,8 +97,10 @@ func ParseRetryAfter(resp *http.Response) (time.Duration, bool) {
 type RequestFunc func() (*http.Request, *httperr.Error)
 
 // RequestOptions customizes HTTP execution without changing existing callers.
-// Client supplies transport and timeout policies. MaxResponseBytes bounds reads
-// when positive. Redact omits URLs and raw upstream details from logs and errors;
+// Client supplies transport and timeout policies; it is never modified, and
+// insecureSkipVerify does not apply to it. MaxResponseBytes caps the response
+// body when positive: a larger body fails with a non-retryable 502 (see
+// IsResponseTooLarge) instead of being truncated. Redact omits URLs and raw upstream details from logs and errors;
 // the response body is still returned to trusted callers for API error mapping.
 type RequestOptions struct {
 	Client           *http.Client
@@ -107,6 +109,14 @@ type RequestOptions struct {
 }
 
 var errRedirectNotAllowed = errors.New("redirects are not allowed")
+
+const responseTooLargeMessage = "HTTP response exceeds size limit"
+
+// IsResponseTooLarge reports whether err was caused by a response body larger
+// than RequestOptions.MaxResponseBytes.
+func IsResponseTooLarge(err *httperr.Error) bool {
+	return err != nil && err.Code() == http.StatusBadGateway && err.Error() == responseTooLargeMessage
+}
 
 // DoRequest sends an HTTP request with the existing default policies.
 func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, *httperr.Error) {
@@ -151,6 +161,9 @@ func doRequest(f RequestFunc, insecureSkipVerify, allowRedirects bool, opts Requ
 		}
 	}
 	if !allowRedirects {
+		// Copy so a caller-supplied client is never mutated or raced on.
+		c := *client
+		client = &c
 		client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
 			// Name only the scheme and host: the Location is server-controlled and its
 			// userinfo, path or query could carry secrets or control characters.
@@ -185,7 +198,8 @@ func doRequest(f RequestFunc, insecureSkipVerify, allowRedirects bool, opts Requ
 	defer func() { _ = resp.Body.Close() }()
 	var reader io.Reader = resp.Body
 	if opts.MaxResponseBytes > 0 {
-		reader = io.LimitReader(reader, opts.MaxResponseBytes)
+		// Read one byte past the cap so an oversized body is detected, not truncated.
+		reader = io.LimitReader(reader, opts.MaxResponseBytes+1)
 	}
 	body, err := io.ReadAll(reader)
 	if err != nil {
@@ -193,6 +207,9 @@ func doRequest(f RequestFunc, insecureSkipVerify, allowRedirects bool, opts Requ
 			return resp, nil, redactedRequestError(err)
 		}
 		return resp, nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to read HTTP response: %v", err))
+	}
+	if opts.MaxResponseBytes > 0 && int64(len(body)) > opts.MaxResponseBytes {
+		return resp, nil, httperr.NewError(http.StatusBadGateway, responseTooLargeMessage)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return resp, body, nil
@@ -247,17 +264,26 @@ func DoRequestWithRetriesAndOptions(f RequestFunc, insecureSkipVerify bool, opts
 			return req, httpErr
 		}, insecureSkipVerify, opts)
 		if requestCtx != nil && requestCtx.Err() != nil {
-			return body, err
+			return body, contextFailure(requestCtx, err, opts)
 		}
-		if err == nil || attempt == maxRetries || !ShouldRetry(err.Code()) {
+		if err == nil || attempt == maxRetries || IsResponseTooLarge(err) || !ShouldRetry(err.Code()) {
 			return body, err
 		}
 		wait := GetNextBackoff(resp, backOff, attempt-1)
 		klog.Infof("Attempt %d failed with error: %v. Retrying in %s", attempt, err, wait.String())
 		if !waitForRetry(requestCtx, wait) {
-			return body, err
+			return body, contextFailure(requestCtx, err, opts)
 		}
 	}
+}
+
+// contextFailure reports cancellation or a deadline as such for redacted
+// requests, which promise sanitized statuses. Otherwise the last error stands.
+func contextFailure(ctx context.Context, err *httperr.Error, opts RequestOptions) *httperr.Error {
+	if err != nil && opts.Redact {
+		return redactedRequestError(ctx.Err())
+	}
+	return err
 }
 
 func waitForRetry(ctx context.Context, delay time.Duration) bool {

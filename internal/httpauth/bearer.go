@@ -31,7 +31,7 @@ import (
 // Match the OAuth2 library's response limit for custom login responses.
 const maxTokenResponseBytes = 1 << 20
 
-func acquireBearerToken(ctx context.Context, auth AuthConfig, creds Credentials, client *http.Client) (string, *httperr.Error) {
+func acquireConfiguredBearerToken(ctx context.Context, auth AuthConfig, creds Credentials, client *http.Client) (string, *httperr.Error) {
 	if auth.Type != "bearer" || auth.Bearer == nil || auth.OAuth2 != nil {
 		return "", httperr.NewError(http.StatusBadRequest, "bearer authentication requires type bearer and only the bearer configuration block")
 	}
@@ -91,30 +91,31 @@ func loginBody(encoding string, creds Credentials) ([]byte, string, *httperr.Err
 	}
 }
 
-// AcquireBearerToken executes a provider-built request using the shared HTTP
-// retry policy and extracts a bearer token. It also returns the bounded response
-// body so providers can read metadata without callbacks or another HTTP request.
-// The factory must supply a fresh request/body and the invocation context for
-// each attempt. Use AcquireToken for configuration-driven login requests.
+// AcquireBearerToken executes a provider-built request and extracts a
+// bearer token. It also returns the bounded response body so providers can read
+// metadata without callbacks or another HTTP request. The factory must supply
+// the request/body with the invocation context. Use AcquireToken for
+// configuration-driven login requests.
 func AcquireBearerToken(factory httpreq.RequestFunc, tokenPointer string, client *http.Client) (string, []byte, *httperr.Error) {
 	parts, valid := tokenPointerParts(tokenPointer)
 	if !valid || client == nil || factory == nil {
 		return "", nil, httperr.NewError(http.StatusBadRequest, "bearer token acquisition requires a valid request factory, client and JSON Pointer")
 	}
-	options := httpreq.RequestOptions{Client: tokenHTTPClient(client), MaxResponseBytes: maxTokenResponseBytes + 1, Redact: true}
-	data, httpErr := httpreq.DoRequestWithRetriesAndOptions(factory, false, options)
-	if httpErr != nil {
-		if code := httpErr.Code(); code < 400 || code > 599 {
-			// Redirects are not followed, so the login host keeps the credentials.
-			// Report one as an upstream failure, not as topograph's own redirect.
-			return "", nil, httperr.NewError(http.StatusBadGateway, httpErr.Error())
-		}
-		return "", nil, httpErr
-	}
-	if len(data) > maxTokenResponseBytes {
+	options := httpreq.RequestOptions{Client: tokenHTTPClient(client), MaxResponseBytes: maxTokenResponseBytes, Redact: true}
+	_, data, httpErr := httpreq.DoRequestWithOptions(factory, false, options)
+	if httpreq.IsResponseTooLarge(httpErr) {
 		return "", nil, httperr.NewError(http.StatusBadGateway, "bearer token response exceeds size limit")
 	}
-	invalidResponse := httperr.NewError(http.StatusBadGateway, "invalid bearer token response")
+	if httpErr != nil {
+		code := httpErr.Code()
+		if code < 400 || code > 599 {
+			// Redirects are not followed, so the login host keeps the credentials.
+			// Report one as an upstream failure, not as topograph's own redirect.
+			code = http.StatusBadGateway
+		}
+		return "", nil, httperr.NewError(code, "authentication failed: "+httpErr.Error())
+	}
+	invalidResponse := httperr.NewError(http.StatusBadGateway, "authentication failed: invalid bearer token response")
 	var document any
 	if json.Unmarshal(data, &document) != nil {
 		return "", nil, invalidResponse

@@ -88,7 +88,7 @@ func TestAuthenticationErrorStatusPreserved(t *testing.T) {
 	p := &Provider{params: &ProviderParams{ApiURL: server.URL}, creds: &Credentials{Username: "fake-user", Password: "fake-password"}}
 	_, err := p.getNetworkTree(context.Background(), nil)
 	require.Equal(t, http.StatusUnauthorized, err.Code())
-	require.EqualError(t, err, "HTTP request failed")
+	require.EqualError(t, err, "NetQ login: authentication failed: HTTP request failed")
 	require.Equal(t, 1, calls)
 }
 
@@ -110,6 +110,7 @@ func TestSharedTokenAcquisitionFailures(t *testing.T) {
 		{"empty selection", true, 200, "", 502},
 		{"malformed selection", true, 200, "invalid", 502},
 		{"selection unauthorized", true, 401, "selection rejected", 401},
+		{"selection outage", true, 503, "unavailable", 503},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -134,14 +135,19 @@ func TestSharedTokenAcquisitionFailures(t *testing.T) {
 			_, err := p.getNetworkTree(context.Background(), nil)
 			require.NotNil(t, err)
 			require.Equal(t, tc.expected, err.Code())
-			expectedCalls := 1
-			if tc.status == 503 {
-				expectedCalls = 5
+			prefix := "NetQ login: "
+			if tc.selection {
+				prefix = "NetQ premises selection: "
 			}
+			require.Contains(t, err.Error(), prefix)
+			if tc.status != http.StatusOK {
+				require.EqualError(t, err, prefix+"authentication failed: HTTP request failed")
+			}
+			expectedCalls := 1
 			if tc.selection {
 				expectedCalls++
 			}
-			require.Equal(t, expectedCalls, calls, "authentication failures must stop discovery after the shared HTTP retry policy")
+			require.Equal(t, expectedCalls, calls, "authentication failures must stop discovery without local retries")
 		})
 	}
 }

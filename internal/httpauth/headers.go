@@ -14,8 +14,8 @@
 // limitations under the License.
 
 // Package httpauth provides HTTP authentication mechanics without provider or
-// topology dependencies. Providers own custom request formats and sequencing; these helpers own token
-// acquisition, validation, and the shared bearer HTTP retry policy.
+// topology dependencies. Providers own custom request formats and sequencing;
+// these helpers own token acquisition and validation.
 package httpauth
 
 import (
@@ -33,13 +33,16 @@ func BasicHeader(username, password string) string {
 // validate the token; providers decide when to validate upstream responses.
 func BearerHeader(token string) string { return "Bearer " + token }
 
-// ValidateBearerToken rejects missing tokens, header line breaks, and an explicit
+// ValidateBearerToken rejects missing tokens, control bytes, and an explicit
 // non-bearer token type. An omitted type is accepted for custom login APIs.
 // The token is opaque (including JWTs), and error messages never contain it.
 func ValidateBearerToken(token, tokenType string) error {
-	if strings.TrimSpace(token) == "" || strings.ContainsAny(token, "\r\n") ||
+	if strings.TrimSpace(token) == "" || strings.IndexFunc(token, isControl) >= 0 ||
 		(tokenType != "" && !strings.EqualFold(tokenType, "Bearer")) {
 		return errors.New("invalid bearer token")
 	}
 	return nil
 }
+
+// isControl reports ASCII control characters, which are invalid in HTTP field values.
+func isControl(r rune) bool { return r < 0x20 || r == 0x7f }

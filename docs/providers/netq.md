@@ -120,8 +120,7 @@ Authorization headers use the shared
 The provider retains its typed `Credentials` struct and uses `ToMap()` to create
 a fresh `httpauth.Credentials` map when building the login request. It delegates token
 HTTP requests and extraction to `httpauth.AcquireBearerToken`, retaining the login
-and premises-selection sequence. Both token requests use the shared HTTP retry
-policy for transient failures. HTTP errors are returned directly from the shared
+and premises-selection sequence. HTTP errors are returned directly from the shared
 HTTP helper, with redacted execution messages. Both
 responses must contain a nonempty string `access_token`; malformed or missing
 tokens return HTTP 502. Token responses are limited to 1 MiB and redirects are

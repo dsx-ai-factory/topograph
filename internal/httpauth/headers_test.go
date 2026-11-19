@@ -40,6 +40,7 @@ func TestValidateBearerToken(t *testing.T) {
 	for _, tc := range []struct{ token, tokenType string }{
 		{"", ""}, {" \t", "Bearer"}, {"fake\rtoken", "Bearer"},
 		{"fake\ntoken", "Bearer"}, {"fake-token", "Basic"},
+		{"fake\x00token", "Bearer"}, {"fake\x7ftoken", "Bearer"}, {"fake\ttoken", "Bearer"},
 	} {
 		err := ValidateBearerToken(tc.token, tc.tokenType)
 		require.EqualError(t, err, "invalid bearer token")

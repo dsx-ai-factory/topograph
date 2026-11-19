@@ -118,7 +118,7 @@ func TestBearerTokenPointers(t *testing.T) {
 				require.Empty(t, token)
 				require.NotNil(t, err)
 				require.Equal(t, http.StatusBadGateway, err.Code())
-				require.EqualError(t, err, "invalid bearer token response")
+				require.EqualError(t, err, "authentication failed: invalid bearer token response")
 			}
 		})
 	}
@@ -161,7 +161,7 @@ func TestBearerConfigValidatedBeforeRequest(t *testing.T) {
 }
 
 func TestBearerHTTPFailures(t *testing.T) {
-	for _, status := range []int{301, 400, 401, 403, 429, 500, 503} {
+	for _, status := range []int{301, 400, 401, 403, 408, 429, 500, 502, 503, 504} {
 		calls := 0
 		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			calls++
@@ -177,24 +177,42 @@ func TestBearerHTTPFailures(t *testing.T) {
 			expectedCode = http.StatusBadGateway // redirects are not followed
 		}
 		require.Equal(t, expectedCode, err.Code())
-		require.EqualError(t, err, "HTTP request failed")
-		expectedCalls := 1
-		if status == 429 || status == 500 || status == 503 {
-			expectedCalls = 5
-		}
-		require.Equal(t, expectedCalls, calls, "bearer login follows the shared HTTP retry policy")
+		require.EqualError(t, err, "authentication failed: HTTP request failed")
+		require.Equal(t, 1, calls, "bearer login must not retry locally")
 	}
 }
 
 func TestBearerResponseLimit(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, strings.Repeat("x", maxTokenResponseBytes+1))
-	}))
-	defer server.Close()
-	_, err := AcquireToken(context.Background(), bearerAuth(server.URL), Credentials{"secret": "fake-secret"}, server.Client())
-	require.NotNil(t, err)
-	require.Equal(t, http.StatusBadGateway, err.Code())
-	require.EqualError(t, err, "bearer token response exceeds size limit")
+	for _, tc := range []struct {
+		name string
+		size int
+	}{
+		{"at limit", maxTokenResponseBytes},
+		{"over limit", maxTokenResponseBytes + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"data":{"access_token":"fake-token"}}`
+			// Trailing JSON whitespace pads the response without changing the token.
+			body += strings.Repeat(" ", tc.size-len(body))
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				_, _ = io.WriteString(w, body)
+			}))
+			defer server.Close()
+			token, err := AcquireToken(context.Background(), bearerAuth(server.URL), Credentials{"secret": "fake-secret"}, server.Client())
+			require.Equal(t, int32(1), calls.Load(), "oversized responses must not be retried")
+			if tc.size > maxTokenResponseBytes {
+				require.Empty(t, token)
+				require.NotNil(t, err)
+				require.Equal(t, http.StatusBadGateway, err.Code())
+				require.EqualError(t, err, "bearer token response exceeds size limit")
+			} else {
+				require.Nil(t, err)
+				require.Equal(t, "fake-token", token)
+			}
+		})
+	}
 }
 
 func TestBearerRedirectAndTransportErrors(t *testing.T) {
@@ -215,7 +233,7 @@ func TestBearerRedirectAndTransportErrors(t *testing.T) {
 	_, err = AcquireToken(context.Background(), auth, Credentials{"secret": "fake-secret"}, client)
 	require.NotNil(t, err)
 	require.Equal(t, http.StatusBadGateway, err.Code())
-	require.EqualError(t, err, "HTTP request failed")
+	require.EqualError(t, err, "authentication failed: HTTP request failed")
 }
 
 func TestBearerCancellationAndTimeout(t *testing.T) {
@@ -251,7 +269,7 @@ func TestBearerCancellationAndTimeout(t *testing.T) {
 			err := <-done
 			require.NotNil(t, err)
 			require.Equal(t, http.StatusRequestTimeout, err.Code())
-			require.EqualError(t, err, "HTTP request canceled")
+			require.EqualError(t, err, "authentication failed: HTTP request canceled")
 			_, err = AcquireToken(ctx, auth, creds, server.Client())
 			require.NotNil(t, err)
 			require.Equal(t, http.StatusRequestTimeout, err.Code())
@@ -260,7 +278,7 @@ func TestBearerCancellationAndTimeout(t *testing.T) {
 			_, err = AcquireToken(context.Background(), auth, creds, client)
 			require.NotNil(t, err)
 			require.Equal(t, http.StatusGatewayTimeout, err.Code())
-			require.EqualError(t, err, "HTTP request timed out")
+			require.EqualError(t, err, "authentication failed: HTTP request timed out")
 		})
 	}
 }

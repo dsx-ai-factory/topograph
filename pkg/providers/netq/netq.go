@@ -72,7 +72,7 @@ func (p *Provider) getNetworkTree(ctx context.Context, cis []topology.ComputeIns
 	f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, LoginURL)
 	token, premisesList, httpErr := acquireNetqToken(f)
 	if httpErr != nil {
-		return nil, httpErr
+		return nil, httperr.NewError(httpErr.Code(), "NetQ login: "+httpErr.Error())
 	}
 
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
@@ -100,7 +100,7 @@ func (p *Provider) getPremisesTopology(ctx context.Context, cis []topology.Compu
 	f := httpreq.GetRequestFunc(ctx, http.MethodGet, headers, nil, nil, p.params.ApiURL, OpIdURL, opid)
 	tokenResult, _, httpErr := acquireNetqToken(f)
 	if httpErr != nil {
-		return httpErr
+		return httperr.NewError(httpErr.Code(), "NetQ premises selection: "+httpErr.Error())
 	}
 
 	// get topology graph

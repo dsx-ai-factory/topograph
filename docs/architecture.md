@@ -59,7 +59,7 @@ The return type is `*httperr.Error`, not `error`. The status code it carries bec
 `internal/httpauth` provides basic and bearer authorization header values,
 validation of bearer tokens, OAuth2 client-credentials token acquisition, and
 custom bearer-login token acquisition. Firebird uses `AcquireToken` for its
-JSON login request and token extraction with the shared HTTP retry policy. NetQ delegates HTTP execution
+JSON login request and token extraction. NetQ delegates HTTP execution
 and token extraction for both login and premises selection to `AcquireBearerToken`;
 its adapter retains the multi-step sequencing and premises metadata. Both providers
 reuse the header helpers.
@@ -95,7 +95,7 @@ extension selects form parameters (`basic` explicitly selects the default).
 Automatic authentication probing is disabled to avoid implicit retries. The source
 reuses tokens until the OAuth2 expiry safety margin, obtains replacements using
 client credentials, and discards refresh tokens and response extras. It honors
-per-call cancellation, disables redirects, adds no retries, and returns errors
+per-call cancellation, disables redirects, and returns errors
 without upstream bodies, endpoint URLs, or credential values. Token helpers
 return `*httperr.Error`: configuration failures use 400; HTTP execution errors
 from `httpreq` are returned unchanged, including upstream status codes. Execution
@@ -110,15 +110,13 @@ indices). `method` defaults to `POST` and also supports `PUT`; `encoding` defaul
 to `json` and also supports `form`. The request body contains exactly the complete
 credentials map, preserving its keys and values. Configuration fields are not sent
 in the body. Redirects are disabled and responses are limited to 1 MiB.
-Bearer requests use the shared `httpreq` retry policy for transient HTTP failures;
-response parsing and token validation failures are not retried. A successful JSON response must contain a nonempty bearer token string at
+A successful JSON response must contain a nonempty bearer token string at
 the pointer. The returned token has no inferred expiry or refresh behavior; callers
 reuse it within their invocation. Custom bearer login uses the same HTTP error
 mapping and redaction rules as OAuth2.
 
-Both bearer entry points use `httpreq.DoRequestWithRetriesAndOptions` with an
-explicit HTTP client, bounded response reads, and redaction settings. Retry logs
-omit raw upstream details. HTTP errors are returned directly without remapping.
+Both bearer entry points use `httpreq.DoRequestWithOptions` with an
+explicit HTTP client, bounded response reads, and redaction settings. HTTP errors are returned directly without remapping.
 `AcquireToken` takes only context, auth configuration, credentials, and HTTP client;
 there are no adapter parameters or response callbacks.
 
@@ -126,8 +124,8 @@ there are no adapter parameters or response callbacks.
 including NetQ's GET for premises selection. It returns the token string and bounded
 response body, allowing NetQ to decode its premises metadata after acquisition.
 The provider owns the URL, method, headers, and credential placement; the factory
-supplies a fresh request and body with the invocation context on each attempt.
-Both entry points apply the same token validation and HTTP retry policy. Custom
+supplies a request and body with the invocation context.
+Both entry points apply the same token validation. Custom
 bearer login validates only the selected token and ignores other response fields;
 OAuth2 continues to interpret its standard expiry and token-type fields.
 
