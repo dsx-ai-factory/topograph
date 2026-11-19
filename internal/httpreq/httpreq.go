@@ -115,22 +115,36 @@ func DoRequestWithRedirects(f RequestFunc, insecureSkipVerify, allowRedirects bo
 	klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
 	client := &http.Client{}
 	if insecureSkipVerify {
-		client.Transport = &http.Transport{
+		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
+		client.Transport = transport
+		// The transport is private to this call, so its keep-alive connections
+		// could never be reused; close them rather than leave them open.
+		defer transport.CloseIdleConnections()
 	}
 	if !allowRedirects {
 		client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
-			return fmt.Errorf("%w: refusing to follow a redirect to %s", errRedirectNotAllowed, req.URL.Redacted())
+			// Name only the scheme and host: the Location is server-controlled and its
+			// userinfo, path or query could carry secrets or control characters.
+			return fmt.Errorf("%w: refusing to follow a redirect to %s://%s", errRedirectNotAllowed, req.URL.Scheme, req.URL.Host)
 		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
 		code := http.StatusBadGateway
-		if resp != nil && !errors.Is(err, errRedirectNotAllowed) {
+		msg := err.Error()
+		if errors.Is(err, errRedirectNotAllowed) {
+			// The *url.Error wrapping the refusal repeats the raw Location; report
+			// only the sanitized refusal from CheckRedirect.
+			var urlErr *url.Error
+			if errors.As(err, &urlErr) {
+				msg = urlErr.Err.Error()
+			}
+		} else if resp != nil {
 			code = resp.StatusCode
 		}
-		return resp, nil, httperr.NewError(code, err.Error())
+		return resp, nil, httperr.NewError(code, msg)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

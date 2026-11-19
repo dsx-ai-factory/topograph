@@ -19,10 +19,13 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -300,6 +303,148 @@ func TestDoRequest(t *testing.T) {
 		require.Nil(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, []byte("tls-ok"), body)
+	})
+}
+
+// connTracker counts the connections a test server has open.
+type connTracker struct{ open atomic.Int32 }
+
+func (c *connTracker) track(_ net.Conn, state http.ConnState) {
+	switch state {
+	case http.StateNew:
+		c.open.Add(1)
+	case http.StateClosed, http.StateHijacked:
+		c.open.Add(-1)
+	}
+}
+
+func (c *connTracker) requireClosed(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool { return c.open.Load() == 0 }, 5*time.Second, 10*time.Millisecond,
+		"connections left open: %d", c.open.Load())
+}
+
+func newTrackedTLSServer(t *testing.T, h http.HandlerFunc) (*httptest.Server, *connTracker) {
+	t.Helper()
+	tracker := &connTracker{}
+	srv := httptest.NewUnstartedServer(h)
+	srv.Config.ConnState = tracker.track
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv, tracker
+}
+
+// TestDoRequestClosesInsecureConnections verifies that the private transport
+// used with insecureSkipVerify does not leave its keep-alive connection open
+// once the request returns, however the request ends.
+func TestDoRequestClosesInsecureConnections(t *testing.T) {
+	request := func(ctx context.Context, url string) RequestFunc {
+		return GetRequestFunc(ctx, http.MethodGet, nil, nil, nil, url)
+	}
+
+	t.Run("success", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+		for range 3 {
+			_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, false)
+			require.Nil(t, err)
+		}
+		tracker.requireClosed(t)
+	})
+
+	t.Run("redirect refused", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "http://u:pw@evil.example/x?token=SECRET", http.StatusTemporaryRedirect)
+		})
+		_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, false)
+		require.NotNil(t, err)
+		require.Equal(t, http.StatusBadGateway, err.Code())
+		require.Contains(t, err.Error(), "refusing to follow a redirect to http://evil.example")
+		require.NotContains(t, err.Error(), "SECRET")
+		require.NotContains(t, err.Error(), "pw")
+		tracker.requireClosed(t)
+	})
+
+	t.Run("truncated response", func(t *testing.T) {
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "100")
+			_, _ = w.Write([]byte("short"))
+		})
+		_, _, err := DoRequestWithRedirects(request(context.Background(), srv.URL), true, false)
+		require.NotNil(t, err)
+		require.Equal(t, http.StatusInternalServerError, err.Code())
+		require.Contains(t, err.Error(), "failed to read HTTP response")
+		tracker.requireClosed(t)
+	})
+
+	t.Run("canceled while reading the body", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		const chunks = 5
+		flushed := make(chan struct{})
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			// The status line, headers and then a trickle of the body: the client
+			// has its response and is reading the body once the last chunk is out.
+			w.Header().Set("Content-Length", "1000")
+			for i := 0; i < chunks; i++ {
+				_, _ = w.Write([]byte("chunk"))
+				w.(http.Flusher).Flush()
+				time.Sleep(10 * time.Millisecond)
+			}
+			close(flushed)
+			<-r.Context().Done() // withhold the rest until the client gives up
+		})
+		go func() {
+			<-flushed
+			cancel()
+		}()
+		_, _, err := DoRequestWithRedirects(request(ctx, srv.URL), true, false)
+		require.NotNil(t, err)
+		// Only a failed body read reports 500; a cancel during setup would be a 502.
+		require.Equal(t, http.StatusInternalServerError, err.Code(), err.Error())
+		require.Contains(t, err.Error(), "failed to read HTTP response")
+		tracker.requireClosed(t)
+	})
+
+	t.Run("overlapping calls do not interrupt each other", func(t *testing.T) {
+		releaseCh := make(chan struct{})
+		var releaseOnce sync.Once
+		release := func() { releaseOnce.Do(func() { close(releaseCh) }) }
+		// A failed assertion below must not leave the slow handler blocked, which
+		// would hang the server's Close.
+		defer release()
+		started := make(chan struct{}, 2)
+		srv, tracker := newTrackedTLSServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/slow" {
+				started <- struct{}{}
+				<-releaseCh
+				_, _ = w.Write([]byte("slow"))
+				return
+			}
+			_, _ = w.Write([]byte("fast"))
+		})
+
+		type result struct {
+			body string
+			err  *httperr.Error
+		}
+		slow := make(chan result, 1)
+		go func() {
+			_, body, err := DoRequestWithRedirects(request(context.Background(), srv.URL+"/slow"), true, false)
+			slow <- result{string(body), err}
+		}()
+		<-started
+
+		// A call that finishes, and closes its own transport, while the slow one is
+		// still in flight must not cut it short.
+		_, body, err := DoRequestWithRedirects(request(context.Background(), srv.URL+"/fast"), true, false)
+		require.Nil(t, err)
+		require.Equal(t, "fast", string(body))
+
+		release()
+		r := <-slow
+		require.Nil(t, r.err)
+		require.Equal(t, "slow", r.body)
+		tracker.requireClosed(t)
 	})
 }
 

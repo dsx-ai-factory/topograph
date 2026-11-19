@@ -581,7 +581,10 @@ func parseResponse(treeRoot *topology.Vertex, devices map[string]*Device, inputN
 			if !ok {
 				id = name
 			}
-			switches[name] = &topology.Vertex{ID: id, Name: name, Vertices: make(map[string]*topology.Vertex)}
+			// The Slurm translator emits Name as the SwitchName, so a renamed switch
+			// takes its new ID as its name too; otherwise it would still collide
+			// with the fallback group, or with a requested instance ID.
+			switches[name] = &topology.Vertex{ID: id, Name: id, Vertices: make(map[string]*topology.Vertex)}
 		} else if instanceID, ok := inputNodes[name]; ok {
 			requested[name] = &topology.Vertex{ID: instanceID, Name: name}
 		}

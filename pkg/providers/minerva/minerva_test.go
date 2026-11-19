@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
+	"github.com/dsx-ai-factory/topograph/pkg/engines/slurm"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
 )
 
@@ -300,7 +302,7 @@ func TestParseResponseInstanceIDsDoNotCollideWithSwitches(t *testing.T) {
 		"leaf-a": {ID: "leaf-a", Name: "leaf-a", Vertices: map[string]*topology.Vertex{
 			"leaf-b": {ID: "leaf-b", Name: "srv-a"},
 		}},
-		"switch-leaf-b": {ID: "switch-leaf-b", Name: "leaf-b", Vertices: map[string]*topology.Vertex{
+		"switch-leaf-b": {ID: "switch-leaf-b", Name: "switch-leaf-b", Vertices: map[string]*topology.Vertex{
 			"i-b": {ID: "i-b", Name: "srv-b"},
 		}},
 	}, treeRoot.Vertices)
@@ -317,7 +319,7 @@ func TestParseResponseReservesNoTopology(t *testing.T) {
 	treeRoot := newTreeRoot()
 	parseResponse(treeRoot, devices, names("srv-a", "srv-orphan"))
 	require.Equal(t, map[string]*topology.Vertex{
-		"switch-" + topology.NoTopology: {ID: "switch-" + topology.NoTopology, Name: topology.NoTopology,
+		"switch-" + topology.NoTopology: {ID: "switch-" + topology.NoTopology, Name: "switch-" + topology.NoTopology,
 			Vertices: map[string]*topology.Vertex{"srv-a": {ID: "srv-a", Name: "srv-a"}}},
 		topology.NoTopology: {ID: topology.NoTopology, Vertices: map[string]*topology.Vertex{
 			"srv-orphan": {ID: "srv-orphan", Name: "srv-orphan"},
@@ -336,7 +338,7 @@ func TestParseResponseFallbackIDDoesNotReplaceSwitch(t *testing.T) {
 	treeRoot := newTreeRoot()
 	parseResponse(treeRoot, devices, map[string]string{"srv-a": "i-a", "srv-missing": topology.NoTopology})
 	require.Equal(t, map[string]*topology.Vertex{
-		"switch-no-topology-group": {ID: "switch-no-topology-group", Name: "no-topology-group",
+		"switch-no-topology-group": {ID: "switch-no-topology-group", Name: "switch-no-topology-group",
 			Vertices: map[string]*topology.Vertex{"i-a": {ID: "i-a", Name: "srv-a"}}},
 		"no-topology-group": {ID: "no-topology-group", Vertices: map[string]*topology.Vertex{
 			topology.NoTopology: {ID: topology.NoTopology, Name: "srv-missing"},
@@ -347,6 +349,32 @@ func TestParseResponseFallbackIDDoesNotReplaceSwitch(t *testing.T) {
 // TestParseResponseRenamedIDsAreLabelValues verifies that the IDs given to
 // renamed switches can be used as Kubernetes label values, which the Kubernetes
 // engine publishes them as.
+// TestParseResponseSlurmSwitchNamesAreUnique verifies that the generated Slurm
+// configuration gives the fallback group and a switch named like it different
+// SwitchNames, since the Slurm translator emits vertex names.
+func TestParseResponseSlurmSwitchNamesAreUnique(t *testing.T) {
+	devices := fabric(
+		deviceRec(topology.NoTopology, RoleLeaf), deviceRec("srv-a", RoleServer),
+		linkRec(topology.NoTopology, "srv-a"),
+	)
+	root := newTreeRoot()
+	parseResponse(root, devices, names("srv-a", "srv-missing"))
+
+	graph := &topology.Graph{Tiers: root}
+	out, httpErr := slurm.GenerateOutput(context.Background(), graph, map[string]any{"plugin": topology.TopologyTree})
+	require.Nil(t, httpErr)
+
+	var switchNames []string
+	for _, line := range strings.Split(string(out), "\n") {
+		for _, f := range strings.Fields(line) {
+			if name, ok := strings.CutPrefix(f, "SwitchName="); ok && !strings.HasPrefix(line, "#") {
+				switchNames = append(switchNames, name)
+			}
+		}
+	}
+	require.ElementsMatch(t, []string{topology.NoTopology, "switch-" + topology.NoTopology}, switchNames, string(out))
+}
+
 func TestParseResponseRenamedIDsAreLabelValues(t *testing.T) {
 	devices := fabric(
 		deviceRec("leaf-b", RoleLeaf), deviceRec(topology.NoTopology, RoleLeaf),
