@@ -17,13 +17,13 @@ package netq
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"k8s.io/klog/v2"
 
+	"github.com/dsx-ai-factory/topograph/internal/httpauth"
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/internal/httpreq"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
@@ -40,9 +40,7 @@ type ComputeNode struct {
 }
 
 func (p *Provider) getNvlDomains(ctx context.Context) (topology.DomainMap, *httperr.Error) {
-	auth := p.creds.Username + ":" + p.creds.Password
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
-	headers := map[string]string{"Authorization": authHeader}
+	headers := map[string]string{"Authorization": httpauth.BasicHeader(p.creds.Username, p.creds.Password)}
 
 	f := httpreq.GetRequestFunc(ctx, http.MethodGet, headers, nil, nil, p.params.ApiURL, ComputeURL)
 	_, data, err := httpreq.DoRequest(f, true)

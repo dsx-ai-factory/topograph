@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -670,4 +671,59 @@ func TestDoRequestWithRedirects(t *testing.T) {
 		require.Nil(t, httpErr)
 		require.Equal(t, "direct", string(body))
 	})
+}
+
+func TestRequestOptionsPreserveClientAndRedactRetries(t *testing.T) {
+	var logs bytes.Buffer
+	flags := flag.NewFlagSet("redacted-http", flag.ContinueOnError)
+	klog.InitFlags(flags)
+	require.NoError(t, flags.Set("v", "4"))
+	klog.LogToStderr(false)
+	klog.SetOutput(&logs)
+	t.Cleanup(func() {
+		require.NoError(t, flags.Set("v", "0"))
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	})
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		data, err := io.ReadAll(r.Body)
+		if err != nil || string(data) != "fake-request-secret" {
+			t.Errorf("request body was not replayed correctly")
+		}
+		w.Header().Set("Retry-After", "0")
+		status := http.StatusServiceUnavailable
+		if calls == 2 {
+			status = http.StatusUnauthorized
+		}
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, "fake-response-secret")
+	}))
+	defer server.Close()
+	factory := func() (*http.Request, *httperr.Error) {
+		req, err := http.NewRequest(http.MethodPost, server.URL+"?secret=fake-url-secret", strings.NewReader("fake-request-secret"))
+		require.NoError(t, err)
+		return req, nil
+	}
+	body, err := DoRequestWithRetriesAndOptions(factory, false, RequestOptions{Client: server.Client(), MaxResponseBytes: 4, Redact: true})
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusUnauthorized, err.Code())
+	require.EqualError(t, err, "HTTP request failed")
+	require.Equal(t, "fake", string(body), "the body remains available within the configured limit")
+	require.Equal(t, 2, calls)
+	klog.Flush()
+	require.Contains(t, logs.String(), "Retrying")
+	for _, secret := range []string{server.URL, "fake-request-secret", "fake-response-secret", "fake-url-secret"} {
+		require.NotContains(t, logs.String(), secret)
+	}
+}
+
+func TestRequestOptionsRedactFactoryErrors(t *testing.T) {
+	_, _, err := DoRequestWithOptions(func() (*http.Request, *httperr.Error) {
+		return nil, httperr.NewError(http.StatusBadRequest, "fake-secret")
+	}, false, RequestOptions{Redact: true})
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusBadRequest, err.Code())
+	require.EqualError(t, err, "HTTP request construction failed")
 }

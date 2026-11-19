@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Shared internal HTTP authentication helpers, including reusable `AuthConfig` and separate `Credentials` maps with arbitrary string keys, typed `auth.tokenRequest` configuration and `AcquireToken` returning a token string for OAuth2 client credentials and custom JSON/form bearer-login token acquisition, with isolated token caches, expiry renewal, and redacted `httperr.Error` results that preserve upstream HTTP failure statuses. Firebird and NetQ delegate token HTTP execution and extraction to shared helpers; Bearer acquisition uses one shared HTTP retry and token-validation policy without provider adapters; NetQ retains its multi-step sequencing and reads premises metadata after acquisition. Custom bearer login ignores unselected response metadata, including Firebird's `tokenType` and `expiresIn`. Authentication returns shared HTTP errors directly with redacted messages. Token responses are limited to 1 MiB and redirects are rejected; invalid NetQ access tokens return HTTP 502.
+
 ## [v1.2.0] - 2026-11-23
 
 ### Added

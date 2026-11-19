@@ -90,8 +90,17 @@ request. The provider obtains a fresh access token and reuses it across all
 pages and HTTP retries for that request. Tokens are assumed valid for the
 entire request, regardless of `expiresIn`; they are not cached across requests.
 Concurrent requests each obtain their own token. ID and refresh tokens are not
-retained. Only bearer token types are supported; an omitted `tokenType` is
-treated as Bearer.
+retained. The shared bearer helper validates `accessToken` as a nonempty string
+suitable for a bearer header. Other response metadata, including `tokenType` and
+`expiresIn`, is ignored. Bearer header construction and token validation use the
+shared [HTTP authentication helpers](../architecture.md#shared-http-authentication);
+the provider keeps its typed `Credentials` struct and converts it to a fresh
+`httpauth.Credentials` map with `ToMap`, adding `grantType` for the login body.
+`httpauth.AcquireToken` constructs the JSON login request and extracts
+`/accessToken`. The helper applies the shared HTTP retry policy and validates the extracted
+token, without provider-specific response callbacks. Login responses
+are limited to 1 MiB and redirects are rejected. The token lifetime
+remains scoped to one topology generation request.
 
 HTTP 401 and HTTP 403 errors are returned to the caller without
 reauthentication. The simulation provider does not authenticate or require
@@ -104,6 +113,9 @@ IDs with non-empty paths produce discovered topology.
 
 Configuration errors return HTTP 400. Firebird authentication and topology
 errors preserve their original HTTP status, including after retries are exhausted.
+Authentication returns the shared HTTP error directly, using redacted execution
+messages rather than parsing the Firebird API error envelope. Cancellation returns
+HTTP 408 and timeouts return HTTP 504.
 Common statuses include:
 
 | HTTP status | Meaning |
