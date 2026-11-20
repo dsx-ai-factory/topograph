@@ -31,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `make image-build` and `make docker-buildx` pass `GIT_REF` to the Dockerfile as a build argument, so the binaries in the image report the version resolved on the host. Before, `GIT_REF=...` changed only the image tag, and builds from a git worktree stamped no usable version. See [#606](https://github.com/dsx-ai-factory/topograph/issues/606).
+
 - Slurm `topology.conf` output (tree and block, plain and per-partition YAML) and partition node discovery no longer drop node or switch names when one name has no numeric suffix and others are that name followed by a number. Nodes `gpu`, `gpu1` and `gpu2` were written as either `gpu` or `gpu[1-2]`; they are now written as `gpu,gpu[1-2]`.
 
 - Updated `github.com/klauspost/compress` from **v1.20.1** to **v1.20.2** to include the upstream fix for CVE-2026-116591.

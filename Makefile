@@ -46,6 +46,9 @@ GIT_REF ?=$(shell git describe --tags --exact-match --dirty --match 'v[0-9]*' 2>
   echo unknown)
 GIT_REF := $(GIT_REF)
 IMAGE_TAG ?=$(GIT_REF)
+# Exported so recipes can quote them as shell variables: a branch-derived value
+# is never expanded into the shell command text.
+export GIT_REF IMAGE_TAG
 
 # Recipe guard for image-push and docker-buildx: on a release tag checkout
 # IMAGE_TAG defaults to vX.Y.Z (or vX.Y.Z-dirty), and pushing that to
@@ -53,8 +56,8 @@ IMAGE_TAG ?=$(GIT_REF)
 # Fails unless IMAGE_TAG was set explicitly or IMAGE_REPO points elsewhere.
 define guard-release-image-tag
 @if [ "$(IMAGE_REPO)" = "$(RELEASE_IMAGE_REPO)" ] && [ "$(origin IMAGE_TAG)" = file ]; then \
-  case "$(IMAGE_TAG)" in v[0-9]*) \
-    echo "error: refusing to push the release-like tag $(IMAGE_REPO):$(IMAGE_TAG);" \
+  case "$$IMAGE_TAG" in v[0-9]*) \
+    echo "error: refusing to push the release-like tag $(IMAGE_REPO):$$IMAGE_TAG;" \
       "release images are published by the Docker workflow." \
       "Set IMAGE_TAG explicitly or use another IMAGE_REPO." >&2; \
     exit 1;; \
@@ -171,22 +174,22 @@ coverage: test
 
 .PHONY: image-build
 image-build:
-	$(DOCKER_BIN) build --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile .
+	$(DOCKER_BIN) build --build-arg TARGETOS=$(GOOS) --build-arg TARGETARCH=$(GOARCH) --build-arg GIT_REF="$$GIT_REF" -t "$(IMAGE_REPO):$$IMAGE_TAG" -f ./Dockerfile .
 
 # The guard runs before the build, so image-build is invoked as a sub-make
 # (with the resolved repository and tag) rather than listed as a prerequisite.
 .PHONY: image-push
 image-push:
 	$(guard-release-image-tag)
-	$(MAKE) image-build IMAGE_REPO=$(IMAGE_REPO) IMAGE_TAG=$(IMAGE_TAG)
-	$(DOCKER_BIN) push $(IMAGE_REPO):$(IMAGE_TAG)
+	$(MAKE) image-build IMAGE_REPO=$(IMAGE_REPO) IMAGE_TAG="$$IMAGE_TAG"
+	$(DOCKER_BIN) push "$(IMAGE_REPO):$$IMAGE_TAG"
 
 .PHONY: docker-buildx
 docker-buildx:
 	$(guard-release-image-tag)
 	- $(DOCKER_BIN) buildx create --name=topograph-builder
 	$(DOCKER_BIN) buildx use topograph-builder
-	$(DOCKER_BIN) buildx build --platform $(PLATFORMS) -t $(IMAGE_REPO):$(IMAGE_TAG) -f ./Dockerfile --push .
+	$(DOCKER_BIN) buildx build --platform $(PLATFORMS) --build-arg GIT_REF="$$GIT_REF" -t "$(IMAGE_REPO):$$IMAGE_TAG" -f ./Dockerfile --push .
 	- $(DOCKER_BIN) buildx rm topograph-builder
 
 .PHONY: ssl
