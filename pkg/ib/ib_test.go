@@ -280,8 +280,7 @@ func TestGenerateTopologyConfigValid(t *testing.T) {
 	data, err = slurm.GenerateOutputParams(context.TODO(), tree, &slurm.Params{})
 	require.Nil(t, err)
 
-	expected := `SwitchName=S-2c5eab0300b87b40 Switches=S-2c5eab0300c25f00
-SwitchName=S-2c5eab0300c25f00 Switches=S-2c5eab0300b879c0,S-2c5eab0300b87a80,S-2c5eab0300c26040
+	expected := `SwitchName=S-2c5eab0300c25f00 Switches=S-2c5eab0300b879c0,S-2c5eab0300b87a80,S-2c5eab0300c26040
 SwitchName=S-2c5eab0300b879c0 Nodes=a05-p1-dgx-01-c[03-04]
 SwitchName=S-2c5eab0300b87a80 Nodes=a06-p1-dgx-02-c[01-04,07,10-12,14,16,18]
 SwitchName=S-2c5eab0300c26040 Nodes=b05-p1-dgx-05-c[01-18]
@@ -480,4 +479,198 @@ func TestGenerateTopologyConfigExactMatchWins(t *testing.T) {
 func TestGenerateTopologyConfigSameHostTwoHCAs(t *testing.T) {
 	leaves := generateTwoLeaf(t, "gpu-01", "gpu-01", "gpu-01.example.com")
 	require.Equal(t, map[string][]string{"gpu-01.example.com": {"S-leaf-a", "S-leaf-b"}, "node-x": {"S-leaf-a"}, "node-y": {"S-leaf-b"}}, leaves)
+}
+
+// Three-tier fabric: core over spines A and B. Leaf A (node-a) and the
+// storage leaf (storage-1) are under spine A, leaf B (node-b) under spine B.
+const threeTierFabric = `
+Switch	2 "S-core"		# "MF0;core:MQM8700/U1" enhanced port 0 lid 1 lmc 0
+[1]	"S-spine-a"[1]		# "MF0;spine-a:MQM8700/U1" lid 2 4xHDR
+[2]	"S-spine-b"[1]		# "MF0;spine-b:MQM8700/U1" lid 3 4xHDR
+
+Switch	3 "S-spine-a"		# "MF0;spine-a:MQM8700/U1" enhanced port 0 lid 2 lmc 0
+[1]	"S-core"[1]		# "MF0;core:MQM8700/U1" lid 1 4xHDR
+[2]	"S-leaf-a"[1]		# "MF0;leaf-a:MQM8700/U1" lid 4 4xHDR
+[3]	"S-leaf-storage"[1]		# "MF0;leaf-storage:MQM8700/U1" lid 6 4xHDR
+
+Switch	2 "S-spine-b"		# "MF0;spine-b:MQM8700/U1" enhanced port 0 lid 3 lmc 0
+[1]	"S-core"[2]		# "MF0;core:MQM8700/U1" lid 1 4xHDR
+[2]	"S-leaf-b"[1]		# "MF0;leaf-b:MQM8700/U1" lid 5 4xHDR
+
+Switch	2 "S-leaf-a"		# "MF0;leaf-a:MQM8700/U1" enhanced port 0 lid 4 lmc 0
+[1]	"S-spine-a"[2]		# "MF0;spine-a:MQM8700/U1" lid 2 4xHDR
+[2]	"H-a"[1]		# "node-a mlx5_0" lid 7 4xHDR
+
+Switch	2 "S-leaf-b"		# "MF0;leaf-b:MQM8700/U1" enhanced port 0 lid 5 lmc 0
+[1]	"S-spine-b"[2]		# "MF0;spine-b:MQM8700/U1" lid 3 4xHDR
+[2]	"H-b"[1]		# "node-b mlx5_0" lid 8 4xHDR
+
+Switch	2 "S-leaf-storage"		# "MF0;leaf-storage:MQM8700/U1" enhanced port 0 lid 6 lmc 0
+[1]	"S-spine-a"[3]		# "MF0;spine-a:MQM8700/U1" lid 2 4xHDR
+[2]	"H-s"[1]		# "storage-1 mlx5_0" lid 9 4xHDR
+
+Ca	1 "H-a"		# "node-a mlx5_0"
+[1](a)	"S-leaf-a"[2]		# "MF0;leaf-a:MQM8700/U1" lid 4 4xHDR
+
+Ca	1 "H-b"		# "node-b mlx5_0"
+[1](b)	"S-leaf-b"[2]		# "MF0;leaf-b:MQM8700/U1" lid 5 4xHDR
+
+Ca	1 "H-s"		# "storage-1 mlx5_0"
+[1](c)	"S-leaf-storage"[2]		# "MF0;leaf-storage:MQM8700/U1" lid 6 4xHDR
+`
+
+// Two-tier fabric with a host that is not a cluster node (ufm-1) attached
+// directly to the spine.
+const twoTierSpineHostFabric = `
+Switch	3 "S-spine"		# "MF0;spine:MQM8700/U1" enhanced port 0 lid 1 lmc 0
+[1]	"S-leaf-a"[1]		# "MF0;leaf-a:MQM8700/U1" lid 2 4xHDR
+[2]	"S-leaf-b"[1]		# "MF0;leaf-b:MQM8700/U1" lid 3 4xHDR
+[3]	"H-u"[1]		# "ufm-1 mlx5_0" lid 9 4xHDR
+
+Switch	2 "S-leaf-a"		# "MF0;leaf-a:MQM8700/U1" enhanced port 0 lid 2 lmc 0
+[1]	"S-spine"[1]		# "MF0;spine:MQM8700/U1" lid 1 4xHDR
+[2]	"H-a"[1]		# "node-a mlx5_0" lid 7 4xHDR
+
+Switch	2 "S-leaf-b"		# "MF0;leaf-b:MQM8700/U1" enhanced port 0 lid 3 lmc 0
+[1]	"S-spine"[2]		# "MF0;spine:MQM8700/U1" lid 1 4xHDR
+[2]	"H-b"[1]		# "node-b mlx5_0" lid 8 4xHDR
+
+Ca	1 "H-u"		# "ufm-1 mlx5_0"
+[1](e)	"S-spine"[3]		# "MF0;spine:MQM8700/U1" lid 1 4xHDR
+
+Ca	1 "H-a"		# "node-a mlx5_0"
+[1](a)	"S-leaf-a"[2]		# "MF0;leaf-a:MQM8700/U1" lid 2 4xHDR
+
+Ca	1 "H-b"		# "node-b mlx5_0"
+[1](b)	"S-leaf-b"[2]		# "MF0;leaf-b:MQM8700/U1" lid 3 4xHDR
+`
+
+// Three-tier fabric: core over spines A and B, with a host that is not a
+// cluster node (ufm-1) attached directly to spine A. Leaf A (node-a) is
+// under spine A, leaf B (node-b) under spine B.
+const threeTierSpineHostFabric = `
+Switch	2 "S-core"		# "MF0;core:MQM8700/U1" enhanced port 0 lid 1 lmc 0
+[1]	"S-spine-a"[1]		# "MF0;spine-a:MQM8700/U1" lid 2 4xHDR
+[2]	"S-spine-b"[1]		# "MF0;spine-b:MQM8700/U1" lid 3 4xHDR
+
+Switch	3 "S-spine-a"		# "MF0;spine-a:MQM8700/U1" enhanced port 0 lid 2 lmc 0
+[1]	"S-core"[1]		# "MF0;core:MQM8700/U1" lid 1 4xHDR
+[2]	"S-leaf-a"[1]		# "MF0;leaf-a:MQM8700/U1" lid 4 4xHDR
+[3]	"H-u"[1]		# "ufm-1 mlx5_0" lid 9 4xHDR
+
+Switch	2 "S-spine-b"		# "MF0;spine-b:MQM8700/U1" enhanced port 0 lid 3 lmc 0
+[1]	"S-core"[2]		# "MF0;core:MQM8700/U1" lid 1 4xHDR
+[2]	"S-leaf-b"[1]		# "MF0;leaf-b:MQM8700/U1" lid 5 4xHDR
+
+Switch	2 "S-leaf-a"		# "MF0;leaf-a:MQM8700/U1" enhanced port 0 lid 4 lmc 0
+[1]	"S-spine-a"[2]		# "MF0;spine-a:MQM8700/U1" lid 2 4xHDR
+[2]	"H-a"[1]		# "node-a mlx5_0" lid 7 4xHDR
+
+Switch	2 "S-leaf-b"		# "MF0;leaf-b:MQM8700/U1" enhanced port 0 lid 5 lmc 0
+[1]	"S-spine-b"[2]		# "MF0;spine-b:MQM8700/U1" lid 3 4xHDR
+[2]	"H-b"[1]		# "node-b mlx5_0" lid 8 4xHDR
+
+Ca	1 "H-u"		# "ufm-1 mlx5_0"
+[1](e)	"S-spine-a"[3]		# "MF0;spine-a:MQM8700/U1" lid 2 4xHDR
+
+Ca	1 "H-a"		# "node-a mlx5_0"
+[1](a)	"S-leaf-a"[2]		# "MF0;leaf-a:MQM8700/U1" lid 4 4xHDR
+
+Ca	1 "H-b"		# "node-b mlx5_0"
+[1](b)	"S-leaf-b"[2]		# "MF0;leaf-b:MQM8700/U1" lid 5 4xHDR
+`
+
+// A switch whose hosts are none of them cluster nodes is still a leaf
+// switch when it connects only to switches without hosts: it must not be
+// placed above the spine it connects to, and it is left out of the tree.
+// A spine with such a host attached directly stays a spine.
+func TestGenerateTopologyConfigSwitchWithoutClusterNodes(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     string
+		nodes    []string
+		expected string
+	}{
+		{
+			name:  "storage leaf, all hosts are cluster nodes",
+			data:  threeTierFabric,
+			nodes: []string{"node-a", "node-b", "storage-1"},
+			expected: `SwitchName=S-core Switches=S-spine-a,S-spine-b
+SwitchName=S-spine-a Switches=S-leaf-a,S-leaf-storage
+SwitchName=S-spine-b Switches=S-leaf-b
+SwitchName=S-leaf-a Nodes=node-a
+SwitchName=S-leaf-storage Nodes=storage-1
+SwitchName=S-leaf-b Nodes=node-b
+`,
+		},
+		{
+			name:  "storage leaf, storage host is not a cluster node",
+			data:  threeTierFabric,
+			nodes: []string{"node-a", "node-b"},
+			expected: `SwitchName=S-core Switches=S-spine-a,S-spine-b
+SwitchName=S-spine-a Switches=S-leaf-a
+SwitchName=S-spine-b Switches=S-leaf-b
+SwitchName=S-leaf-a Nodes=node-a
+SwitchName=S-leaf-b Nodes=node-b
+`,
+		},
+		{
+			name:  "storage leaf, cluster nodes under one spine only",
+			data:  threeTierFabric,
+			nodes: []string{"node-a"},
+			expected: `SwitchName=S-core Switches=S-spine-a
+SwitchName=S-spine-a Switches=S-leaf-a
+SwitchName=S-leaf-a Nodes=node-a
+`,
+		},
+		{
+			name:  "two tiers, host on the spine",
+			data:  twoTierSpineHostFabric,
+			nodes: []string{"node-a", "node-b"},
+			expected: `SwitchName=S-spine Switches=S-leaf-a,S-leaf-b
+SwitchName=S-leaf-a Nodes=node-a
+SwitchName=S-leaf-b Nodes=node-b
+`,
+		},
+		{
+			name:  "three tiers, host on a spine",
+			data:  threeTierSpineHostFabric,
+			nodes: []string{"node-a", "node-b"},
+			expected: `SwitchName=S-core Switches=S-spine-a,S-spine-b
+SwitchName=S-spine-a Switches=S-leaf-a
+SwitchName=S-spine-b Switches=S-leaf-b
+SwitchName=S-leaf-a Nodes=node-a
+SwitchName=S-leaf-b Nodes=node-b
+`,
+		},
+		{
+			name:  "three tiers, host on a spine, cluster nodes under one spine only",
+			data:  threeTierSpineHostFabric,
+			nodes: []string{"node-a"},
+			expected: `SwitchName=S-core Switches=S-spine-a
+SwitchName=S-spine-a Switches=S-leaf-a
+SwitchName=S-leaf-a Nodes=node-a
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			instances := map[string]string{}
+			for _, n := range tc.nodes {
+				instances[n] = n
+			}
+			forest, _, err := GenerateTopologyConfig([]byte(tc.data), []topology.ComputeInstances{{Region: "local", Instances: instances}})
+			require.NoError(t, err)
+
+			root := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
+			for _, v := range forest {
+				root.Vertices[v.ID] = v
+			}
+
+			data, httpErr := slurm.GenerateOutputParams(context.TODO(), &topology.Graph{Tiers: root}, &slurm.Params{})
+			require.Nil(t, httpErr)
+			require.Equal(t, tc.expected, string(data))
+		})
+	}
 }

@@ -477,7 +477,7 @@ func TestGenerateOutputInfinibandSim(t *testing.T) {
 	require.Equal(t, []topology.Instance{{
 		ID: "b07-p1-dgx-07-c01",
 		NetworkLayers: []string{
-			"S-2c5eab0300c26140", "S-2c5eab0300c25f00", "S-2c5eab0300b879c0",
+			"S-2c5eab0300c26140", "S-2c5eab0300c25f00",
 		},
 	}}, doc.Instances)
 }

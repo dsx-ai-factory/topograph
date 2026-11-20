@@ -60,32 +60,27 @@ func TestGetIbTree(t *testing.T) {
 			name: "Case 2: valid input",
 			root: &topology.Vertex{
 				Vertices: map[string]*topology.Vertex{
-					"S-2c5eab0300b879c0": {
-						ID: "S-2c5eab0300b879c0",
+					"S-2c5eab0300c25f00": {
+						ID: "S-2c5eab0300c25f00",
 						Vertices: map[string]*topology.Vertex{
-							"S-2c5eab0300c25f00": {
-								ID: "S-2c5eab0300c25f00",
+							"S-2c5eab0300c26140": {
+								ID: "S-2c5eab0300c26140",
 								Vertices: map[string]*topology.Vertex{
-									"S-2c5eab0300c26140": {
-										ID: "S-2c5eab0300c26140",
-										Vertices: map[string]*topology.Vertex{
-											"b07-p1-dgx-07-c01": {
-												Name: "b07-p1-dgx-07-c01",
-												ID:   "b07-p1-dgx-07-c01",
-											},
-											"b07-p1-dgx-07-c02": {
-												Name: "b07-p1-dgx-07-c02",
-												ID:   "b07-p1-dgx-07-c02",
-											},
-											"b07-p1-dgx-07-c03": {
-												Name: "b07-p1-dgx-07-c03",
-												ID:   "b07-p1-dgx-07-c03",
-											},
-											"b07-p1-dgx-07-c04": {
-												Name: "b07-p1-dgx-07-c04",
-												ID:   "b07-p1-dgx-07-c04",
-											},
-										},
+									"b07-p1-dgx-07-c01": {
+										Name: "b07-p1-dgx-07-c01",
+										ID:   "b07-p1-dgx-07-c01",
+									},
+									"b07-p1-dgx-07-c02": {
+										Name: "b07-p1-dgx-07-c02",
+										ID:   "b07-p1-dgx-07-c02",
+									},
+									"b07-p1-dgx-07-c03": {
+										Name: "b07-p1-dgx-07-c03",
+										ID:   "b07-p1-dgx-07-c03",
+									},
+									"b07-p1-dgx-07-c04": {
+										Name: "b07-p1-dgx-07-c04",
+										ID:   "b07-p1-dgx-07-c04",
 									},
 								},
 							},
@@ -133,7 +128,7 @@ func TestGetIbTreeFQDNNodes(t *testing.T) {
 	// ibnetdiscover output reports short host names; once they resolve to
 	// the FQDN node names, a single run covers every node on the fabric.
 	require.Equal(t, 1, ibnetdiscover.runs)
-	leaf := root.Vertices["S-2c5eab0300b879c0"].Vertices["S-2c5eab0300c25f00"].Vertices["S-2c5eab0300c26140"]
+	leaf := root.Vertices["S-2c5eab0300c25f00"].Vertices["S-2c5eab0300c26140"]
 	require.NotNil(t, leaf)
 	require.Len(t, leaf.Vertices, 4)
 	require.Contains(t, leaf.Vertices, "b07-p1-dgx-07-c01.example.com")
