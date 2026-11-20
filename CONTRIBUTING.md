@@ -40,6 +40,10 @@ project's load-bearing boundaries by accident:
 Trivial fixes (typos, broken links, small doc corrections) don't need an
 issue first — a pull request is fine.
 
+Name the issue in the pull request's **Linked issue** section: `Fixes: #123`
+when the pull request closes it, or `Related: #123` when it is partial work. A
+trivial fix needs neither; tick the template's "Trivial fix" box instead.
+
 ## Issue priority
 
 Topograph doesn't run a formal `P0`/`P1`/`P2` label system or an automated

@@ -358,9 +358,13 @@ collateral doc drift.
 ### Pre-push checklist
 
 When filing a PR (`gh pr create` or the GitHub UI), `.github/PULL_REQUEST_TEMPLATE.md`
-auto-populates the body with a Description section and a Checklist. Fill in the
-Description and tick the checklist items as completed; do not delete or replace the
-template wholesale.
+auto-populates the body with eight sections: Summary, Linked issue, Type of change,
+Area, Testing, Documentation impact, Risk, and Checklist. The guidance in each section
+is an HTML comment, which does not render: left as they are, Summary, Testing,
+Documentation impact and Risk read as empty, and the other sections show only
+`Fixes:`, `Related:` and unticked boxes. Write each section below its comment, put the
+issue number after `Fixes:` or `Related:` under Linked issue (or tick its trivial-fix
+box), and tick the boxes that apply; do not delete or replace the template wholesale.
 
 - [ ] `make qualify` passes (runs fmt, vet, lint, test)
 - [ ] `make chart-test` passes when `charts/topograph/` changed
