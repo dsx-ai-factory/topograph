@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Shared internal HTTP authentication helpers, including reusable `AuthConfig` and separate `Credentials` maps with arbitrary string keys, typed `auth.oauth2` and `auth.bearer` configuration blocks and `AcquireToken` returning a token string for OAuth2 client credentials and custom JSON/form bearer-login token acquisition, with isolated token caches, expiry renewal, and redacted `httperr.Error` results that preserve upstream HTTP failure statuses. Firebird and NetQ delegate token HTTP execution and extraction to shared helpers; Bearer acquisition uses one shared HTTP retry and token-validation policy without provider adapters; NetQ retains its multi-step sequencing and reads premises metadata after acquisition. Custom bearer login ignores unselected response metadata, including Firebird's `tokenType` and `expiresIn`. Authentication returns shared HTTP errors directly with redacted messages. Token responses are limited to 1 MiB and redirects are rejected; invalid NetQ access tokens return HTTP 502.
+
 - `k8s-node-labels` provider discovers fabric topology from configurable Node labels, with stable label-compatible switch IDs, optional readiness filtering, and provider-independent observer label triggers for Slinky and other engines.
 
 - The Node Observer serves `/healthz` on `nodeObserver.port` (default `8080`), and the chart gives its Deployment liveness and readiness probes on it, as the Node Data Broker already has. Set through `healthzPort` in the Node Observer config; without it, no endpoint is served.
@@ -18,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `conflict-check.yaml` adds the `needs-rebase` label to open pull requests that no longer merge cleanly into `main`, comments once to ask the author to resolve the conflicts, and removes the label once the pull request merges cleanly again. It runs after every push to `main`.
 
 ### Changed
+
+- Firebird and NetQ login now use the shared bearer helper. Login errors carry the upstream HTTP status with a redacted message prefixed with `authentication failed:` instead of the upstream error body or Firebird error envelope. A canceled Firebird login returns HTTP 408 instead of 502, and a timeout returns 504. Firebird no longer checks the login response's `tokenType` or `expiresIn`. NetQ login and OpID requests are retried on HTTP 408, 429, and 5xx, limited to 1 MiB, and an empty login response returns HTTP 502 instead of 401. Login redirects are no longer followed and return HTTP 502.
 
 - Go toolchain upgraded from **1.27.3** to **1.27.4** across the module, container build, and CI.
 

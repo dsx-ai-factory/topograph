@@ -188,7 +188,7 @@ func TestRequestFailuresAndEmptyInput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err = p.GenerateTopologyConfig(ctx, nil, requested)
-	require.Equal(t, http.StatusBadGateway, err.Code())
+	require.Equal(t, http.StatusRequestTimeout, err.Code())
 	require.Equal(t, 1, calls)
 }
 

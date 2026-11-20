@@ -26,6 +26,7 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 
+	"github.com/dsx-ai-factory/topograph/internal/httpauth"
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/internal/httpreq"
 	"github.com/dsx-ai-factory/topograph/pkg/providers"
@@ -44,6 +45,14 @@ type ProviderParams struct {
 type Credentials struct {
 	ClientID     string `mapstructure:"clientId" json:"clientId"`
 	ClientSecret string `mapstructure:"clientSecret" json:"clientSecret"`
+}
+
+// ToMap returns a fresh credential map for shared authentication helpers.
+func (c Credentials) ToMap() httpauth.Credentials {
+	return httpauth.Credentials{
+		"clientId":     c.ClientID,
+		"clientSecret": c.ClientSecret,
+	}
 }
 
 // Node is the Firebird /topology/nodes response record. NetworkPath contains
@@ -75,11 +84,7 @@ type APIError struct {
 // apiError preserves upstream HTTP statuses without exposing unstructured
 // response bodies. Topograph's error contract carries diagnostics as a string.
 func apiError(status int, body []byte) *httperr.Error {
-	return firebirdAPIError(status, body, "topology")
-}
-
-func firebirdAPIError(status int, body []byte, operation string) *httperr.Error {
-	message := "Firebird " + operation + " request failed"
+	message := "Firebird topology request failed"
 	var response ErrorResponse
 	if err := json.Unmarshal(body, &response); err == nil && response.Error != nil {
 		if response.Error.Code != "" {
@@ -141,7 +146,7 @@ func (p *Provider) topologyPage(ctx context.Context, pageSize int, pageToken, to
 	if pageToken != "" {
 		query["pageToken"] = pageToken
 	}
-	headers := map[string]string{"Accept": "application/json", "Authorization": "Bearer " + token}
+	headers := map[string]string{"Accept": "application/json", "Authorization": httpauth.BearerHeader(token)}
 	f := httpreq.GetRequestFunc(ctx, http.MethodGet, headers, query, nil, p.params.APIURL, "/topology/nodes")
 	body, httpErr := httpreq.DoRequestWithRetries(f, false)
 	if httpErr != nil {
