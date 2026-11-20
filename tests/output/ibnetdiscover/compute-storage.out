@@ -1,0 +1,70 @@
+#
+# Topology file: synthetic compute and storage switches in one IB subnet
+# Each host has one compute HCA and one storage HCA.
+#
+
+vendid=0x2c9
+devid=0xd2f2
+sysimgguid=0x0000000000000011
+switchguid=0x0000000000000011
+Switch 8 "S-0000000000000011" # "MF0;IB-ComputeLeaf-01:MQM8700/U1" enhanced port 0 lid 11 lmc 0
+[1] "S-0000000000000021"[1] # "MF0;IB-ComputeSpine-01:MQM8700/U1" lid 21 4xNDR
+[2] "H-0000000000000101"[1] # "node-a mlx5_0" lid 101 4xNDR
+[3] "H-0000000000000102"[1] # "node-b mlx5_0" lid 102 4xNDR
+[4] "H-0000000000000103"[1] # "node-c mlx5_0" lid 103 4xNDR
+
+vendid=0x2c9
+devid=0xd2f2
+sysimgguid=0x0000000000000012
+switchguid=0x0000000000000012
+Switch 8 "S-0000000000000012" # "MF0;IB-ComputeLeaf-02:MQM8700/U1" enhanced port 0 lid 12 lmc 0
+[1] "S-0000000000000021"[2] # "MF0;IB-ComputeSpine-01:MQM8700/U1" lid 21 4xNDR
+[2] "H-0000000000000104"[1] # "node-d mlx5_0" lid 104 4xNDR
+[3] "H-0000000000000105"[1] # "node-e mlx5_0" lid 105 4xNDR
+[4] "H-0000000000000106"[1] # "node-f mlx5_0" lid 106 4xNDR
+
+vendid=0x2c9
+devid=0xd2f2
+sysimgguid=0x0000000000000031
+switchguid=0x0000000000000031
+Switch 8 "S-0000000000000031" # "MF0;IB-StorageLeaf-01:MQM8700/U1" enhanced port 0 lid 31 lmc 0
+[1] "S-0000000000000021"[3] # "MF0;IB-ComputeSpine-01:MQM8700/U1" lid 21 4xNDR
+[2] "H-0000000000000201"[1] # "node-a mlx5_1" lid 201 4xNDR
+[3] "H-0000000000000202"[1] # "node-b mlx5_1" lid 202 4xNDR
+[4] "H-0000000000000203"[1] # "node-c mlx5_1" lid 203 4xNDR
+[5] "H-0000000000000204"[1] # "node-d mlx5_1" lid 204 4xNDR
+[6] "H-0000000000000205"[1] # "node-e mlx5_1" lid 205 4xNDR
+[7] "H-0000000000000206"[1] # "node-f mlx5_1" lid 206 4xNDR
+
+vendid=0x2c9
+devid=0xd2f2
+sysimgguid=0x0000000000000021
+switchguid=0x0000000000000021
+Switch 8 "S-0000000000000021" # "MF0;IB-ComputeSpine-01:MQM8700/U1" enhanced port 0 lid 21 lmc 0
+[1] "S-0000000000000011"[1] # "MF0;IB-ComputeLeaf-01:MQM8700/U1" lid 11 4xNDR
+[2] "S-0000000000000012"[1] # "MF0;IB-ComputeLeaf-02:MQM8700/U1" lid 12 4xNDR
+[3] "S-0000000000000031"[1] # "MF0;IB-StorageLeaf-01:MQM8700/U1" lid 31 4xNDR
+
+Ca 1 "H-0000000000000101" # "node-a mlx5_0"
+
+Ca 1 "H-0000000000000102" # "node-b mlx5_0"
+
+Ca 1 "H-0000000000000103" # "node-c mlx5_0"
+
+Ca 1 "H-0000000000000104" # "node-d mlx5_0"
+
+Ca 1 "H-0000000000000105" # "node-e mlx5_0"
+
+Ca 1 "H-0000000000000106" # "node-f mlx5_0"
+
+Ca 1 "H-0000000000000201" # "node-a mlx5_1"
+
+Ca 1 "H-0000000000000202" # "node-b mlx5_1"
+
+Ca 1 "H-0000000000000203" # "node-c mlx5_1"
+
+Ca 1 "H-0000000000000204" # "node-d mlx5_1"
+
+Ca 1 "H-0000000000000205" # "node-e mlx5_1"
+
+Ca 1 "H-0000000000000206" # "node-f mlx5_1"
