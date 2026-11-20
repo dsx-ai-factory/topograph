@@ -13,39 +13,58 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Labels open pull requests that no longer merge cleanly into main, so authors
-# and reviewers see a conflict without opening each PR:
-#   mergeable false  add needs-rebase and comment once, mentioning the author
+# Labels open, non-draft pull requests that target main and no longer merge
+# cleanly into it, so authors and reviewers see a conflict without opening
+# each PR:
+#   mergeable false  add needs-rebase and comment once per conflict,
+#                    mentioning the author
 #   mergeable true   remove needs-rebase if the PR has it
-#   mergeable null   log it and change nothing
-# Draft pull requests are skipped. Open PRs are read page by page, so the check
-# covers more than the first 100.
+#   mergeable null   read it again after 5 s and after 10 s more; still null
+#                    after three reads, log it and change nothing
+# Only PRs whose base is main are listed: one that targets another branch
+# would be checked against that branch but told to update from main. Open PRs
+# are read page by page, so the check covers more than the first 100. A PR can
+# change during the waits below, so each read skips one that has since been
+# closed, made a draft or retargeted away from main.
 #
 # Why push to main: a PR starts conflicting when its base moves, and GitHub
 # recomputes `mergeable` against the new main after each push to it. The check
 # does not run when an author pushes a fix to the PR branch, so needs-rebase
 # comes off on the next push to main, or earlier through workflow_dispatch.
 #
-# Why null is skipped: pulls.get returns `mergeable: null` while GitHub is
+# Why null is read again: pulls.get returns `mergeable: null` while GitHub is
 # still computing it in the background, which is common right after main
-# moves. Reading null as a conflict would label PRs that merge cleanly, and
-# reading it as clean would strip the label from PRs that still conflict. The
-# next run sees the computed value.
+# moves, and no other run would read that PR until main moves again. Reading
+# null as a conflict would label PRs that merge cleanly, and reading it as
+# clean would strip the label from PRs that still conflict. Every PR is read
+# once before the first wait, and the waits are shared by all PRs still
+# unknown, so a run waits at most 15 s however many PRs are pending.
+#
+# Why the comment carries a marker: the label alone does not prove the author
+# was told. If createComment fails after addLabels succeeded, the PR keeps the
+# label with no comment. So for a conflicting PR that already has the label,
+# the run lists its issue events and comments, and posts the comment unless
+# one by github-actions[bot] carrying the hidden marker was created at or after
+# needs-rebase last went on; a comment from an earlier conflict does not count.
+# Anyone can type the marker, so only the bot's comments count. The version
+# before the marker posted the same first sentence with no marker, so a bot
+# comment with that sentence counts too, and a PR labeled by that version is
+# not told twice. The label still goes on first, so a missing label fails the
+# job before any comment is posted.
 #
 # Why no cancel: runs share one concurrency group and a running one is never
 # cancelled, because a cancelled run would skip part of the check for the
-# merge that started it. Stopped between adding the label and posting the
-# comment, it leaves a labeled PR whose author is never asked to rebase: the
-# next run sees the label and does not comment again. GitHub still replaces a
-# pending run with a newer one, which loses nothing, since every run reads all
-# open PRs as they stand when it starts.
+# merge that started it. GitHub still replaces a pending run with a newer one,
+# which loses nothing, since every run reads all open PRs as they stand when
+# it starts.
 #
-# Permissions: listing and reading PRs needs pull-requests read. Labels and
-# comments go through the issues endpoints, which accept pull-requests write
-# on a pull request (GitHub's "Permissions required for GitHub Apps", Pull
-# requests section), so the job does not hold issues: write. That token cannot
-# create a label, so needs-rebase must exist (it is declared in
-# .github/labels.yml); if it does not, addLabels fails and so does the job.
+# Permissions: listing and reading PRs needs pull-requests read. Labels,
+# comments and issue events go through the issues endpoints, which accept
+# pull-requests read or write on a pull request (GitHub's "Permissions
+# required for GitHub Apps", Pull requests section), so the job does not hold
+# issues: write. That token cannot create a label, so needs-rebase must exist
+# (it is declared in .github/labels.yml); if it does not, addLabels fails and
+# so does the job.
 
 name: Merge Conflict Check
 
@@ -71,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      pull-requests: write # read open PRs, add or remove needs-rebase, comment on them
+      pull-requests: write # read open PRs and their events and comments, add or remove needs-rebase, comment on them
     steps:
       - name: Check open pull requests for conflicts
         id: check
@@ -79,50 +98,114 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const pulls = await github.paginate(github.rest.pulls.list, {
-              owner,
-              repo,
-              state: 'open',
-              per_page: 100,
-            });
+            // Hidden when GitHub renders the comment; a later run finds the
+            // comment by it.
+            const MARKER = '<!-- conflict-check: needs-rebase -->';
+            // The notice's first sentence. The version before the marker
+            // posted it without one, so it identifies those comments.
+            const NOTICE = 'this pull request no longer merges cleanly into `main`.';
+            // The wait before each read of a PR whose mergeable is still null.
+            const WAITS_MS = [0, 5000, 10000];
 
-            for (const listed of pulls) {
-              const number = listed.number;
-              if (listed.draft) {
-                core.info(`#${number}: draft, skipped`);
-                continue;
-              }
+            // Whether this check's own comment, with the marker or the notice,
+            // was created at or after the label last went on, so it was posted
+            // for the current conflict. Anyone can type the marker, so a
+            // comment by another account does not count.
+            async function notified(number) {
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                owner,
+                repo,
+                issue_number: number,
+                per_page: 100,
+              });
+              const labeledAt = events
+                .filter((event) => event.event === 'labeled' && event.label?.name === 'needs-rebase')
+                .reduce((latest, event) => Math.max(latest, Date.parse(event.created_at)), -Infinity);
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: number,
+                per_page: 100,
+              });
+              return comments.some((comment) => {
+                const body = comment.body ?? '';
+                return (
+                  comment.user?.login === 'github-actions[bot]' &&
+                  (body.includes(MARKER) || body.includes(NOTICE)) &&
+                  Date.parse(comment.created_at) >= labeledAt
+                );
+              });
+            }
 
-              // pulls.list does not return mergeable; pulls.get does, and
-              // starts GitHub's background computation when it is unknown.
-              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            async function reconcile(pr) {
+              const number = pr.number;
               const labeled = pr.labels.some((label) => label.name === 'needs-rebase');
-
-              if (pr.mergeable === null) {
-                core.info(`#${number}: GitHub has not computed mergeability yet, skipped`);
-              } else if (pr.mergeable === false) {
-                if (labeled) {
-                  core.info(`#${number}: conflicts with main, already labeled`);
-                  continue;
+              if (pr.mergeable === false) {
+                if (!labeled) {
+                  // Not caught: a missing label must fail the job, and the
+                  // comment must not go out without the label.
+                  await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['needs-rebase'] });
+                } else if (await notified(number)) {
+                  core.info(`#${number}: conflicts with main, already labeled and told`);
+                  return;
                 }
-                // Not caught: a missing label must fail the job, and the
-                // comment must not go out without the label.
-                await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: ['needs-rebase'] });
                 await github.rest.issues.createComment({
                   owner,
                   repo,
                   issue_number: number,
                   body: [
-                    `@${pr.user.login} this pull request no longer merges cleanly into \`main\`.`,
+                    `@${pr.user.login} ${NOTICE}`,
                     'Please rebase it onto the latest `main`, or merge `main` into it, resolve the conflicts, and push.',
                     'The `needs-rebase` label comes off the next time this check finds that it merges cleanly;',
                     'the check runs after every push to `main`.',
-                  ].join(' '),
+                  ].join(' ') + `\n\n${MARKER}`,
                 });
-                core.info(`#${number}: conflicts with main, labeled needs-rebase`);
+                core.info(`#${number}: conflicts with main, labeled needs-rebase and commented`);
               } else if (labeled) {
                 // mergeable is true here.
                 await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: 'needs-rebase' });
                 core.info(`#${number}: merges cleanly, removed needs-rebase`);
               }
+            }
+
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              base: 'main',
+              per_page: 100,
+            });
+
+            let pending = [];
+            for (const listed of pulls) {
+              if (listed.draft) {
+                core.info(`#${listed.number}: draft, skipped`);
+                continue;
+              }
+              pending.push(listed.number);
+            }
+
+            for (const wait of WAITS_MS) {
+              if (pending.length === 0) break;
+              if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+              const unknown = [];
+              for (const number of pending) {
+                // pulls.list does not return mergeable; pulls.get does, and
+                // starts GitHub's background computation when it is unknown.
+                const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+                // The PR can change during the waits. One that no longer
+                // targets main would be told to update from main, and later
+                // runs, which list only main PRs, would never unlabel it.
+                if (pr.state !== 'open' || pr.draft || pr.base.ref !== 'main') {
+                  core.info(`#${number}: closed, a draft or retargeted since it was listed, skipped`);
+                  continue;
+                }
+                if (pr.mergeable === null) unknown.push(number);
+                else await reconcile(pr);
+              }
+              pending = unknown;
+            }
+
+            for (const number of pending) {
+              core.info(`#${number}: mergeability still unknown after ${WAITS_MS.length} reads, left for the next run`);
             }
