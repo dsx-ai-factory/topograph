@@ -127,8 +127,29 @@ func buildTree(switches map[string]*Switch, hca map[string]string, nodesInCluste
 	// current level in the tree
 	level := make(map[string]*topology.Vertex)
 
+	// switches with HCAs attached
+	hasHCA := make(map[string]bool)
+	for swID, sw := range switches {
+		for conID := range sw.Conn {
+			if _, ok := hca[conID]; ok {
+				hasHCA[swID] = true
+				break
+			}
+		}
+	}
+
 	// first pass: find all leaves
 	for swID, sw := range switches {
+		// A switch with HCAs but no cluster nodes (e.g. a storage leaf) is a
+		// leaf too, unless one of its neighbor switches also has HCAs, as a
+		// spine with a management host attached does.
+		isLeaf := hasHCA[swID]
+		for conID := range sw.Conn {
+			if hasHCA[conID] {
+				isLeaf = false
+				break
+			}
+		}
 		for conID := range sw.Conn {
 			if nodeName, ok := hca[conID]; ok {
 				// If a switch has HCA, it is a leaf.
@@ -139,9 +160,11 @@ func buildTree(switches map[string]*Switch, hca map[string]string, nodesInCluste
 				delete(sw.Conn, conID)
 			}
 		}
-		if len(sw.Nodes) != 0 {
+		if len(sw.Nodes) != 0 || isLeaf {
 			// this is the leaf switch.
-			// add the node to the first (lower) level in the tree
+			// add the node to the first (lower) level in the tree.
+			// A leaf without cluster nodes is added too, so that it is never
+			// taken for an upper-level switch; it is left out of the resulting tree.
 			v := &topology.Vertex{
 				ID:       swID,
 				Vertices: make(map[string]*topology.Vertex),
@@ -164,14 +187,19 @@ func buildTree(switches map[string]*Switch, hca map[string]string, nodesInCluste
 			if _, ok := vertices[swID]; ok {
 				continue
 			}
+			var found bool
 			children := make(map[string]*topology.Vertex)
 			for conID := range sw.Conn {
 				// find children if any
 				if child, ok := level[conID]; ok {
-					children[conID] = child
+					found = true
+					// skip the switches without cluster nodes below them
+					if len(child.Vertices) != 0 {
+						children[conID] = child
+					}
 				}
 			}
-			if len(children) != 0 {
+			if found {
 				v := &topology.Vertex{ID: swID, Vertices: children}
 				vertices[swID] = v
 				upper[swID] = v
@@ -186,6 +214,12 @@ func buildTree(switches map[string]*Switch, hca map[string]string, nodesInCluste
 		cnt++
 	}
 
+	// drop the top-level switches without cluster nodes below them
+	for swID, v := range level {
+		if len(v.Vertices) == 0 {
+			delete(level, swID)
+		}
+	}
 	return level
 }
 
