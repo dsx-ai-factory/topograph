@@ -6,41 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v1.2.0] - 2026-11-23
+
 ### Added
 
-- `k8s-node-labels` provider discovers fabric topology from configurable Node labels, with stable label-compatible switch IDs, optional readiness filtering, and provider-independent observer label triggers for Slinky and other engines.
-
-- The Node Observer serves `/healthz` on `nodeObserver.port` (default `8080`), and the chart gives its Deployment liveness and readiness probes on it, as the Node Data Broker already has. Set through `healthzPort` in the Node Observer config; without it, no endpoint is served.
-- License headers: `make license-headers` adds NVIDIA's standard SPDX and Apache 2.0 header to files that have none, and `make license-header-check`, run by `license-scan.yml`, fails on any file without a copyright or license header, or with an NVIDIA header in one of the two older forms. Every NVIDIA header now uses the standard form, keeping each file's original year; files that had no header now carry one.
-- Nautobot provider (`nautobot`) discovers switch fabric topology through the GraphQL API, with required `endpoint`, compute `deviceRole`, and `switchRoles` parameters, optional `location` and `platform` filters, status filters, and required `creds.token` authentication. Switch queries paginate using the configured `pageSize` (default `100`). Discovery starts at selected switches, collects compute endpoints from cable peers, follows connected switches outside the initial location and platform filters to infer fabric tiers, and groups redundant switches into a scheduler tree. Attached compute endpoints can also be in other locations or use other platforms. Duplicate device IDs and switch names fail with HTTP 502 identifying the conflicts; switch-name errors include both device UUIDs. Devices missing an ID or name are skipped with a warning. Oversized pages log a warning and advance the offset by the actual number of returned devices, including skipped records. Transport failures return HTTP 502 with the underlying error.
-- Minerva provider (`minerva`) discovers switch-tree topology and NVLink domains from the NVIDIA Minerva `POST /v2/export-topology` API, following its cursor pagination (the request page size becomes `deviceLimit`, at most 500 devices per page). Like the NetQ provider, it reduces Clos fabrics into a canonical tree via `topology.Merger`; unlike NetQ, Minerva does not report tier numbers, so each device's tier is derived from its `role` — `server`, `leaf`, `spine`, and `super_spine` map to fixed tiers (the export API does not enumerate roles, so these are the standard roles a Minerva fabric reports), and devices with any other role (including deployment-specific "Custom" roles) take no part in the switch tree. Requested servers with no resolvable switch parent are grouped under a shared `no-topology` switch instead of being dropped. Authenticates via the `X-Api-Key` header using an `apiKey` credential. Requires an `https` `apiUrl` and verifies the server certificate (a private CA must be in the host's trust store) and does not follow redirects, so the API key is only sent to the configured `apiUrl`. The optional `insecureSkipVerify` credential (default `false`) skips certificate verification for quick validation in a trusted environment; the `https` and no-redirect safeguards still apply. `internal/httpreq` gains `DoRequestWithRedirects`, which `DoRequest` now wraps with redirects allowed, so other providers are unaffected. A server cabled to several leaves keeps a single parent (lowest tier, then device name) and shared switches are kept under one parent, so the output is always a tree; requested nodes Minerva does not report are grouped under `no-topology` with a warning. Populates `topology/block` from the `nvlink` layer: each requested node's NVLink domain is the rack that holds it. Each export page is bounded to 2 minutes and each layer to 10, so an unresponsive endpoint cannot block generation. The `east-west` and `nvlink` layers are exported concurrently. A layer that fails, times out or is empty is tolerated, with a warning and without its part of the graph, unless the optional `failOnEmpty` parameter needs it: `both` (the default) fails only when neither layer contributes (an empty `east-west` layer with an `nvlink` domain is accepted, and the graph keeps the `no-topology` group as its tree; the tree is dropped only when the export fails or has no vertices), `east-west` and `nvlink` fail when that layer alone is empty or failed. Note that a tolerated `nvlink` failure makes the Kubernetes engine remove existing accelerator-domain labels; set `failOnEmpty: nvlink` to fail instead. A canceled request always fails. A failed Minerva request is reported as `502` with Minerva's status in the message (a `502` from Minerva is reported as is), never as the status itself. Minerva exports a `device` record only for the devices it selected as anchors, so a compute node can appear only as the far end of its leaf's links: a requested node whose role Minerva does not report (no record, or `unknown`) is treated as a server, so such fabrics build a switch tree instead of grouping every node under `no-topology`. Devices tagged `north-south` take no part in the tree, and two racks that share a name under different parents get distinct NVLink domain IDs, since Minerva scopes groups by ancestry.
-- `workflow-tests.yaml` runs unit tests for the scripts inside GitHub workflows.
-- `conflict-check.yaml` adds the `needs-rebase` label to open pull requests that no longer merge cleanly into `main`, comments once to ask the author to resolve the conflicts, and removes the label once the pull request merges cleanly again. It runs after every push to `main`.
+- `k8s-node-labels` provider discovers fabric topology from configurable Node labels, with optional readiness filtering and observer triggers for label changes. See the [provider guide](docs/providers/k8s-node-labels.md).
+- Nautobot provider (`nautobot`) discovers switch fabric topology through GraphQL, with device-role selection, location and platform filters, and token authentication. See the [provider guide](docs/providers/nautobot.md).
+- Minerva provider (`minerva`) discovers switch fabric topology and rack-based NVLink domains through the NVIDIA Minerva export API. Requires an HTTPS `apiUrl` and an `apiKey` credential. The `failOnEmpty` policy defaults to failing only when neither fabric nor NVLink discovery contributes topology; set `failOnEmpty: nvlink` to prevent a failed or empty NVLink export from clearing existing Kubernetes accelerator-domain labels. See the [Minerva provider guide](docs/providers/minerva.md) for configuration and discovery details.
+- Node Observer `/healthz` endpoint and Helm liveness and readiness probes, using `nodeObserver.port` (default `8080`). Outside Helm, set `healthzPort` in the observer config to enable the endpoint.
+- `make license-headers` and `make license-header-check` standardize and validate license headers, with validation enforced in CI.
+- Unit tests for scripts embedded in GitHub workflows.
+- Automatic `needs-rebase` labeling and a one-time notification for pull requests that conflict with `main`; the label is removed when conflicts are resolved.
 
 ### Changed
 
 - Go toolchain upgraded from **1.27.3** to **1.27.4** across the module, container build, and CI.
-
-- The issue template chooser no longer offers blank issues, and its links now point to NVIDIA PSIRT for security reports, `docs/community.md` for questions, and the documentation site. The feature request form applies `enhancement` instead of `feature request`, both documentation forms apply `documentation` instead of `doc`, a new Question form applies `question`, and every form also applies `needs-triage`.
-
-- The Slurm engine's `instanceMapper` interface now has a single method, `GetNodeInstances`, which returns compute instances grouped by region. It replaces `Instances2NodeMap` and `GetInstancesRegions`, which the engine always called together with the same node list. Providers that implement only the old methods are rejected at runtime with HTTP 400 ("environment must implement instanceMapper"). The grouping logic moves from the engine to `providers.GroupByRegion`, and `providers.SelfNamedInstances` covers providers that use the node name as the instance ID. Slurm output is unchanged. See [#657](https://github.com/dsx-ai-factory/topograph/issues/657).
+- Issue forms use corrected links and labels, include a Question form, and apply `needs-triage`. Blank issues are disabled.
+- Custom providers used with the Slurm engine must implement `GetNodeInstances`, returning instances grouped by region, in place of `Instances2NodeMap` and `GetInstancesRegions`. Providers implementing only the old methods now receive HTTP 400 ([#657](https://github.com/dsx-ai-factory/topograph/issues/657)).
 
 ### Removed
 
-- The Markdown issue templates `documentation-request.md` and `submit-question.md`. The two documentation forms and the Question form replace them.
+- Legacy Markdown documentation-request and question templates, replaced by issue forms.
 
 ### Fixed
 
-- Slurm `topology.conf` output (tree and block, plain and per-partition YAML) and partition node discovery no longer drop node or switch names when one name has no numeric suffix and others are that name followed by a number. Nodes `gpu`, `gpu1` and `gpu2` were written as either `gpu` or `gpu[1-2]`; they are now written as `gpu,gpu[1-2]`.
-
+- Kubernetes and NFD no longer publish `no-topology` as a shared fabric tier. Stale fabric labels are removed while accelerator labels are preserved; NFD clears stale topology values even with `cleanup: false` ([#673](https://github.com/dsx-ai-factory/topograph/pull/673)).
+- Slurm topology output and partition discovery preserve names that share a prefix, such as `gpu`, `gpu1`, and `gpu2`, and keep different zero padding intact, such as `node8`, `node09`, and `node10`.
 - Updated `github.com/klauspost/compress` from **v1.20.1** to **v1.20.2** to include the upstream fix for CVE-2026-116591.
+- Kubernetes removes stale managed output labels from selected Nodes omitted from a successful topology graph, including those excluded by readiness or missing-label filtering.
+- Helm treats a null `nodeLabels` override as omitted, preserving default observer watches and Node RBAC.
+- `GET /v1/topology` consistently returns plain-text content headers and `X-Content-Type-Options: nosniff`. Unexpected result types return HTTP 500 instead of panicking.
+- API request logs use concise summaries, with full details available at verbosity 4. Client-supplied line breaks are escaped to prevent forged log entries.
+- Helm node-observer generates a valid API URL when `service.port` is set to an integer, such as with `--set service.port=8080`.
 
-- The Kubernetes engine removes managed output labels from resolved, engine-selected Nodes omitted from a successful topology graph, so readiness or missing-label filtering cannot leave stale fabric membership. The Kubernetes provider's observer chart also treats a null `nodeLabels` override as omitted, keeping default watches and Node RBAC aligned.
+[Full changelog](https://github.com/dsx-ai-factory/topograph/compare/v1.1.0...v1.2.0)
 
-- `GET /v1/topology` responses now carry `Content-Type: text/plain; charset=utf-8` and `X-Content-Type-Options: nosniff` for completed and pending requests, as error responses already did, instead of leaving the content type to sniffing. A result of an unexpected type returns HTTP 500 instead of panicking the handler.
-- The API server now logs a one-line summary of each accepted topology request (provider, engine, region and node counts) instead of every request in full, which lists every node; the full request is logged at verbosity 4. Line breaks in client input can no longer start new log entries: the full request escapes them in each value, and the outbound request URL logged at verbosity 4 is quoted.
-- Helm node-observer's `generateTopologyUrl` now prints an integer `service.port` as a number. An integer port, such as `--set service.port=8080`, previously produced an invalid URL ending in `:%!f(int64=8080)/v1/generate`.
-- Slurm `topology.conf` output (tree and block, plain and per-partition YAML) and partition node discovery no longer put node or switch numbers with different zero padding into one range. Nodes `node8`, `node09` and `node10` were written as `node[8-10]`, which names `node9` instead of `node09`; they are now written as `node[8,09-10]`.
+---
 
 ## [v1.1.0] - 2026-10-23
 
@@ -366,7 +367,8 @@ Initial release.
 
 ---
 
-[Unreleased]: https://github.com/dsx-ai-factory/topograph/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/dsx-ai-factory/topograph/compare/v1.2.0...HEAD
+[v1.2.0]: https://github.com/dsx-ai-factory/topograph/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/dsx-ai-factory/topograph/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/dsx-ai-factory/topograph/compare/v0.5.0...v1.0.0
 [0.5.0]: https://github.com/dsx-ai-factory/topograph/compare/v0.4.0...v0.5.0
