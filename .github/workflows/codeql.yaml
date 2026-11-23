@@ -93,7 +93,7 @@ jobs:
       # Set up Go before CodeQL init so the build tracer sees the toolchain
       # that go.mod asks for rather than whatever the runner ships with.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           # Track go.mod so a toolchain bump cannot leave this job behind.
           go-version-file: go.mod
