@@ -351,7 +351,8 @@ workflow (`conflict-check.yaml`) adds the `needs-rebase` label and comments
 once to ask you to resolve the conflicts. Rebase onto the latest `main`, or
 merge `main` into your branch, and push. The check runs after every push to
 `main`, so the label comes off on the first run that finds the PR merges
-cleanly, not when you push the fix. Draft PRs are not checked.
+cleanly, not when you push the fix. Draft PRs and PRs that target a branch
+other than `main` are not checked.
 
 Keep the PR in draft while you're still reshaping it — draft PRs don't page
 reviewers, so that's the cheapest phase to rework history or force-push in.
