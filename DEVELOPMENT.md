@@ -259,8 +259,10 @@ pushes for each PR; the first four also run on `main`:
   uploads its security findings to code scanning without failing the run
 - `.github/workflows/workflow-tests.yaml`: when `.github/**` changes, plus on
   demand, `node --test '.github/tests/**/*.test.mjs'`: unit tests for the
-  scripts inside workflows, the security rules every workflow keeps, and the
-  check that every label a form or workflow applies is in `.github/labels.yml`
+  scripts inside workflows, the security rules every workflow keeps, the
+  check that every label a form or workflow applies is in `.github/labels.yml`,
+  and the check that `.github/dependabot.yml` gives every ecosystem and every
+  dependency a cooldown of at least 7 days
 - `.github/workflows/chart-test.yaml`: `make chart-test`
 - `.github/workflows/k8s-test.yaml`: Kubernetes integration tests (kind +
   KWOK); can also be run manually
