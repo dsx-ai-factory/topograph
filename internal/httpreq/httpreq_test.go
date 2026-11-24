@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -670,4 +671,187 @@ func TestDoRequestWithRedirects(t *testing.T) {
 		require.Nil(t, httpErr)
 		require.Equal(t, "direct", string(body))
 	})
+}
+
+func TestRequestOptionsPreserveClientAndRedactRetries(t *testing.T) {
+	var logs bytes.Buffer
+	flags := flag.NewFlagSet("redacted-http", flag.ContinueOnError)
+	klog.InitFlags(flags)
+	require.NoError(t, flags.Set("v", "4"))
+	klog.LogToStderr(false)
+	klog.SetOutput(&logs)
+	t.Cleanup(func() {
+		require.NoError(t, flags.Set("v", "0"))
+		klog.SetOutput(os.Stderr)
+		klog.LogToStderr(true)
+	})
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		data, err := io.ReadAll(r.Body)
+		if err != nil || string(data) != "fake-request-secret" {
+			t.Errorf("request body was not replayed correctly")
+		}
+		w.Header().Set("Retry-After", "0")
+		status := http.StatusServiceUnavailable
+		if calls == 2 {
+			status = http.StatusUnauthorized
+		}
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, "fake-response-secret")
+	}))
+	defer server.Close()
+	factory := func() (*http.Request, *httperr.Error) {
+		req, err := http.NewRequest(http.MethodPost, server.URL+"?secret=fake-url-secret", strings.NewReader("fake-request-secret"))
+		require.NoError(t, err)
+		return req, nil
+	}
+	body, err := DoRequestWithRetriesAndOptions(factory, false, RequestOptions{Client: server.Client(), MaxResponseBytes: 20, Redact: true})
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusUnauthorized, err.Code())
+	require.EqualError(t, err, "HTTP request failed")
+	require.Equal(t, "fake-response-secret", string(body), "the body remains available within the configured limit")
+	require.Equal(t, 2, calls)
+	klog.Flush()
+	require.Contains(t, logs.String(), "Retrying")
+	for _, secret := range []string{server.URL, "fake-request-secret", "fake-response-secret", "fake-url-secret"} {
+		require.NotContains(t, logs.String(), secret)
+	}
+}
+
+func TestRequestOptionsRedactFactoryErrors(t *testing.T) {
+	_, _, err := DoRequestWithOptions(func() (*http.Request, *httperr.Error) {
+		return nil, httperr.NewError(http.StatusBadRequest, "fake-secret")
+	}, false, RequestOptions{Redact: true})
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusBadRequest, err.Code())
+	require.EqualError(t, err, "HTTP request construction failed")
+}
+
+func TestCancellationStatus(t *testing.T) {
+	code, ok := CancellationStatus(context.Canceled)
+	require.True(t, ok)
+	require.Equal(t, http.StatusRequestTimeout, code)
+	code, ok = CancellationStatus(context.DeadlineExceeded)
+	require.True(t, ok)
+	require.Equal(t, http.StatusGatewayTimeout, code)
+	code, ok = CancellationStatus(io.ErrUnexpectedEOF)
+	require.False(t, ok)
+	require.Zero(t, code)
+}
+
+func TestRedactedRetryWaitReportsCancellationAndDeadline(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		code int
+		ctx  func() (context.Context, context.CancelFunc)
+	}{
+		{"canceled", http.StatusRequestTimeout, func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(context.Background())
+			time.AfterFunc(100*time.Millisecond, cancel)
+			return ctx, cancel
+		}},
+		{"deadline", http.StatusGatewayTimeout, func() (context.Context, context.CancelFunc) {
+			return context.WithTimeout(context.Background(), 100*time.Millisecond)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer server.Close()
+			ctx, cancel := tc.ctx()
+			defer cancel()
+			factory := func() (*http.Request, *httperr.Error) {
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL, nil)
+				require.NoError(t, err)
+				return req, nil
+			}
+			start := time.Now()
+			_, err := DoRequestWithRetriesAndOptions(factory, false, RequestOptions{Client: server.Client(), Redact: true})
+			require.NotNil(t, err)
+			require.Equal(t, tc.code, err.Code())
+			require.Equal(t, 1, calls)
+			require.Less(t, time.Since(start), 10*time.Second, "the retry wait must stop with the context")
+		})
+	}
+}
+
+func TestMaxResponseBytes(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, r.URL.Query().Get("body"))
+	}))
+	defer server.Close()
+	factory := func(body string) RequestFunc {
+		return func() (*http.Request, *httperr.Error) {
+			req, err := http.NewRequest(http.MethodGet, server.URL+"?body="+body, nil)
+			require.NoError(t, err)
+			return req, nil
+		}
+	}
+
+	// A body exactly at the limit is returned whole.
+	_, body, err := DoRequestWithOptions(factory("abcd"), false, RequestOptions{MaxResponseBytes: 4})
+	require.Nil(t, err)
+	require.Equal(t, "abcd", string(body))
+
+	// One byte over the limit is an error, never a truncated body.
+	_, body, err = DoRequestWithOptions(factory("abcde"), false, RequestOptions{MaxResponseBytes: 4})
+	require.NotNil(t, err)
+	require.Nil(t, body)
+	require.Equal(t, http.StatusBadGateway, err.Code())
+	require.True(t, IsResponseTooLarge(err))
+
+	// Zero means unlimited.
+	_, body, err = DoRequestWithOptions(factory("abcdefgh"), false, RequestOptions{})
+	require.Nil(t, err)
+	require.Equal(t, "abcdefgh", string(body))
+
+	// An oversized response is not retried.
+	calls = 0
+	_, err = DoRequestWithRetriesAndOptions(factory("abcde"), false, RequestOptions{MaxResponseBytes: 4})
+	require.True(t, IsResponseTooLarge(err))
+	require.Equal(t, 1, calls)
+
+	require.False(t, IsResponseTooLarge(nil))
+	require.False(t, IsResponseTooLarge(httperr.NewError(http.StatusBadGateway, "other")))
+}
+
+func TestDoRequestDoesNotMutateSuppliedClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	redirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client := &http.Client{CheckRedirect: redirect}
+	factory := func() (*http.Request, *httperr.Error) {
+		req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+		require.NoError(t, err)
+		return req, nil
+	}
+	_, _, err := doRequest(factory, false, false, RequestOptions{Client: client})
+	require.Nil(t, err)
+	require.NotNil(t, client.CheckRedirect)
+	require.Equal(t, http.ErrUseLastResponse, client.CheckRedirect(nil, nil), "the caller's redirect policy is untouched")
+
+	// With redirects disallowed, a redirect is refused without touching the client.
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, server.URL, http.StatusFound)
+	}))
+	defer target.Close()
+	plain := &http.Client{}
+	_, _, err = doRequest(func() (*http.Request, *httperr.Error) {
+		req, e := http.NewRequest(http.MethodGet, target.URL, nil)
+		require.NoError(t, e)
+		return req, nil
+	}, false, false, RequestOptions{Client: plain})
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "redirects are not allowed")
+	require.Nil(t, plain.CheckRedirect)
 }

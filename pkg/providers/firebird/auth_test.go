@@ -124,21 +124,15 @@ func TestAuthFailures(t *testing.T) {
 			graph, err := p.GenerateTopologyConfig(context.Background(), nil, []topology.ComputeInstances{{Instances: map[string]string{"n1": "worker"}}})
 			require.Nil(t, graph)
 			require.Equal(t, status, err.Code())
-			require.Equal(t, `Firebird authentication request failed: AUTH_FAILED: request rejected (details: {"tenant":"unverified"})`, err.Error())
-			expectedCalls := 1
-			if status == http.StatusServiceUnavailable {
-				expectedCalls = 5
-			}
-			require.Equal(t, expectedCalls, calls)
+			require.Equal(t, "authentication failed: HTTP request failed", err.Error())
+			require.Equal(t, 1, calls)
 		})
 	}
 }
 
 func TestInvalidTokenResponses(t *testing.T) {
 	for _, body := range []string{
-		`invalid`, `null`, `{}`, `{"accessToken":""}`, `{"accessToken":"fake","expiresIn":-1}`,
-		`{"accessToken":"fake","expiresIn":"bad"}`,
-		`{"accessToken":"fake","tokenType":"Basic"}`, `{"accessToken":"fake\r\nheader"}`,
+		`invalid`, `null`, `{}`, `{"accessToken":""}`, `{"accessToken":123}`, `{"accessToken":"fake\r\nheader"}`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			server := newTrustedTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
@@ -146,7 +140,7 @@ func TestInvalidTokenResponses(t *testing.T) {
 			require.Nil(t, err)
 			_, err = p.(*Provider).accessToken(context.Background())
 			require.Equal(t, http.StatusBadGateway, err.Code())
-			require.Equal(t, "invalid Firebird authentication response", err.Error())
+			require.Equal(t, "authentication failed: invalid bearer token response", err.Error())
 		})
 	}
 }
@@ -187,7 +181,49 @@ func TestAuthenticationCanCancel(t *testing.T) {
 	cancel()
 	_, err = p.(*Provider).accessToken(ctx)
 	require.NotNil(t, err)
-	require.Equal(t, http.StatusBadGateway, err.Code())
+	require.Equal(t, http.StatusRequestTimeout, err.Code())
 	require.ErrorContains(t, err, "canceled")
 	require.Zero(t, calls.Load())
+}
+
+func TestAuthenticationDoesNotRetryTransientFailure(t *testing.T) {
+	calls := 0
+	server := newTrustedTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body map[string]string
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, map[string]string{
+			"clientId": "fake-client-id", "clientSecret": "fake-client-secret", "grantType": "client_credentials",
+		}, body)
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"accessToken":"fake-retried-token","tokenType":"Bearer","expiresIn":3600}`))
+	}))
+	p, err := Loader(context.Background(), providers.Config{Params: map[string]any{"apiUrl": server.URL}, Creds: fakeCredentials()})
+	require.Nil(t, err)
+	token, err := p.(*Provider).accessToken(context.Background())
+	require.NotNil(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, err.Code())
+	require.Empty(t, token)
+	require.Equal(t, 1, calls)
+}
+
+func TestUnusedTokenMetadataIsIgnored(t *testing.T) {
+	for _, body := range []string{
+		`{"accessToken":"fake-token","expiresIn":-1}`,
+		`{"accessToken":"fake-token","expiresIn":"unused"}`,
+		`{"accessToken":"fake-token","tokenType":"unused"}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			server := newTrustedTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
+			p, err := Loader(context.Background(), providers.Config{Params: map[string]any{"apiUrl": server.URL}, Creds: fakeCredentials()})
+			require.Nil(t, err)
+			token, err := p.(*Provider).accessToken(context.Background())
+			require.Nil(t, err)
+			require.Equal(t, "fake-token", token)
+		})
+	}
 }

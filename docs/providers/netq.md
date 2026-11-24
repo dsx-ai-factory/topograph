@@ -115,6 +115,18 @@ The provider makes two independent API calls and combines their results:
 1. Fetches compute node records via `GET nmx/v1/compute-nodes` using Basic auth — the `nmx` path reflects the NetQ NVLink Management API, previously known as NMX-M
 2. Groups nodes by `DomainUUID` to build the NVLink domain map. The `DomainUUID` is a NetQ/NMX identifier and differs in format from the `ClusterUUID.CliqueId` value used by `nvidia.com/gpu.clique` and the InfiniBand provider — both identify the same physical NVLink domain, but the values are not directly comparable as strings.
 
+Authorization headers use the shared
+[HTTP authentication helpers](../architecture.md#shared-http-authentication).
+The provider retains its typed `Credentials` struct and uses `ToMap()` to create
+a fresh `httpauth.Credentials` map when building the login request. It delegates token
+HTTP requests and extraction to `httpauth.AcquireBearerToken`, retaining the login
+and premises-selection sequence. HTTP errors are returned directly from the shared
+HTTP helper, with redacted execution messages. Both
+responses must contain a nonempty string `access_token`; malformed or missing
+tokens return HTTP 502. Token responses are limited to 1 MiB and redirects are
+rejected. NVLink Management requests continue to use Basic authentication with
+the same account credentials.
+
 NVLink domain discovery is best-effort — if it fails, Topograph logs a warning and returns the switch tree only. Multi-premises environments are supported: Topograph iterates over all accessible premises and merges their topology graphs.
 
 ## Verifying the Output
