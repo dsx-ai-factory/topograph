@@ -49,7 +49,6 @@ type PluginConfig struct {
 	Namespace       string          `json:"namespace,omitempty"`
 	RefreshInterval metav1.Duration `json:"refreshInterval,omitempty"`
 	SwitchSource    SwitchSource    `json:"switchSource,omitempty"`
-	GPUSource       GPUSource       `json:"gpuSource,omitempty"`
 }
 
 // SwitchSource selects how NIC switch names are discovered.
@@ -103,9 +102,6 @@ func (c *PluginConfig) Validate() error {
 	}
 	if c.SwitchSource.HostLLDP.Socket == "" {
 		c.SwitchSource.HostLLDP.Socket = DefaultLLDPSocket
-	}
-	if c.GPUSource.Namespace == "" || c.GPUSource.DaemonSet == "" {
-		return fmt.Errorf("gpuNicMapping: gpuSource.gpuOperatorNamespace and gpuSource.daemonSet are required")
 	}
 	return nil
 }

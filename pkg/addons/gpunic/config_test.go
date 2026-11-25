@@ -32,9 +32,6 @@ plugins:
     refreshInterval: 5m
     switchSource:
       name: host-lldp
-    gpuSource:
-      gpuOperatorNamespace: gpu-operator
-      daemonSet: nvidia-device-plugin-daemonset
 `
 
 func TestPluginConfig(t *testing.T) {
@@ -47,10 +44,9 @@ func TestPluginConfig(t *testing.T) {
 	require.Equal(t, DefaultLLDPSocket, p.SwitchSource.HostLLDP.Socket)
 
 	for name, mutate := range map[string]func(*PluginConfig){
-		"no release":    func(p *PluginConfig) { p.ReleaseName = "" },
-		"bad source":    func(p *PluginConfig) { p.SwitchSource.Name = "other" },
-		"no gpu source": func(p *PluginConfig) { p.GPUSource.DaemonSet = "" },
-		"bad interval":  func(p *PluginConfig) { p.RefreshInterval.Duration = -time.Second },
+		"no release":   func(p *PluginConfig) { p.ReleaseName = "" },
+		"bad source":   func(p *PluginConfig) { p.SwitchSource.Name = "other" },
+		"bad interval": func(p *PluginConfig) { p.RefreshInterval.Duration = -time.Second },
 	} {
 		var c NodeMetadataConfig
 		require.NoError(t, yaml.Unmarshal([]byte(pluginYAML), &c))

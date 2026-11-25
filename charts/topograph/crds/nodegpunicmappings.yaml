@@ -79,7 +79,7 @@ spec:
                     lldp:
                       type: string
                       format: date-time
-                    nvidiaSmi:
+                    pciTopology:
                       type: string
                       format: date-time
                 nics:

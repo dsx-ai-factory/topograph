@@ -15,13 +15,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */ -}}
 {{- /*
-Namespaced RBAC of the gpu-nic-mapping plugin. Pod and pods/exec access is
-granted only in the GPU Operator namespace and never through a
-ClusterRoleBinding. Reading the broker's own Node is covered by the broker
-ClusterRole.
+Namespaced RBAC of the gpu-nic-mapping plugin: the broker manages only the
+mapping resources of its release. GPU discovery reads host sysfs and procfs and
+needs no Kubernetes access. Reading the broker's own Node is covered by the
+broker ClusterRole.
 */ -}}
 {{- if and .Values.nodeDataBroker.enabled .Values.nodeDataBroker.rbac.create (eq (include "nodeMetadata.gpuNicMapping.enabled" .) "true") }}
-{{- $gpu := .Values.nodeMetadata.plugins.gpuNicMapping.gpuSource }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -51,40 +50,5 @@ subjects:
 roleRef:
   kind: Role
   name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-gpu
-  namespace: {{ $gpu.gpuOperatorNamespace }}
-  labels:
-    {{- include "nodeDataBroker.labels" . | nindent 4 }}
-rules:
-- apiGroups: [apps]
-  resources: [daemonsets]
-  resourceNames: [{{ $gpu.daemonSet | quote }}]
-  verbs: [get]
-- apiGroups: [""]
-  resources: [pods]
-  verbs: [list]
-- apiGroups: [""]
-  resources: [pods/exec]
-  verbs: [create]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-gpu
-  namespace: {{ $gpu.gpuOperatorNamespace }}
-  labels:
-    {{- include "nodeDataBroker.labels" . | nindent 4 }}
-subjects:
-- kind: ServiceAccount
-  name: {{ include "nodeDataBroker.serviceAccountName" . }}
-  namespace: {{ .Release.Namespace }}
-roleRef:
-  kind: Role
-  name: {{ include "nodeDataBroker.rbacName" . }}-gpu-nic-gpu
   apiGroup: rbac.authorization.k8s.io
 {{- end }}

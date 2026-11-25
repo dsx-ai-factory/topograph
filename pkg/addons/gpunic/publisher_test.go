@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -200,37 +199,4 @@ func TestCleanerLeavesInvalidWhenDisabledDeletesWhenEnabled(t *testing.T) {
 	require.NoError(t, c.Reconcile(ctx, true))
 	l, _ = dyn.Resource(GVR).Namespace(ns).List(ctx, metav1.ListOptions{})
 	require.Empty(t, l.Items)
-}
-
-func TestPodRunnerSelection(t *testing.T) {
-	ds := &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "dp", Namespace: "gpu-operator", UID: "ds-uid"},
-		Spec:       appsv1.DaemonSetSpec{Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "dp"}}},
-	}
-	pod := func(name, nodeName string, owner types.UID, phase corev1.PodPhase) *corev1.Pod {
-		ctrl := true
-		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "gpu-operator", Labels: map[string]string{"app": "dp"},
-				OwnerReferences: []metav1.OwnerReference{{Kind: "DaemonSet", UID: owner, Controller: &ctrl}}},
-			Spec:   corev1.PodSpec{NodeName: nodeName},
-			Status: corev1.PodStatus{Phase: phase},
-		}
-	}
-	run := func(pods ...*corev1.Pod) error {
-		objs := []runtime.Object{ds}
-		for _, p := range pods {
-			objs = append(objs, p)
-		}
-		r := &PodRunner{Client: kubefake.NewSimpleClientset(objs...), Source: GPUSource{Namespace: "gpu-operator", DaemonSet: "dp"}, NodeName: "n1"}
-		_, err := r.pod(context.Background())
-		return err
-	}
-
-	require.NoError(t, run(pod("a", "n1", "ds-uid", corev1.PodRunning)))
-	require.ErrorContains(t, run(), "found 0")
-	require.ErrorContains(t, run(pod("a", "n1", "ds-uid", corev1.PodRunning), pod("b", "n1", "ds-uid", corev1.PodRunning)), "found 2")
-	// Wrong node, wrong controller and non-running pods are not eligible.
-	require.ErrorContains(t, run(pod("a", "n2", "ds-uid", corev1.PodRunning)), "found 0")
-	require.ErrorContains(t, run(pod("a", "n1", "other", corev1.PodRunning)), "found 0")
-	require.ErrorContains(t, run(pod("a", "n1", "ds-uid", corev1.PodPending)), "found 0")
 }

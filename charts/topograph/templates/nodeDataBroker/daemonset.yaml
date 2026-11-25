@@ -46,9 +46,43 @@ spec:
       serviceAccountName: {{ include "nodeDataBroker.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.nodeDataBroker.podSecurityContext | nindent 8 }}
-      {{- with .Values.nodeDataBroker.initContainers }}
+      {{- if or $nicMapping .Values.nodeDataBroker.initContainers }}
       initContainers:
+        {{- if $nicMapping }}
+        # PCI VPD, which pairs a ConnectX-8 Data Direct function with its NIC,
+        # is readable by root only. This container reads it once, as UID 0
+        # with every capability dropped and host sysfs read-only, and hands it
+        # to the non-root broker through an emptyDir. VPD is fixed by adapter
+        # firmware, so a read at pod start stays valid.
+        - name: vpd-reader
+          image: {{ include "topograph.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /usr/local/bin/node-data-broker
+          args:
+            - --dump-vpd=/var/run/topograph/vpd.json
+            - -v={{ .Values.verbosity }}
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.nodeDataBroker.resources | nindent 12 }}
+          volumeMounts:
+            - name: host-sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: gpu-nic-vpd
+              mountPath: /var/run/topograph
+        {{- end }}
+        {{- with .Values.nodeDataBroker.initContainers }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       containers:
         - name: node-data-broker
@@ -123,6 +157,10 @@ spec:
               # Mount the directory so a missing or replaced socket can be retried.
               mountPath: /host/lldpd
               readOnly: true
+            # PCI VPD written by the vpd-reader init container.
+            - name: gpu-nic-vpd
+              mountPath: /var/run/topograph
+              readOnly: true
             {{- end }}
             {{- with .Values.nodeDataBroker.volumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -146,6 +184,9 @@ spec:
           hostPath:
             path: {{ dir $lldpSocket | quote }}
             type: DirectoryOrCreate
+        - name: gpu-nic-vpd
+          emptyDir:
+            sizeLimit: 1Mi
         {{- end }}
         {{- with .Values.nodeDataBroker.volumes }}
         {{- toYaml . | nindent 8 }}

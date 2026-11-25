@@ -300,9 +300,6 @@ func TestNewNodeDataBrokerConfigNICMappingPlugin(t *testing.T) {
       namespace: topograph
       switchSource:
         name: host-lldp
-      gpuSource:
-        gpuOperatorNamespace: gpu-operator
-        daemonSet: nvidia-device-plugin-daemonset
 `
 	cfg, err := newNodeDataBrokerConfig(write(valid))
 	require.NoError(t, err)

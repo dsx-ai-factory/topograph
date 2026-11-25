@@ -117,9 +117,6 @@ limitations under the License.
 {{- if empty $lldp.socket }}
   {{- fail "nodeMetadata.plugins.gpuNicMapping.switchSource.hostLLDP requires socket" }}
 {{- end }}
-{{- if or (empty $plugin.gpuSource.gpuOperatorNamespace) (empty $plugin.gpuSource.daemonSet) }}
-  {{- fail "nodeMetadata.plugins.gpuNicMapping.gpuSource requires gpuOperatorNamespace and daemonSet" }}
-{{- end }}
 {{- end }}
 
 {{- end }}

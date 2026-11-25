@@ -16,7 +16,7 @@
 // Package gpunic implements the gpu-nic-mapping node-metadata plugin.
 //
 // The plugin joins two node-local sources, LLDP neighbors (optional switch
-// names) and the nvidia-smi topology matrix (which GPU is closest to each NIC),
+// names) and the host PCI topology (which GPU is closest to each NIC),
 // and publishes one NodeGPUNICMapping custom resource per Node. It is
 // independent of the topology provider and of topology.Graph.
 package gpunic
@@ -83,8 +83,8 @@ type NICMapping struct {
 
 // Sources records when each input was collected (RFC 3339).
 type Sources struct {
-	LLDP      string `json:"lldp"`
-	NvidiaSMI string `json:"nvidiaSmi,omitempty"`
+	LLDP        string `json:"lldp"`
+	PCITopology string `json:"pciTopology,omitempty"`
 }
 
 // Status is the observed mapping of one Node. NICs is keyed by normalized host

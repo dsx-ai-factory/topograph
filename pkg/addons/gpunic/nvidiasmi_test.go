@@ -21,10 +21,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-// Inventory maps a GPU matrix index to its stable identity.
-type Inventory map[int]GPU
+// The parsers below read nvidia-smi output. Production code no longer runs
+// nvidia-smi; tests keep the parsers so that recorded nvidia-smi output stays
+// the reference that SysfsTopology must reproduce.
 
 // ParseInventory parses `nvidia-smi --query-gpu=index,uuid,pci.bus_id --format=csv,noheader`.
 func ParseInventory(out string) (Inventory, error) {
@@ -56,22 +60,11 @@ func ParseInventory(out string) (Inventory, error) {
 	return inv, nil
 }
 
-// Matrix is the parsed `nvidia-smi topo -all -m` output.
-type Matrix struct {
-	Cols []string
-	// Cells[row][col] is the path category between two matrix devices.
-	Cells map[string]map[string]string
-	// NICs and DDs map a matrix alias (NIC2, DD0) to the legend's device name.
-	NICs map[string]string
-	DDs  map[string]string
-}
-
 var (
 	// NVIDIA CLI versions may emit ANSI formatting even without a terminal.
 	ansiRE   = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 	aliasRE  = regexp.MustCompile(`^(GPU|NIC|DD|NVME|NVMe)\d+$`)
 	legendRE = regexp.MustCompile(`^\s*(NIC|DD)(\d+):\s+(\S+)`)
-	gpuRE    = regexp.MustCompile(`^GPU(\d+)$`)
 )
 
 // ParseMatrix parses the topology matrix and its legend. NVMe rows and
@@ -129,11 +122,16 @@ func ParseMatrix(out string) (*Matrix, error) {
 	return m, nil
 }
 
-func gpuIndex(alias string) (int, bool) {
-	g := gpuRE.FindStringSubmatch(alias)
-	if g == nil {
-		return 0, false
-	}
-	i, _ := strconv.Atoi(g[1])
-	return i, true
+func mustInventory(t *testing.T, out string) Inventory {
+	t.Helper()
+	inv, err := ParseInventory(out)
+	require.NoError(t, err)
+	return inv
+}
+
+func mustMatrix(t *testing.T, out string) *Matrix {
+	t.Helper()
+	m, err := ParseMatrix(out)
+	require.NoError(t, err)
+	return m
 }

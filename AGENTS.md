@@ -63,6 +63,7 @@ pkg/
   addons/             # Optional node-metadata addons, independent of topology.Graph
     gpunic/           # GPU/NIC locality and optional LLDP switch names; broker collector/publisher, observer cleanup
   ib/                 # InfiniBand fabric discovery helpers
+  pcitopo/            # Host PCI hierarchy from sysfs: nvidia-smi-style path categories (PIX..SYS), ConnectX Data Direct pairing
   config/             # Config file parser
   metrics/            # Prometheus metrics
   models/             # Go types and loader for YAML simulation models (the YAML files live in tests/models/)
@@ -92,7 +93,7 @@ carries the doc updates named in the Documentation Impact Evaluation table below
 |---|---|
 | Add a provider, or fix or extend an existing one | `pkg/providers/<name>/`, the one-line registry entry in `pkg/registry/registry.go`, and the docs the provider checklist requires: `docs/providers/<name>.md`, the supported providers table in `docs/overview.md`, and a `docs/index.yml` entry when the page is new |
 | Fix a bug or add tests inside an existing engine, without changing its output format | `pkg/engines/<engine>/`, `pkg/translate/` |
-| Server plumbing, config parsing, metrics, shared helpers | `pkg/server/`, `pkg/config/`, `pkg/metrics/`, `pkg/ib/`, `pkg/node_observer/`, `pkg/addons/`, `internal/` |
+| Server plumbing, config parsing, metrics, shared helpers | `pkg/server/`, `pkg/config/`, `pkg/metrics/`, `pkg/ib/`, `pkg/pcitopo/`, `pkg/node_observer/`, `pkg/addons/`, `internal/` |
 | Command-line entry points and flags | `cmd/` |
 | Helm chart templates, values, and the helm-unittest suites and snapshots | `charts/topograph/` |
 | Documentation, release notes, simulation fixtures, demos, build scripts | `docs/`, `CHANGELOG.md`, `tests/models/`, `demos/`, `scripts/` |

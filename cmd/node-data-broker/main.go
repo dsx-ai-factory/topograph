@@ -66,9 +66,10 @@ type nodeDataBrokerConfig struct {
 
 func main() {
 	var ver bool
-	var configPath string
+	var configPath, dumpVPD string
 	pflag.BoolVar(&ver, "version", false, "show the version")
 	pflag.StringVarP(&configPath, "config", "c", defaultConfigPath, "config file")
+	pflag.StringVar(&dumpVPD, "dump-vpd", "", "read the host PCI VPD that GPU/NIC Data Direct pairing needs, write it to this file, and exit (requires root)")
 
 	klog.InitFlags(nil)
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
@@ -77,6 +78,14 @@ func main() {
 
 	if ver {
 		fmt.Println("Version:", version.Version)
+		os.Exit(0)
+	}
+
+	if dumpVPD != "" {
+		if err := writeVPDCache(dumpVPD); err != nil {
+			klog.Error(err.Error())
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 

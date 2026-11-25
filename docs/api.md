@@ -104,7 +104,7 @@ GPU/NIC locality and optional LLDP switch names. In Helm, configure the top-leve
 `switchSource.hostLLDP.socket` defaults to `/var/run/lldpd.socket`. No interface
 regex or rail-ID template is required. The broker publishes PCI-backed NICs with LLDP neighbors, retaining their GPU
 mappings when a neighbor supplies no switch name. See the [plugin configuration and mapping
-contract](reference/gpu-nic-mapping.md#configuration) for GPU source settings,
+contract](reference/gpu-nic-mapping.md#configuration) for GPU discovery requirements,
 refresh behavior, validation, and development migration instructions.
 
 ## API
