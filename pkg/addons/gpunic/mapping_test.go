@@ -303,6 +303,15 @@ func TestSysfs(t *testing.T) {
 	require.ErrorContains(t, err, "enumerating host NICs")
 }
 
+// staticTopology is a GPUTopology that returns fixed results.
+type staticTopology struct {
+	inv Inventory
+	m   *Matrix
+	err error
+}
+
+func (s staticTopology) Collect() (Inventory, *Matrix, error) { return s.inv, s.m, s.err }
+
 type fakeRunner map[string]string
 
 func (f fakeRunner) Run(_ context.Context, cmd []string) (string, error) {
@@ -324,32 +333,28 @@ func TestCollect(t *testing.T) {
 			require.Equal(t, []string{"-u", "/host/lldpd/lldpd.socket", "-f", "json0", "show", "neighbors", "details"}, args)
 			return lldpJSON, nil
 		}, "/host/lldpd/lldpd.socket"),
-		GPU:   fakeRunner{"nvidia-smi --query-gpu=index,uuid,pci.bus_id": inventory, "nvidia-smi topo": ddMatrix},
+		GPU:   staticTopology{inv: mustInventory(t, inventory), m: mustMatrix(t, ddMatrix)},
 		Sysfs: Sysfs{Root: root},
 		Now:   func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) },
 	}
 	st, err := c.Collect(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "2026-01-02T03:04:05Z", st.Sources.LLDP)
+	require.Equal(t, "2026-01-02T03:04:05Z", st.Sources.PCITopology)
 	require.Equal(t, ModeDataDirect, st.NICs["0000:3b:00.0"].MappingMode)
 	require.Equal(t, "GPU-aaa1", st.NICs["0000:3b:00.0"].BestGPUs[0].UUID)
 	require.Equal(t, "DD1", st.NICs["0000:5e:00.0"].TopologyTarget)
 	require.Equal(t, "leaf-7", st.NICs["0000:3b:00.0"].SwitchName)
 
-	// A missing GPU source fails rather than publishing a NIC-only mapping.
-	c.GPU = fakeRunner{}
+	// A failed GPU topology fails rather than publishing a NIC-only mapping.
+	gpu := c.GPU
+	c.GPU = staticTopology{err: errors.New("no NVIDIA GPUs bound to the nvidia driver")}
 	st, err = c.Collect(context.Background())
-	require.ErrorContains(t, err, "GPU inventory")
-	require.Nil(t, st)
-
-	// Inventory alone is insufficient: topology discovery must also succeed.
-	c.GPU = fakeRunner{"nvidia-smi --query-gpu=index,uuid,pci.bus_id": inventory}
-	st, err = c.Collect(context.Background())
-	require.ErrorContains(t, err, "GPU topology")
+	require.ErrorContains(t, err, "GPU topology: no NVIDIA GPUs")
 	require.Nil(t, st)
 
 	// LLDP neighbors without chassis names must preserve both GPU mappings.
-	c.GPU = fakeRunner{"nvidia-smi --query-gpu=index,uuid,pci.bus_id": inventory, "nvidia-smi topo": ddMatrix}
+	c.GPU = gpu
 	c.LLDP = fakeRunner{"lldpcli -f": strings.ReplaceAll(strings.ReplaceAll(lldpJSON, "leaf-7", ""), "leaf-8", "")}
 	st, err = c.Collect(context.Background())
 	require.NoError(t, err)
@@ -532,16 +537,13 @@ func TestCollectPFUsingVFTopology(t *testing.T) {
 	sysfsLink(t, root, "bus/pci/devices/0001:03:00.4/physfn", "../0001:03:00.0")
 	c := &Collector{
 		LLDP: fakeRunner{"lldpcli -f": `{"lldp":[{"interface":[{"name":"eth_r0_p0","chassis":[{"name":[{"value":"leaf-01"}]}]}]}]}`},
-		GPU: fakeRunner{
-			"nvidia-smi --query-gpu=index,uuid,pci.bus_id": inventory,
-			"nvidia-smi topo": `GPU0 GPU1 NIC0
+		GPU: staticTopology{inv: mustInventory(t, inventory), m: mustMatrix(t, `GPU0 GPU1 NIC0
 GPU0 X NODE NODE
 GPU1 NODE X NODE
 NIC0 NODE NODE X
 NIC Legend:
 NIC0: mlx5_0 enP1p3s0f0v0 0001:03:00.4 N/A
-`,
-		},
+`)},
 		Sysfs: Sysfs{Root: root},
 	}
 	st, err := c.Collect(context.Background())
@@ -562,89 +564,4 @@ NIC0: mlx5_0 enP1p3s0f0v0 0001:03:00.4 N/A
 	st, err = c.Collect(context.Background())
 	require.ErrorContains(t, err, "reading PCI identity")
 	require.Nil(t, st)
-}
-
-// A command-aware runner verifies that compatibility retries change the actual
-// arguments; fakeRunner deliberately ignores arguments after the subcommand.
-type topologyRunner struct {
-	t     *testing.T
-	calls int
-	steps []topologyStep
-}
-
-type topologyStep struct {
-	command []string
-	out     string
-	err     error
-}
-
-func (r *topologyRunner) Run(_ context.Context, command []string) (string, error) {
-	r.t.Helper()
-	require.Less(r.t, r.calls, len(r.steps), "unexpected command: %v", command)
-	step := r.steps[r.calls]
-	r.calls++
-	require.Equal(r.t, step.command, command)
-	return step.out, step.err
-}
-
-func TestTopologyCompatibility(t *testing.T) {
-	const legacyMatrix = `GPU0 NIC0
-GPU0 X NODE
-NIC0 NODE X
-NIC Legend:
-NIC0: mlx5_0
-`
-	failure := errors.New("command terminated with exit code 2")
-	for _, tc := range []struct {
-		name    string
-		steps   []topologyStep
-		wantErr error
-	}{
-		{name: "complete matrix preserves DD", steps: []topologyStep{{command: TopologyCommand, out: ddMatrix}}},
-		{name: "unsupported flag on stdout", steps: []topologyStep{
-			{command: TopologyCommand, out: `Option "-all" is not recognized.`, err: failure},
-			{command: []string{"nvidia-smi", "topo", "-m"}, out: legacyMatrix},
-		}},
-		{name: "unsupported flag on stderr", steps: []topologyStep{
-			{command: TopologyCommand, err: errors.New(`Option "-all" is not recognized.: command terminated with exit code 2`)},
-			{command: []string{"nvidia-smi", "topo", "-m"}, out: legacyMatrix},
-		}},
-		{name: "other argument error must not downgrade", steps: []topologyStep{{command: TopologyCommand, err: failure}}, wantErr: failure},
-		{name: "transport error must not downgrade", steps: []topologyStep{{command: TopologyCommand, err: os.ErrPermission}}, wantErr: os.ErrPermission},
-		{name: "fallback error is returned", steps: []topologyStep{
-			{command: TopologyCommand, out: `Option "-all" is not recognized.`, err: failure},
-			{command: []string{"nvidia-smi", "topo", "-m"}, err: os.ErrPermission},
-		}, wantErr: os.ErrPermission},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := &topologyRunner{t: t, steps: tc.steps}
-			c := &Collector{GPU: r}
-			out, err := c.topology(context.Background())
-			require.Equal(t, len(tc.steps), r.calls)
-			if tc.wantErr != nil {
-				require.ErrorIs(t, err, tc.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			m, err := ParseMatrix(out)
-			require.NoError(t, err)
-			if len(tc.steps) == 1 {
-				require.Equal(t, "roce_vf_r0", m.DDs["DD0"], "supported versions preserve the complete matrix")
-			} else {
-				require.Equal(t, "mlx5_0", m.NICs["NIC0"])
-				require.Empty(t, m.DDs, "legacy output need not expose DD entries")
-			}
-		})
-	}
-}
-
-func TestTopologyCompatibilityCancelled(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	r := &topologyRunner{t: t, steps: []topologyStep{{command: TopologyCommand,
-		out: `Option "-all" is not recognized.`, err: errors.New("exit code 2")}}}
-	c := &Collector{GPU: r}
-	_, err := c.topology(ctx)
-	require.ErrorIs(t, err, context.Canceled)
-	require.Equal(t, 1, r.calls, "cancellation must prevent a compatibility retry")
 }

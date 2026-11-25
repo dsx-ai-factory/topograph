@@ -22,7 +22,9 @@
 #   - lldpd runs on the host; only NICs with neighbors are published,
 #     with switch names included when advertised.
 #   - NICs need no interface naming convention or regex configuration.
-#   - The GPU Operator runs its device plugin DaemonSet, whose pod has nvidia-smi.
+#   - The NVIDIA driver is loaded (it provides /proc/driver/nvidia).
+#   - The release namespace admits the vpd-reader init container, which runs as
+#     root to read PCI VPD (Pod Security "baseline", not "restricted").
 
 provider:
   name: k8s-node-labels
@@ -40,9 +42,6 @@ nodeMetadata:
         name: host-lldp
         hostLLDP:
           socket: /var/run/lldpd.socket
-      gpuSource:
-        gpuOperatorNamespace: gpu-operator
-        daemonSet: nvidia-device-plugin-daemonset
 
 nodeDataBroker:
   enabled: true

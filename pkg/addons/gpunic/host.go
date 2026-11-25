@@ -66,7 +66,7 @@ func (s Sysfs) PCIAddress(iface string) (string, error) {
 }
 
 // RDMADevices returns the RDMA device names of iface, which is how the
-// nvidia-smi legend names a NIC.
+// topology legend names a NIC.
 func (s Sysfs) RDMADevices(iface string) []string {
 	entries, err := os.ReadDir(filepath.Join(s.Root, "class", "net", iface, "device", "infiniband"))
 	if err != nil {
@@ -80,7 +80,7 @@ func (s Sysfs) RDMADevices(iface string) []string {
 	return names
 }
 
-// DevicePCI resolves either an RDMA name or a netdev from an NVIDIA legend.
+// DevicePCI resolves either an RDMA name or a netdev from a topology legend.
 // A device absent from host sysfs cannot supply a fallback match. Permission
 // errors and malformed links are different: they must fail collection.
 func (s Sysfs) DevicePCI(name string) (string, error) {

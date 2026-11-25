@@ -151,7 +151,6 @@ needs to clean up.
 {{- $_ := set $cfg "refreshInterval" (default "10m" $plugin.refreshInterval) -}}
 {{- $_ := set $plugin.switchSource.hostLLDP "socket" (printf "/host/lldpd/%s" (base $plugin.switchSource.hostLLDP.socket)) -}}
 {{- $_ := set $cfg "switchSource" $plugin.switchSource -}}
-{{- $_ := set $cfg "gpuSource" $plugin.gpuSource -}}
 {{- end -}}
 {{- toYaml (dict "plugins" (dict "gpuNicMapping" $cfg)) -}}
 {{- end }}

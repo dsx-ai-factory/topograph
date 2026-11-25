@@ -23,9 +23,9 @@ import (
 
 var pciRE = regexp.MustCompile(`^([0-9a-f]{4,8}):([0-9a-f]{2}):([0-9a-f]{2})\.([0-7])$`)
 
-// NormalizePCI returns a PCI address in lowercase dddd:bb:ss.f form. The
-// eight-digit domain that nvidia-smi prints (00000000:17:00.0) is accepted when
-// its extra leading digits are zero.
+// NormalizePCI returns a PCI address in lowercase dddd:bb:ss.f form. Sysfs
+// names use a four-digit domain; an eight-digit domain, as NVIDIA tools print
+// it (00000000:17:00.0), is accepted when its extra leading digits are zero.
 func NormalizePCI(s string) (string, error) {
 	m := pciRE.FindStringSubmatch(strings.ToLower(strings.TrimSpace(s)))
 	if m == nil {

@@ -454,12 +454,14 @@ nodeMetadata:
           # The broker runs as a non-root user: grant it access to the socket's
           # group through nodeDataBroker.podSecurityContext.supplementalGroups.
           socket: /var/run/lldpd.socket
-      gpuSource:
-        # GPU Operator DaemonSet whose same-node pod runs nvidia-smi.
-        gpuOperatorNamespace: gpu-operator
-        daemonSet: nvidia-device-plugin-daemonset
-        # Container to exec into; empty selects the pod's default container.
-        container: ""
+      # GPUs and their PCI paths to each NIC are read from host sysfs and the
+      # NVIDIA driver's /proc/driver/nvidia entries; nvidia-smi is not used.
+      # Pairing a ConnectX-8 Data Direct function with its NIC needs PCI VPD,
+      # which the kernel exposes to root only. A short-lived init container
+      # (vpd-reader) therefore runs as UID 0, with all capabilities dropped
+      # and host sysfs read-only, and hands the VPD to the non-root broker
+      # through an emptyDir. The release namespace must admit a pod that runs
+      # as root: Pod Security "baseline" does, "restricted" does not.
 
 nodeDataBroker:
   enabled: true

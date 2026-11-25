@@ -21,13 +21,35 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/internal/exec"
 	"github.com/dsx-ai-factory/topograph/pkg/addons/gpunic"
 )
 
-// hostSysfsRoot matches the read-only host sysfs mount in the broker DaemonSet.
-const hostSysfsRoot = "/host/sys"
+const (
+	// hostSysfsRoot matches the read-only host sysfs mount in the broker DaemonSet.
+	hostSysfsRoot = "/host/sys"
+	// procRoot shows the host kernel's /proc/driver/nvidia entries: they are
+	// not namespaced, so the container's own procfs is enough.
+	procRoot = "/proc"
+	// vpdCachePath is written by the VPD init container in the broker
+	// DaemonSet through an emptyDir; see -dump-vpd.
+	vpdCachePath = "/var/run/topograph/vpd.json"
+)
+
+// writeVPDCache implements -dump-vpd.
+func writeVPDCache(path string) error {
+	cache, err := gpunic.WriteVPDCache(hostSysfsRoot, path)
+	if err != nil {
+		return err
+	}
+	for addr, msg := range cache.Errors {
+		klog.InfoS("Could not read PCI VPD; GPU/NIC collection fails if Data Direct pairing needs it", "pciAddress", addr, "error", msg)
+	}
+	klog.InfoS("Wrote PCI VPD cache", "path", path, "functions", len(cache.Functions), "errors", len(cache.Errors))
+	return nil
+}
 
 // newGPUNICLoop builds the refresh loop of the gpu-nic-mapping plugin.
 func (b *nodeBroker) newGPUNICLoop() (*gpunic.Loop, error) {
@@ -58,7 +80,7 @@ func (b *nodeBroker) newGPUNICLoop() (*gpunic.Loop, error) {
 		Interval: cfg.RefreshInterval.Duration,
 		Collector: &gpunic.Collector{
 			LLDP:  lldp,
-			GPU:   &gpunic.PodRunner{Client: b.clientset, Config: b.restConfig, Source: cfg.GPUSource, NodeName: b.nodeName},
+			GPU:   gpunic.SysfsTopology{SysRoot: hostSysfsRoot, ProcRoot: procRoot, VPDCachePath: vpdCachePath},
 			Sysfs: gpunic.Sysfs{Root: hostSysfsRoot},
 		},
 		Publisher: &gpunic.Publisher{Client: dyn, Namespace: cfg.Namespace, Release: cfg.ReleaseName, Node: node},

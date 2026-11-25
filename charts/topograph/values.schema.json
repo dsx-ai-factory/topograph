@@ -284,14 +284,6 @@
                       }
                     }
                   }
-                },
-                "gpuSource": {
-                  "type": "object",
-                  "properties": {
-                    "gpuOperatorNamespace": { "type": "string", "minLength": 1 },
-                    "daemonSet": { "type": "string", "minLength": 1 },
-                    "container": { "type": "string" }
-                  }
                 }
               }
             }

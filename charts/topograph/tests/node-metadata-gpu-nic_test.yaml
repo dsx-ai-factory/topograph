@@ -41,6 +41,8 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.path
           value: /healthz
+      - notExists:
+          path: spec.template.spec.initContainers
 
   - it: renders no broker RBAC while disabled
     template: templates/nodeDataBroker/gpunic-rbac.yaml
@@ -78,9 +80,6 @@ tests:
           name: host-lldp
           hostLLDP:
             socket: /var/run/lldpd.socket
-        gpuSource:
-          gpuOperatorNamespace: gpu-operator
-          daemonSet: nvidia-device-plugin-daemonset
     asserts:
       - matchRegex:
           path: data["node-data-broker-config.yaml"]
@@ -140,6 +139,20 @@ tests:
           path: spec.template.metadata.annotations["checksum/config"]
         template: templates/nodeDataBroker/daemonset.yaml
       - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: gpu-nic-vpd
+            emptyDir:
+              sizeLimit: 1Mi
+        template: templates/nodeDataBroker/daemonset.yaml
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: gpu-nic-vpd
+            mountPath: /var/run/topograph
+            readOnly: true
+        template: templates/nodeDataBroker/daemonset.yaml
+      - contains:
           path: rules
           content:
             apiGroups: [""]
@@ -167,61 +180,93 @@ tests:
           pattern: "socket: /host/lldpd/control\\.sock"
         template: templates/nodeDataBroker/configmap.yaml
 
-  - it: grants pod exec only through a Role in the GPU Operator namespace
+  - it: reads PCI VPD in a root init container and keeps the broker non-root
+    set: *enabled
+    template: templates/nodeDataBroker/daemonset.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.initContainers
+          count: 1
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: vpd-reader
+      - equal:
+          path: spec.template.spec.initContainers[0].args[0]
+          value: --dump-vpd=/var/run/topograph/vpd.json
+      # Root UID for the 0600 vpd files, without any capability.
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext
+          value:
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      - equal:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          value:
+            - name: host-sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: gpu-nic-vpd
+              mountPath: /var/run/topograph
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+
+  - it: keeps user init containers after the VPD reader
+    set:
+      <<: *enabled
+      nodeDataBroker.initContainers:
+        - name: custom
+          image: busybox
+    template: templates/nodeDataBroker/daemonset.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.initContainers
+          count: 2
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: vpd-reader
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: custom
+
+  - it: grants the broker access only to the mapping resources of its release
     set: *enabled
     template: templates/nodeDataBroker/gpunic-rbac.yaml
     asserts:
       - hasDocuments:
-          count: 4
+          count: 2
       - isKind:
           of: Role
-        documentIndex: 2
+        documentIndex: 0
       - equal:
           path: metadata.namespace
-          value: gpu-operator
-        documentIndex: 2
-      - contains:
+          value: topograph
+        documentIndex: 0
+      - equal:
           path: rules
-          content:
-            apiGroups: [apps]
-            resources: [daemonsets]
-            resourceNames: [nvidia-device-plugin-daemonset]
-            verbs: [get]
-        documentIndex: 2
-      - contains:
-          path: rules
-          content:
-            apiGroups: [""]
-            resources: [pods/exec]
-            verbs: [create]
-        documentIndex: 2
-      # The binding lives in the GPU Operator namespace and names the broker's
-      # ServiceAccount in the Topograph namespace.
+          value:
+            - apiGroups: [topograph.run]
+              resources: [nodegpunicmappings]
+              verbs: [get, create, delete]
+            - apiGroups: [topograph.run]
+              resources: [nodegpunicmappings/status]
+              verbs: [get, update, patch]
+        documentIndex: 0
       - isKind:
           of: RoleBinding
-        documentIndex: 3
+        documentIndex: 1
       - equal:
           path: metadata.namespace
-          value: gpu-operator
-        documentIndex: 3
-      - equal:
-          path: subjects[0].namespace
           value: topograph
-        documentIndex: 3
-      - contains:
-          path: rules
-          content:
-            apiGroups: [topograph.run]
-            resources: [nodegpunicmappings]
-            verbs: [get, create, delete]
-        documentIndex: 0
-      - contains:
-          path: rules
-          content:
-            apiGroups: [topograph.run]
-            resources: [nodegpunicmappings/status]
-            verbs: [get, update, patch]
-        documentIndex: 0
+        documentIndex: 1
 
   - it: never grants pod or exec access in a ClusterRole
     set: *enabled

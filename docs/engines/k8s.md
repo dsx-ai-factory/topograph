@@ -248,7 +248,8 @@ The optional [GPU/NIC metadata plugin](../reference/gpu-nic-mapping.md)
 publishes separate per-Node resources. Its broker ConfigMap uses
 `nodeMetadata.plugins.gpuNicMapping.switchSource` to collect optional LLDP
 switch names alongside GPU locality, without interface regexes. The chart mounts
-host sysfs and the LLDP socket directory; these settings do not change API routing.
+host sysfs and the LLDP socket directory, and adds a root init container that
+reads PCI VPD; these settings do not change API routing.
 
 The Topograph API server listens on port `49021` by default. The Helm chart always creates a Kubernetes `Service`; how that Service is exposed depends on your deployment topology and access requirements.
 
