@@ -2,10 +2,27 @@
 
 ## Status
 
-Proposed. The HTTP API provider configuration and interfaces below are not currently
-supported features. Implementation follows review. The existing
-`internal/httpauth` package supplies the shared authentication helpers described
-below.
+Implemented in `pkg/providers/http/` (provider name `http`). The user-facing
+reference is [docs/providers/http.md](../providers/http.md) and the onboarding
+guide is [docs/get-started/onboard-http-provider.md](../get-started/onboard-http-provider.md).
+The implementation resolves the open decisions below as follows:
+
+- Defaults: page size 100 (Topograph `pageSize`), `pagination.maxPages` 1000,
+  `maxResponseBytes` 32 MiB per page, and a 5-minute `timeout` per discovery.
+  The record count is bounded by pages times page size; no separate record limit.
+- Page completion policy: `pagination.completion` is `empty` (default) or
+  `short` (stop at a page with fewer items than the page size; requires
+  `sizeParam`). It applies to page and offset modes.
+- `initialPage` defaults to 1; `pageParam`, `offsetParam` and `cursorParam`
+  default to `page`, `offset` and `cursor`; `sizeParam` has no default and the
+  size is not sent when it is unset.
+- Only GET and body cursors are supported; POST, header cursors and mTLS remain
+  follow-ups. A repeated cursor fails with 502.
+- Retries: five attempts, exponential backoff from 500 ms capped at 30 s with
+  jitter in [d/2, d], or `Retry-After` (capped at five minutes by `httpreq`).
+- Upstream topology HTTP failures, including 401 and 404, return 502; only the
+  token and login endpoints preserve upstream statuses.
+- `missingNodes: error` fails with 502.
 
 Feature issue: [dsx-ai-factory/topograph#697](https://github.com/dsx-ai-factory/topograph/issues/697).
 
@@ -38,8 +55,7 @@ discovery, and changes to node labels or identity annotations.
 Implement `pkg/providers/http/` with a `NamedLoader` registered in
 `pkg/registry/registry.go`. Extension factories stay local to this provider; the
 shared provider interface is unchanged. Reuse `internal/httpauth` for authentication
-mechanics. Its typed configuration and error semantics are the baseline below;
-the HTTP API provider and its configuration decoding remain proposed. See
+mechanics. Its typed configuration and error semantics are the baseline below. See
 [shared HTTP authentication](../architecture.md#shared-http-authentication) for
 the implemented helpers and existing-provider integrations.
 

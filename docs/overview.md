@@ -40,6 +40,7 @@ Topology discovery is performed asynchronously. The /v1/generate endpoint first 
 | [Amazon Web Services (AWS)](./providers/aws.md) | `aws` | `aws-sim` |
 | [Crusoe Cloud](./providers/crusoe.md) | `crusoe` | `crusoe-sim` |
 | [Firebird](./providers/firebird.md) | `firebird` | `firebird-sim` |
+| [Generic HTTP API](./providers/http.md) (any JSON topology endpoint; see [onboarding](./get-started/onboard-http-provider.md)) | `http` | — |
 | [Oracle Cloud Infrastructure (OCI)](./providers/oci.md) | `oci` (API), `oci-imds` (instance metadata) | `oci-sim` (API) |
 | [Google Cloud Platform (GCP)](./providers/gcp.md) | `gcp` | `gcp-sim` |
 | [Nebius](./providers/nebius.md) | `nebius` | `nebius-sim` |
