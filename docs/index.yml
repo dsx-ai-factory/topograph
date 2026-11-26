@@ -24,6 +24,8 @@ navigation:
         path: get-started/rke2-suse.md
       - page: Install on Slurm
         path: get-started/quickstart-slurm.md
+      - page: Onboard a Cloud with the HTTP Provider
+        path: get-started/onboard-http-provider.md
       - page: Community
         path: community.md
 
@@ -46,6 +48,8 @@ navigation:
         path: providers/firebird.md
       - page: GCP
         path: providers/gcp.md
+      - page: HTTP API
+        path: providers/http.md
       - page: OCI
         path: providers/oci.md
       - page: Nebius

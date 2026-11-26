@@ -29,6 +29,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/providers/dsx"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/firebird"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/gcp"
+	httpprovider "github.com/dsx-ai-factory/topograph/pkg/providers/http"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/lambdai"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/minerva"
@@ -55,6 +56,7 @@ var Providers = providers.NewRegistry(
 	firebird.NamedLoaderSim,
 	gcp.NamedLoader,
 	gcp.NamedLoaderSim,
+	httpprovider.NamedLoader,
 	oci.NamedLoaderAPI,
 	oci.NamedLoaderIMDS,
 	oci.NamedLoaderSim,

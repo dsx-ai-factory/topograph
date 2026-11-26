@@ -30,6 +30,7 @@ func TestProviders(t *testing.T) {
 		"k8s-node-labels",
 		"firebird", "firebird-sim",
 		"gcp", "gcp-sim",
+		"http",
 		"oci", "oci-imds", "oci-sim",
 		"nebius", "nebius-sim",
 		"netq",
