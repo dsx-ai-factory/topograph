@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Firebird and NetQ login now use the shared bearer helper. Login errors carry the upstream HTTP status with a redacted message prefixed with `authentication failed:` instead of the upstream error body or Firebird error envelope. A canceled Firebird login returns HTTP 408 instead of 502, and a timeout returns 504. Firebird no longer checks the login response's `tokenType` or `expiresIn`. NetQ login and OpID responses are limited to 1 MiB, and an empty login response returns HTTP 502 instead of 401. Login redirects are no longer followed and return HTTP 502.
 
+### Fixed
+
+- `make image-build` and `make docker-buildx` pass `GIT_REF` to the Dockerfile as a build argument, so the binaries in the image report the version resolved on the host. Before, `GIT_REF=...` changed only the image tag, and builds from a git worktree stamped no usable version. See [#606](https://github.com/dsx-ai-factory/topograph/issues/606).
+
 ## [v1.2.0] - 2026-11-23
 
 ### Added

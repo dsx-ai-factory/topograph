@@ -22,8 +22,16 @@ COPY . .
 
 ARG TARGETOS
 ARG TARGETARCH
+# Version to stamp into the binaries, resolved on the host by make image-build
+# and make docker-buildx. When it is empty or unknown, make resolves the version
+# from the git metadata in the build context instead.
+ARG GIT_REF
 
-RUN make build-${TARGETOS}-${TARGETARCH}
+RUN if [ -n "${GIT_REF}" ] && [ "${GIT_REF}" != unknown ]; then \
+      make GIT_REF="${GIT_REF}" build-${TARGETOS}-${TARGETARCH}; \
+    else \
+      unset GIT_REF; make build-${TARGETOS}-${TARGETARCH}; \
+    fi
 
 FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
