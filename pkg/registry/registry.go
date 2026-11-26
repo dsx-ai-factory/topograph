@@ -31,6 +31,7 @@ import (
 	"github.com/dsx-ai-factory/topograph/pkg/providers/gcp"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/infiniband"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/lambdai"
+	"github.com/dsx-ai-factory/topograph/pkg/providers/minerva"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nautobot"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/nebius"
 	"github.com/dsx-ai-factory/topograph/pkg/providers/netq"
@@ -61,6 +62,7 @@ var Providers = providers.NewRegistry(
 	nebius.NamedLoaderSim,
 	netq.NamedLoader,
 	nautobot.NamedLoader,
+	minerva.NamedLoader,
 	lambdai.NamedLoader,
 	lambdai.NamedLoaderSim,
 	dsx.NamedLoaderSim,

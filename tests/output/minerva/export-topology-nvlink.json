@@ -1,0 +1,189 @@
+{
+  "cursorScope": {
+    "id": "request:fixture",
+    "createdAt": "2026-10-05T18:00:00+00:00"
+  },
+  "layers": [
+    "nvlink"
+  ],
+  "detail": "summary",
+  "devicesReturned": 4,
+  "nextCursor": null,
+  "complete": true,
+  "nvlink": {
+    "records": [
+      {
+        "type": "datacenter",
+        "name": "DC1",
+        "parent": null,
+        "children": [
+          {
+            "type": "rack",
+            "name": "NVL-Rack-1"
+          },
+          {
+            "type": "rack",
+            "name": "NVL-Rack-2"
+          }
+        ]
+      },
+      {
+        "type": "rack",
+        "name": "NVL-Rack-1",
+        "parent": "DC1",
+        "children": [
+          {
+            "type": "device",
+            "name": "srv-01",
+            "role": "server"
+          },
+          {
+            "type": "device",
+            "name": "srv-02",
+            "role": "server"
+          },
+          {
+            "type": "device",
+            "name": "nvl-sw-01",
+            "role": "nvlink-switch"
+          }
+        ]
+      },
+      {
+        "type": "rack",
+        "name": "NVL-Rack-2",
+        "parent": "DC1",
+        "children": [
+          {
+            "type": "device",
+            "name": "srv-03",
+            "role": "server"
+          }
+        ]
+      },
+      {
+        "type": "device",
+        "name": "srv-01",
+        "role": "server",
+        "parent": "NVL-Rack-1",
+        "rack": "NVL-Rack-1"
+      },
+      {
+        "type": "device",
+        "name": "srv-02",
+        "role": "server",
+        "parent": "NVL-Rack-1",
+        "rack": "NVL-Rack-1"
+      },
+      {
+        "type": "device",
+        "name": "nvl-sw-01",
+        "role": "nvlink-switch",
+        "parent": "NVL-Rack-1",
+        "rack": "NVL-Rack-1"
+      },
+      {
+        "type": "device",
+        "name": "srv-03",
+        "role": "server",
+        "parent": "NVL-Rack-2"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-0",
+        "device": "srv-01"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-1",
+        "device": "srv-01"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-2",
+        "device": "srv-01"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-3",
+        "device": "srv-01"
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "nvlink",
+        "from": {
+          "device": "srv-01",
+          "port": "GPUP0"
+        },
+        "to": {
+          "device": "nvl-sw-01",
+          "port": "Access1"
+        }
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-0",
+        "device": "srv-02"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-1",
+        "device": "srv-02"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-2",
+        "device": "srv-02"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-3",
+        "device": "srv-02"
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "nvlink",
+        "from": {
+          "device": "srv-02",
+          "port": "GPUP0"
+        },
+        "to": {
+          "device": "nvl-sw-01",
+          "port": "Access2"
+        }
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-0",
+        "device": "srv-03"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-1",
+        "device": "srv-03"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-2",
+        "device": "srv-03"
+      },
+      {
+        "type": "gpu",
+        "name": "gpu-3",
+        "device": "srv-03"
+      },
+      {
+        "type": "neighbor",
+        "neighborType": "nvlink",
+        "from": {
+          "device": "srv-03",
+          "port": "GPUP0"
+        },
+        "to": {
+          "device": "nvl-sw-01",
+          "port": "Access3"
+        }
+      }
+    ]
+  }
+}

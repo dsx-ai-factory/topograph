@@ -19,13 +19,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -93,69 +96,194 @@ func ParseRetryAfter(resp *http.Response) (time.Duration, bool) {
 
 type RequestFunc func() (*http.Request, *httperr.Error)
 
-// DoRequest sends HTTP requests and returns HTTP response
+// RequestOptions customizes HTTP execution without changing existing callers.
+// Client supplies transport and timeout policies; it is never modified, and
+// insecureSkipVerify does not apply to it. MaxResponseBytes caps the response
+// body when positive: a larger body fails with a non-retryable 502 (see
+// IsResponseTooLarge) instead of being truncated. Redact omits URLs and raw upstream details from logs and errors;
+// the response body is still returned to trusted callers for API error mapping.
+type RequestOptions struct {
+	Client           *http.Client
+	MaxResponseBytes int64
+	Redact           bool
+}
+
+var errRedirectNotAllowed = errors.New("redirects are not allowed")
+
+const responseTooLargeMessage = "HTTP response exceeds size limit"
+
+// IsResponseTooLarge reports whether err was caused by a response body larger
+// than RequestOptions.MaxResponseBytes.
+func IsResponseTooLarge(err *httperr.Error) bool {
+	return err != nil && err.Code() == http.StatusBadGateway && err.Error() == responseTooLargeMessage
+}
+
+// DoRequest sends an HTTP request with the existing default policies.
 func DoRequest(f RequestFunc, insecureSkipVerify bool) (*http.Response, []byte, *httperr.Error) {
+	return DoRequestWithOptions(f, insecureSkipVerify, RequestOptions{})
+}
+
+// DoRequestWithOptions sends an HTTP request using explicit execution options.
+func DoRequestWithOptions(f RequestFunc, insecureSkipVerify bool, opts RequestOptions) (*http.Response, []byte, *httperr.Error) {
+	return doRequest(f, insecureSkipVerify, true, opts)
+}
+
+// DoRequestWithRedirects sends HTTP requests and returns HTTP response. When
+// allowRedirects is false, a redirect is not followed but reported as a 502
+// error, so request headers such as an API key are only ever sent to the
+// requested URL.
+func DoRequestWithRedirects(f RequestFunc, insecureSkipVerify, allowRedirects bool) (*http.Response, []byte, *httperr.Error) {
+	return doRequest(f, insecureSkipVerify, allowRedirects, RequestOptions{})
+}
+
+func doRequest(f RequestFunc, insecureSkipVerify, allowRedirects bool, opts RequestOptions) (*http.Response, []byte, *httperr.Error) {
 	req, httpErr := f()
 	if httpErr != nil {
+		if opts.Redact {
+			return nil, nil, httperr.NewError(httpErr.Code(), "HTTP request construction failed")
+		}
 		return nil, nil, httpErr
 	}
-	// URL.String() keeps RawQuery as is; %q escapes any line break in it so
-	// the URL cannot forge log lines.
-	klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
-	client := &http.Client{}
-	if insecureSkipVerify {
-		client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	if opts.Redact {
+		klog.V(4).Info("Sending HTTP request")
+	} else {
+		// Quote URLs so line breaks cannot forge log lines.
+		klog.V(4).Infof("Sending HTTP request %q", req.URL.String())
+	}
+	client := opts.Client
+	if client == nil {
+		client = &http.Client{}
+		if insecureSkipVerify {
+			transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+			client.Transport = transport
+			// This transport is private to the call and cannot reuse connections.
+			defer transport.CloseIdleConnections()
+		}
+	}
+	if !allowRedirects {
+		// Copy so a caller-supplied client is never mutated or raced on.
+		c := *client
+		client = &c
+		client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+			// Name only the scheme and host: the Location is server-controlled and its
+			// userinfo, path or query could carry secrets or control characters.
+			return fmt.Errorf("%w: refusing to follow a redirect to %s://%s", errRedirectNotAllowed, req.URL.Scheme, req.URL.Host)
 		}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if opts.Redact {
+			return resp, nil, redactedRequestError(err)
+		}
 		code := http.StatusBadGateway
-		if resp != nil {
+		msg := err.Error()
+		var urlErr *url.Error
+		isURLErr := errors.As(err, &urlErr)
+		switch {
+		case errors.Is(err, errRedirectNotAllowed):
+			// The *url.Error wrapping the refusal repeats the raw Location; report
+			// only the sanitized refusal from CheckRedirect.
+			if isURLErr {
+				msg = urlErr.Err.Error()
+			}
+		case isURLErr && strings.Contains(urlErr.Err.Error(), "Location header"):
+			// net/http rejects an unparsable Location before CheckRedirect runs and
+			// quotes it, userinfo and query included, in the error.
+			msg = fmt.Sprintf("%s %q: failed to parse the redirect Location header", urlErr.Op, urlErr.URL)
+		case resp != nil:
 			code = resp.StatusCode
 		}
-		return resp, nil, httperr.NewError(code, err.Error())
+		return resp, nil, httperr.NewError(code, msg)
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
+	var reader io.Reader = resp.Body
+	if opts.MaxResponseBytes > 0 {
+		// Read one byte past the cap so an oversized body is detected, not truncated.
+		reader = io.LimitReader(reader, opts.MaxResponseBytes+1)
+	}
+	body, err := io.ReadAll(reader)
 	if err != nil {
+		if opts.Redact {
+			return resp, nil, redactedRequestError(err)
+		}
 		return resp, nil, httperr.NewError(http.StatusInternalServerError, fmt.Sprintf("failed to read HTTP response: %v", err))
 	}
-
+	if opts.MaxResponseBytes > 0 && int64(len(body)) > opts.MaxResponseBytes {
+		return resp, nil, httperr.NewError(http.StatusBadGateway, responseTooLargeMessage)
+	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return resp, body, nil
 	}
+	message := string(body)
+	if opts.Redact {
+		message = "HTTP request failed"
+	}
+	return resp, body, httperr.NewError(resp.StatusCode, message)
+}
 
-	return resp, body, httperr.NewError(resp.StatusCode, string(body))
+// CancellationStatus maps a canceled request to 408 and a deadline or network
+// timeout to 504. The bool is false for any other error.
+func CancellationStatus(err error) (int, bool) {
+	if errors.Is(err, context.Canceled) {
+		return http.StatusRequestTimeout, true
+	}
+	var timeout net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+		return http.StatusGatewayTimeout, true
+	}
+	return 0, false
+}
+
+func redactedRequestError(err error) *httperr.Error {
+	switch code, _ := CancellationStatus(err); code {
+	case http.StatusRequestTimeout:
+		return httperr.NewError(code, "HTTP request canceled")
+	case http.StatusGatewayTimeout:
+		return httperr.NewError(code, "HTTP request timed out")
+	}
+	return httperr.NewError(http.StatusBadGateway, "HTTP request failed")
 }
 
 // DoRequestWithRetries sends HTTP requests and returns HTTP response; retries if needed
 func DoRequestWithRetries(f RequestFunc, insecureSkipVerify bool) ([]byte, *httperr.Error) {
+	return DoRequestWithRetriesAndOptions(f, insecureSkipVerify, RequestOptions{})
+}
+
+// DoRequestWithRetriesAndOptions uses the shared retry policy with explicit HTTP options.
+func DoRequestWithRetriesAndOptions(f RequestFunc, insecureSkipVerify bool, opts RequestOptions) ([]byte, *httperr.Error) {
 	klog.V(4).Infof("Sending HTTP request with retries")
 	attempt := 0
 	for {
 		attempt++
 		var requestCtx context.Context
-		resp, body, err := DoRequest(func() (*http.Request, *httperr.Error) {
+		resp, body, err := DoRequestWithOptions(func() (*http.Request, *httperr.Error) {
 			req, httpErr := f()
 			if req != nil {
 				requestCtx = req.Context()
 			}
 			return req, httpErr
-		}, insecureSkipVerify)
+		}, insecureSkipVerify, opts)
 		if requestCtx != nil && requestCtx.Err() != nil {
-			return body, err
+			return body, contextFailure(requestCtx, err, opts)
 		}
-		if err == nil || attempt == maxRetries || !ShouldRetry(err.Code()) {
+		if err == nil || attempt == maxRetries || IsResponseTooLarge(err) || !ShouldRetry(err.Code()) {
 			return body, err
 		}
 		wait := GetNextBackoff(resp, backOff, attempt-1)
 		klog.Infof("Attempt %d failed with error: %v. Retrying in %s", attempt, err, wait.String())
 		if !waitForRetry(requestCtx, wait) {
-			return body, err
+			return body, contextFailure(requestCtx, err, opts)
 		}
 	}
+}
+
+// contextFailure reports cancellation or a deadline as such for redacted
+// requests, which promise sanitized statuses. Otherwise the last error stands.
+func contextFailure(ctx context.Context, err *httperr.Error, opts RequestOptions) *httperr.Error {
+	if err != nil && opts.Redact {
+		return redactedRequestError(ctx.Err())
+	}
+	return err
 }
 
 func waitForRetry(ctx context.Context, delay time.Duration) bool {

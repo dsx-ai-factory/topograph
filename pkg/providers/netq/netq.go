@@ -24,6 +24,7 @@ import (
 
 	"k8s.io/klog/v2"
 
+	"github.com/dsx-ai-factory/topograph/internal/httpauth"
 	"github.com/dsx-ai-factory/topograph/internal/httperr"
 	"github.com/dsx-ai-factory/topograph/internal/httpreq"
 	"github.com/dsx-ai-factory/topograph/pkg/topology"
@@ -54,11 +55,6 @@ type Links struct {
 	Id string `json:"id"`
 }
 
-type AuthOutput struct {
-	AccessToken string     `json:"access_token"`
-	Premises    []Premises `json:"premises"`
-}
-
 type Premises struct {
 	ConfigKeyViewed bool   `json:"config_key_viewed"`
 	Name            string `json:"name"`
@@ -68,32 +64,22 @@ type Premises struct {
 
 func (p *Provider) getNetworkTree(ctx context.Context, cis []topology.ComputeInstances) (*topology.Vertex, *httperr.Error) {
 	// login to NetQ server
-	payload := fmt.Appendf(nil, `{"username":%q, "password":%q}`, p.creds.Username, p.creds.Password)
+	payload, _ := json.Marshal(p.creds.ToMap())
 	headers := map[string]string{
 		"Content-Type": "application/json",
 		"Accept":       "application/json",
 	}
 	f := httpreq.GetRequestFunc(ctx, http.MethodPost, headers, nil, payload, p.params.ApiURL, LoginURL)
-	_, data, httpErr := httpreq.DoRequest(f, true)
+	token, premisesList, httpErr := acquireNetqToken(f)
 	if httpErr != nil {
-		return nil, httpErr
-	}
-
-	if len(data) == 0 {
-		return nil, httperr.NewError(http.StatusUnauthorized, "failed to login to NetQ server")
-	}
-
-	// get access token and premises
-	var authOutput AuthOutput
-	if err := json.Unmarshal(data, &authOutput); err != nil {
-		return nil, httperr.NewError(http.StatusBadGateway, fmt.Sprintf("failed to parse access token: %v", err))
+		return nil, httperr.NewError(httpErr.Code(), "NetQ login: "+httpErr.Error())
 	}
 
 	treeRoot := &topology.Vertex{Vertices: make(map[string]*topology.Vertex)}
-	for _, premises := range authOutput.Premises {
+	for _, premises := range premisesList {
 		if premises.ConfigKeyViewed {
 			klog.InfoS("Getting topology graph for premises", "name", premises.Name, "OPID", premises.OPID)
-			if httpErr = p.getPremisesTopology(ctx, cis, treeRoot, authOutput.AccessToken, fmt.Sprintf("%d", premises.OPID)); httpErr != nil {
+			if httpErr = p.getPremisesTopology(ctx, cis, treeRoot, token, fmt.Sprintf("%d", premises.OPID)); httpErr != nil {
 				return nil, httpErr
 			}
 		}
@@ -109,33 +95,23 @@ func (p *Provider) getNetworkTree(ctx context.Context, cis []topology.ComputeIns
 func (p *Provider) getPremisesTopology(ctx context.Context, cis []topology.ComputeInstances, treeRoot *topology.Vertex, token, opid string) *httperr.Error {
 	// set OpID
 	headers := map[string]string{
-		"Authorization": "Bearer " + token,
+		"Authorization": httpauth.BearerHeader(token),
 	}
 	f := httpreq.GetRequestFunc(ctx, http.MethodGet, headers, nil, nil, p.params.ApiURL, OpIdURL, opid)
-	_, data, httpErr := httpreq.DoRequest(f, true)
+	tokenResult, _, httpErr := acquireNetqToken(f)
 	if httpErr != nil {
-		return httpErr
-	}
-
-	if len(data) == 0 {
-		return httperr.NewError(http.StatusBadGateway, "failed to set NetQ OpID")
-	}
-
-	// get access token
-	var authOutput AuthOutput
-	if err := json.Unmarshal(data, &authOutput); err != nil {
-		return httperr.NewError(http.StatusBadGateway, fmt.Sprintf("failed to parse access token: %v", err))
+		return httperr.NewError(httpErr.Code(), "NetQ premises selection: "+httpErr.Error())
 	}
 
 	// get topology graph
 	payload := []byte(`{"filters": [], "subgroupNestingDepth":2}`)
 	headers = map[string]string{
 		"Content-Type":  "application/json",
-		"Authorization": "Bearer " + authOutput.AccessToken,
+		"Authorization": httpauth.BearerHeader(tokenResult),
 	}
 	query := map[string]string{"timestamp": "0"}
 	f = httpreq.GetRequestFunc(ctx, http.MethodPost, headers, query, payload, p.params.ApiURL, TopologyURL)
-	_, data, httpErr = httpreq.DoRequest(f, true)
+	_, data, httpErr := httpreq.DoRequest(f, true)
 	if httpErr != nil {
 		return httpErr
 	}

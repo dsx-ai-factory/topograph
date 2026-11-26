@@ -53,7 +53,7 @@ engine, or emitting scheduler-specific output from a provider, stop and reconsid
 cmd/                  # Entry points: topograph, node-observer, node-data-broker, kwok-nodes
 pkg/
   accelerator/        # Pluggable accelerator-domain discovery composed by providers
-  providers/          # One directory per provider: aws, crusoe, dra, dsx, firebird, gcp, infiniband, lambdai, nautobot, nebius, netq, nodelabels, nscale, oci, test
+  providers/          # One directory per provider: aws, crusoe, dra, dsx, firebird, gcp, infiniband, lambdai, minerva, nautobot, nebius, netq, nodelabels, nscale, oci, test
   engines/            # One directory per engine: graph, k8s, nfd, slinky, slurm
   topology/           # Canonical Graph, Vertex tree, and topology constants (DO NOT CHANGE CASUALLY)
   registry/           # Central NamedLoader wiring for providers + engines
@@ -66,7 +66,7 @@ pkg/
   models/             # Go types and loader for YAML simulation models (the YAML files live in tests/models/)
   test/               # Cross-package test helpers
 internal/             # Shared utilities not part of the public API
-  cluset, component, config, exec, files, healthz, httperr, httpreq, k8s, kwok, version
+  cluset, component, config, exec, files, healthz, httpauth, httperr, httpreq, k8s, kwok, version
 charts/topograph/     # Helm chart for all Kubernetes components; tests/ holds the helm-unittest suites + snapshots
 CHANGELOG.md          # Release history (Keep a Changelog format); update [Unreleased] for user-facing PRs
 docs/                 # Public-facing docs: overview.md, architecture.md, api.md + providers/, engines/, reference/ subdirectories
