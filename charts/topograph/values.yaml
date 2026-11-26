@@ -429,6 +429,40 @@ nodeObserver:
   affinity: {}
 
 # Node Data Broker collects per-node topology attributes as annotations.
+# Node-metadata plugins publish extra node-scoped data next to the topology the
+# provider discovers. They are independent of provider.name and need
+# nodeDataBroker.enabled=true. The NodeGPUNICMapping CRD ships in crds/; Helm
+# installs it but never upgrades or deletes it.
+nodeMetadata:
+  plugins:
+    # Pairs each neighbor-bearing PCI NIC with the closest GPUs and reports
+    # optional LLDP switch names,
+    # and publishes one NodeGPUNICMapping per Node for the SR-IOV DRA driver.
+    # See
+    # docs/reference/gpu-nic-mapping.md.
+    gpuNicMapping:
+      enabled: false
+      # How often each broker re-collects and, if the mapping changed, republishes.
+      refreshInterval: 10m
+      switchSource:
+        # LLDP advertises the remote switch name when available. NIC discovery
+        # selection requires an LLDP neighbor, but no interface-name pattern.
+        name: host-lldp
+        hostLLDP:
+          # Host lldpd control socket. Its parent directory is mounted read-only
+          # at /host/lldpd; a missing socket is logged and retried.
+          # The broker runs as a non-root user: grant it access to the socket's
+          # group through nodeDataBroker.podSecurityContext.supplementalGroups.
+          socket: /var/run/lldpd.socket
+      # GPUs and their PCI paths to each NIC are read from host sysfs and the
+      # NVIDIA driver's /proc/driver/nvidia entries; nvidia-smi is not used.
+      # Pairing a ConnectX-8 Data Direct function with its NIC needs PCI VPD,
+      # which the kernel exposes to root only. A short-lived init container
+      # (vpd-reader) therefore runs as UID 0, with all capabilities dropped
+      # and host sysfs read-only, and hands the VPD to the non-root broker
+      # through an emptyDir. The release namespace must admit a pod that runs
+      # as root: Pod Security "baseline" does, "restricted" does not.
+
 nodeDataBroker:
   enabled: true
 

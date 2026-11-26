@@ -24,12 +24,14 @@ import (
 
 	"github.com/oklog/run"
 	"github.com/spf13/pflag"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 
 	"github.com/dsx-ai-factory/topograph/internal/healthz"
 	"github.com/dsx-ai-factory/topograph/internal/version"
+	"github.com/dsx-ai-factory/topograph/pkg/addons/gpunic"
 	"github.com/dsx-ai-factory/topograph/pkg/node_observer"
 )
 
@@ -84,6 +86,20 @@ func mainInternal(c string) error {
 	g.Add(run.SignalHandler(ctx, os.Interrupt, syscall.SIGTERM))
 	// Controller
 	g.Add(controller.Start, controller.Stop)
+
+	// Cleanup of gpu-nic-mapping resources
+	if plugin := cfg.NodeMetadata.Plugins.GPUNICMapping; plugin != nil {
+		dyn, err := dynamic.NewForConfig(konfig)
+		if err != nil {
+			return err
+		}
+		cleaner := &gpunic.Cleaner{Dynamic: dyn, Kube: kubeClient, Namespace: plugin.Namespace, Release: plugin.ReleaseName}
+		cleanCtx, cleanCancel := context.WithCancel(ctx)
+		g.Add(func() error {
+			gpunic.RunCleanup(cleanCtx, cleaner, plugin.Enabled, gpunic.CleanupInterval)
+			return nil
+		}, func(error) { cleanCancel() })
+	}
 
 	// Health endpoint for the liveness and readiness probes
 	if cfg.HealthzPort > 0 {

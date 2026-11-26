@@ -244,6 +244,13 @@ The API ConfigMap also carries `config.nodeMetadata`, used by provider and engin
 node reads regardless of whether the API is exposed through a Service, Ingress,
 or Gateway API route. Source selection is described above.
 
+The optional [GPU/NIC metadata plugin](../reference/gpu-nic-mapping.md)
+publishes separate per-Node resources. Its broker ConfigMap uses
+`nodeMetadata.plugins.gpuNicMapping.switchSource` to collect optional LLDP
+switch names alongside GPU locality, without interface regexes. The chart mounts
+host sysfs and the LLDP socket directory, and adds a root init container that
+reads PCI VPD; these settings do not change API routing.
+
 The Topograph API server listens on port `49021` by default. The Helm chart always creates a Kubernetes `Service`; how that Service is exposed depends on your deployment topology and access requirements.
 
 **The API server does not implement built-in authentication.** Access controls are always applied at a network layer (`NetworkPolicy`, service mesh, ingress auth, etc.). Deployments that expose the API outside the cluster must add an authentication layer in front of it.

@@ -18,6 +18,12 @@
 FROM golang:1.27.4@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf AS builder
 
 WORKDIR /go/src/github.com/dsx-ai-factory/topograph
+
+# Download dependencies in their own layer so they are re-fetched only when
+# go.mod or go.sum change, not on every source edit.
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY . .
 
 ARG TARGETOS
@@ -25,9 +31,25 @@ ARG TARGETARCH
 
 RUN make build-${TARGETOS}-${TARGETARCH}
 
-FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
-RUN apk add --no-cache rdma-core
+# Match the host lldpd version; the default allows Ubuntu package fixes.
+ARG LLDP_VERSION=1.0.18-*
+
+# lldpctl points to lldpcli; change its mode from 4750 to 0755 for the non-root
+# broker. Socket access still requires the appropriate supplementalGroups.
+# Ubuntu splits the InfiniBand utilities out of rdma-core.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        rdma-core \
+        ibverbs-utils \
+        infiniband-diags \
+        "lldpd=${LLDP_VERSION}" \
+    && chmod 0755 /usr/sbin/lldpcli \
+    && lldpctl -v \
+    && command -v ibnetdiscover \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /go/src/github.com/dsx-ai-factory/topograph/bin/* /usr/local/bin/
 

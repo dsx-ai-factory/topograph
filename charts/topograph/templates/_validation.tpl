@@ -102,4 +102,21 @@ limitations under the License.
 
 {{- end }}
 
+{{- if eq (include "nodeMetadata.gpuNicMapping.enabled" .) "true" }}
+{{- $plugin := .Values.nodeMetadata.plugins.gpuNicMapping }}
+{{- if not .Values.nodeDataBroker.enabled }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping requires nodeDataBroker.enabled=true: the broker collects and publishes the mapping" }}
+{{- end }}
+{{- if not (regexMatch "^([0-9]+(\\.[0-9]+)?(ns|us|ms|s|m|h))+$" (toString (default "10m" $plugin.refreshInterval))) }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping.refreshInterval must be a duration such as 10m" }}
+{{- end }}
+{{- if ne (toString $plugin.switchSource.name) "host-lldp" }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping.switchSource.name must be host-lldp, the only supported switch source" }}
+{{- end }}
+{{- $lldp := default dict $plugin.switchSource.hostLLDP }}
+{{- if empty $lldp.socket }}
+  {{- fail "nodeMetadata.plugins.gpuNicMapping.switchSource.hostLLDP requires socket" }}
+{{- end }}
+{{- end }}
+
 {{- end }}

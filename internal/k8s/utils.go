@@ -109,12 +109,20 @@ func GetDaemonSetPods(ctx context.Context, client kubernetes.Interface, name, na
 }
 
 func ExecInPod(ctx context.Context, client kubernetes.Interface, config *rest.Config, name, namespace string, cmd []string) (*bytes.Buffer, error) {
+	return ExecInPodContainer(ctx, client, config, name, namespace, "", cmd)
+}
+
+// ExecInPodContainer is ExecInPod for a named container; an empty container
+// selects the pod's default. On a streaming error, the returned buffer retains
+// any stdout already received, since CLI diagnostics may be written there.
+func ExecInPodContainer(ctx context.Context, client kubernetes.Interface, config *rest.Config, name, namespace, container string, cmd []string) (*bytes.Buffer, error) {
 	execOpts := &corev1.PodExecOptions{
-		Command: cmd,
-		Stdin:   false,
-		Stdout:  true,
-		Stderr:  true,
-		TTY:     false,
+		Container: container,
+		Command:   cmd,
+		Stdin:     false,
+		Stdout:    true,
+		Stderr:    true,
+		TTY:       false,
 	}
 
 	req := client.CoreV1().RESTClient().Post().
@@ -137,7 +145,7 @@ func ExecInPod(ctx context.Context, client kubernetes.Interface, config *rest.Co
 
 	if err != nil {
 		strerr := strings.ReplaceAll(stderr.String(), "\n", " ")
-		return nil, fmt.Errorf("failed to execute command %v in pod %s/%s: %s: %v", cmd, namespace, name, strerr, err)
+		return &stdout, fmt.Errorf("failed to execute command %v in pod %s/%s: %s: %w", cmd, namespace, name, strerr, err)
 	}
 
 	return &stdout, nil

@@ -1,0 +1,88 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"context"
+	"fmt"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/klog/v2"
+
+	"github.com/dsx-ai-factory/topograph/internal/exec"
+	"github.com/dsx-ai-factory/topograph/pkg/addons/gpunic"
+)
+
+const (
+	// hostSysfsRoot matches the read-only host sysfs mount in the broker DaemonSet.
+	hostSysfsRoot = "/host/sys"
+	// procRoot shows the host kernel's /proc/driver/nvidia entries: they are
+	// not namespaced, so the container's own procfs is enough.
+	procRoot = "/proc"
+	// vpdCachePath is written by the VPD init container in the broker
+	// DaemonSet through an emptyDir; see -dump-vpd.
+	vpdCachePath = "/var/run/topograph/vpd.json"
+)
+
+// writeVPDCache implements -dump-vpd.
+func writeVPDCache(path string) error {
+	cache, err := gpunic.WriteVPDCache(hostSysfsRoot, path)
+	if err != nil {
+		return err
+	}
+	for addr, msg := range cache.Errors {
+		klog.InfoS("Could not read PCI VPD; GPU/NIC collection fails if Data Direct pairing needs it", "pciAddress", addr, "error", msg)
+	}
+	klog.InfoS("Wrote PCI VPD cache", "path", path, "functions", len(cache.Functions), "errors", len(cache.Errors))
+	return nil
+}
+
+// newGPUNICLoop builds the refresh loop of the gpu-nic-mapping plugin.
+func (b *nodeBroker) newGPUNICLoop() (*gpunic.Loop, error) {
+	cfg := b.config.NodeMetadata.Plugins.GPUNICMapping
+	if b.nodeName == "" {
+		return nil, fmt.Errorf("NODE_NAME must be set for the gpu-nic-mapping plugin")
+	}
+	dyn, err := dynamic.NewForConfig(b.restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+
+	// Resolve the live Node once; its UID names the resource.
+	node, err := b.clientset.CoreV1().Nodes().Get(context.Background(), b.nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node %q: %w", b.nodeName, err)
+	}
+
+	lldp := gpunic.NewLLDPRunner(func(ctx context.Context, exe string, args []string) (string, error) {
+		out, err := exec.Exec(ctx, exe, args, nil)
+		if err != nil {
+			return "", err
+		}
+		return out.String(), nil
+	}, cfg.SwitchSource.HostLLDP.Socket)
+
+	return &gpunic.Loop{
+		Interval: cfg.RefreshInterval.Duration,
+		Collector: &gpunic.Collector{
+			LLDP:  lldp,
+			GPU:   gpunic.SysfsTopology{SysRoot: hostSysfsRoot, ProcRoot: procRoot, VPDCachePath: vpdCachePath},
+			Sysfs: gpunic.Sysfs{Root: hostSysfsRoot},
+		},
+		Publisher: &gpunic.Publisher{Client: dyn, Namespace: cfg.Namespace, Release: cfg.ReleaseName, Node: node},
+	}, nil
+}
