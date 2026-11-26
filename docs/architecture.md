@@ -64,7 +64,7 @@ and token extraction for both login and premises selection to `AcquireBearerToke
 its adapter retains the multi-step sequencing and premises metadata. Both providers
 reuse the header helpers.
 
-OAuth2 callers pass an `httpauth.AuthConfig` matching the proposed REST auth
+OAuth2 callers pass an `httpauth.AuthConfig` matching the proposed HTTP provider auth
 structure: `type: oauth2` and `oauth2.tokenUrl` with optional
 `oauth2.scopes`. Credentials use a separate, reusable `httpauth.Credentials`
 map (`map[string]string`), preserving arbitrary credential names for custom APIs.
